@@ -131,7 +131,12 @@ func TestObserveExecCapturesCurrentCgroupPath(t *testing.T) {
 	cfg.TargetCgroup = filepath.Join("/sys/fs/cgroup", currentCgroup)
 
 	marker := "vk-observe-cgroup-ok-" + time.Now().Format("20060102150405.000000000")
-	ev, ok := captureExecEventCommand(t, cfg, []string{"/bin/sh", "-c", "sleep 0.2", marker}, marker)
+	ev, ok := captureExecEventCommand(
+		t,
+		cfg,
+		[]string{"/bin/sh", "-c", "printf '%s' \"$1\" >/dev/null; sleep 0.2", "sh", marker},
+		marker,
+	)
 	if !ok {
 		t.Fatalf("timed out waiting for execve event under matching cgroup filter")
 	}
