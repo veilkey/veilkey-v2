@@ -878,13 +878,16 @@
                             <div v-else class="table-wrap">
                                 <table>
                                     <thead>
-                                        <tr>
-                                            <th>종류</th>
-                                            <th>키명</th>
-                                            <th>키값</th>
-                                            <th>{{ activeTab() === 'Host Vault' ? '범위' : '동기화' }}</th>
-                                        </tr>
-                                    </thead>
+	                                        <tr>
+	                                            <th>종류</th>
+	                                            <th>키명</th>
+	                                            <th>키값</th>
+	                                            <th>{{ activeTab() === 'Host Vault' ? '범위' : '배치' }}</th>
+	                                            <th v-if="activeTab() !== 'Host Vault'">이름+값</th>
+	                                            <th v-if="activeTab() !== 'Host Vault'">이름만</th>
+	                                            <th v-if="activeTab() !== 'Host Vault'">값만</th>
+	                                        </tr>
+	                                    </thead>
                                     <tbody>
                                         <tr
                                             v-for="row in vaultVisibleRows()"
@@ -897,23 +900,19 @@
                                         >
                                             <td><span class="pill" :class="row.item_kind === 'VE' ? 'kind-ve' : 'kind-vk'">{{ vaultKindLabel(row.item_kind) }}</span></td>
                                             <td>{{ row.name }}</td>
-                                            <td><span class="code">{{ vaultItemIdentifier(row) }}</span></td>
-                                            <td v-if="activeTab() === 'Host Vault'"><span class="status-pill" :class="scopeClass(row.scope || (row.item_kind === 'VE' ? 'LOCAL' : 'TEMP'))">{{ row.scope || (row.item_kind === 'VE' ? 'LOCAL' : 'TEMP') }}</span></td>
-                                            <td v-else>
-                                                <span
-                                                    v-if="vaultSyncStatus(row.item_kind, row.name).loading"
-                                                    class="muted"
-                                                >확인중</span>
-                                                <span
-                                                    v-else
-                                                    class="status-pill"
-                                                    :class="vaultSyncStatus(row.item_kind, row.name).className"
-                                                >{{ vaultSyncStatus(row.item_kind, row.name).label }}</span>
-                                            </td>
-                                        </tr>
-                                        <tr v-if="!vaultVisibleRows().length">
-                                            <td colspan="4"><div class="empty">표시할 행이 없습니다.</div></td>
-                                        </tr>
+	                                            <td><span class="code">{{ vaultItemIdentifier(row) }}</span></td>
+	                                            <td v-if="activeTab() === 'Host Vault'"><span class="status-pill" :class="scopeClass(row.scope || (row.item_kind === 'VE' ? 'LOCAL' : 'TEMP'))">{{ row.scope || (row.item_kind === 'VE' ? 'LOCAL' : 'TEMP') }}</span></td>
+	                                            <td v-else>
+	                                                <span v-if="vaultSyncStatus(row.item_kind, row.name).loading" class="muted">확인중</span>
+	                                                <span v-else class="status-pill" :class="vaultSyncStatus(row.item_kind, row.name).placementClassName">{{ vaultSyncStatus(row.item_kind, row.name).placementLabel }}</span>
+	                                            </td>
+	                                            <td v-if="activeTab() !== 'Host Vault'"><span v-if="vaultSyncStatus(row.item_kind, row.name).loading" class="muted">확인중</span><span v-else class="status-pill" :class="vaultSyncStatus(row.item_kind, row.name).nameValueClassName">{{ vaultSyncStatus(row.item_kind, row.name).nameValueLabel }}</span></td>
+	                                            <td v-if="activeTab() !== 'Host Vault'"><span v-if="vaultSyncStatus(row.item_kind, row.name).loading" class="muted">확인중</span><span v-else class="status-pill" :class="vaultSyncStatus(row.item_kind, row.name).nameOnlyClassName">{{ vaultSyncStatus(row.item_kind, row.name).nameOnlyLabel }}</span></td>
+	                                            <td v-if="activeTab() !== 'Host Vault'"><span v-if="vaultSyncStatus(row.item_kind, row.name).loading" class="muted">확인중</span><span v-else class="status-pill" :class="vaultSyncStatus(row.item_kind, row.name).valueOnlyClassName">{{ vaultSyncStatus(row.item_kind, row.name).valueOnlyLabel }}</span></td>
+	                                        </tr>
+	                                        <tr v-if="!vaultVisibleRows().length">
+	                                            <td :colspan="activeTab() === 'Host Vault' ? 4 : 7"><div class="empty">표시할 행이 없습니다.</div></td>
+	                                        </tr>
                                     </tbody>
                                 </table>
                             </div>
@@ -1642,27 +1641,68 @@
         return `${kind}:${name}`;
     }
 
-    function renderSyncStatus(kind, name) {
+    function emptyVaultSyncStats(total = 0) {
+        return {
+            total,
+            present: 0,
+            missing: 0,
+            nameValueMatch: 0,
+            nameOnlyMatch: 0,
+            valueOnlyMatch: 0
+        };
+    }
+
+    function vaultItemMatchStats(kind, name) {
         const item = state.vaultItemSyncStatus[vaultItemSyncKey(kind, name)];
+        if (!item) return null;
+        return item;
+    }
+
+    function renderPlacementStatus(kind, name) {
+        const item = vaultItemMatchStats(kind, name);
         if (!item) return '<span class="muted">확인중</span>';
-        if (item.total === 1 && item.matched === 1) {
-            return renderStatusPill('유일키', 'active');
+        if (item.missing === 0) {
+            return renderStatusPill(`${item.present}/${item.total} 배치`, 'active');
         }
-        const klass = item.matched === item.total ? 'active' : 'pending';
-        return renderStatusPill(`${item.matched}/${item.total} ${item.matched === item.total ? '동기화중' : '동기화안됨'}`, klass);
+        return renderStatusPill(`${item.present} 배치 / ${item.missing} 미존재`, 'pending');
+    }
+
+    function renderNameValueStatus(kind, name) {
+        const item = vaultItemMatchStats(kind, name);
+        if (!item) return '<span class="muted">확인중</span>';
+        const denominator = item.present || 1;
+        const className = item.present > 0 && item.nameValueMatch === item.present ? 'active' : 'pending';
+        return renderStatusPill(`${item.nameValueMatch}/${denominator} 일치`, className);
+    }
+
+    function renderNameOnlyStatus(kind, name) {
+        const item = vaultItemMatchStats(kind, name);
+        if (!item) return '<span class="muted">확인중</span>';
+        const className = item.nameOnlyMatch > 0 ? 'pending' : 'active';
+        return renderStatusPill(`${item.nameOnlyMatch} 값다름`, className);
+    }
+
+    function renderValueOnlyStatus(kind, name) {
+        const item = vaultItemMatchStats(kind, name);
+        if (!item) return '<span class="muted">확인중</span>';
+        const className = item.valueOnlyMatch > 0 ? 'pending' : 'active';
+        return renderStatusPill(`${item.valueOnlyMatch} 중복값`, className);
     }
 
     function vaultSyncStatus(kind, name) {
-        const item = state.vaultItemSyncStatus[vaultItemSyncKey(kind, name)];
-        if (!item) {
-            return { loading: true, label: '확인중', className: '' };
-        }
-        if (item.total === 1 && item.matched === 1) {
-            return { loading: false, label: '유일키', className: 'active' };
-        }
-        const className = item.matched === item.total ? 'active' : 'pending';
-        const label = `${item.matched}/${item.total} ${item.matched === item.total ? '동기화중' : '동기화안됨'}`;
-        return { loading: false, label, className };
+        const item = vaultItemMatchStats(kind, name);
+        if (!item) return { loading: true };
+        return {
+            loading: false,
+            placementLabel: item.missing === 0 ? `${item.present}/${item.total} 배치` : `${item.present} 배치 / ${item.missing} 미존재`,
+            placementClassName: item.missing === 0 ? 'active' : 'pending',
+            nameValueLabel: `${item.nameValueMatch}/${item.present || 1} 일치`,
+            nameValueClassName: item.present > 0 && item.nameValueMatch === item.present ? 'active' : 'pending',
+            nameOnlyLabel: `${item.nameOnlyMatch} 값다름`,
+            nameOnlyClassName: item.nameOnlyMatch > 0 ? 'pending' : 'active',
+            valueOnlyLabel: `${item.valueOnlyMatch} 중복값`,
+            valueOnlyClassName: item.valueOnlyMatch > 0 ? 'pending' : 'active'
+        };
     }
 
     function vaultTargetOptions(includeHost = true) {
@@ -2293,7 +2333,10 @@
                 { label: '종류', render: (row) => `<span class="pill ${row.item_kind === 'VE' ? 'kind-ve' : 'kind-vk'}">${escapeHTML(vaultKindLabel(row.item_kind))}</span>` },
                 { label: '키명', render: (row) => `<span>${escapeHTML(row.name)}</span>` },
                 { label: '키값', render: (row) => `<span class="code">${escapeHTML(itemIdentifier(row))}</span>` },
-                { label: '동기화', render: (row) => renderSyncStatus(row.item_kind, row.name) }
+                { label: '배치', render: (row) => renderPlacementStatus(row.item_kind, row.name) },
+                { label: '이름+값', render: (row) => renderNameValueStatus(row.item_kind, row.name) },
+                { label: '이름만', render: (row) => renderNameOnlyStatus(row.item_kind, row.name) },
+                { label: '값만', render: (row) => renderValueOnlyStatus(row.item_kind, row.name) }
             ], itemRows, (row) => {
                 const classes = [];
                 if (row.name === selectedItemName && row.item_kind === selectedItemKind) classes.push('is-selected');
@@ -3222,39 +3265,73 @@
         const total = vaults.length || 1;
         const currentVaultHash = state.selectedVault.vault_runtime_hash;
 
-        const configTasks = state.configVaultItems.map(async (item) => {
-            const currentValue = item.value;
-            let matched = currentValue === undefined ? 0 : 1;
-            await Promise.all(vaults.filter((vault) => vault.vault_runtime_hash !== currentVaultHash).map(async (vault) => {
-                try {
-                    const detail = await request('/api/agents/' + encodeURIComponent(vault.vault_runtime_hash) + '/configs/' + encodeURIComponent(item.key));
-                    if (detail && detail.value === currentValue) matched += 1;
-                } catch (_) {
-                }
-            }));
-            nextStatus[vaultItemSyncKey('VE', item.key)] = { matched, total };
-        });
+        const configInventoryByVault = {};
+        const keyInventoryByVault = {};
 
-        const keyTasks = state.vaultKeys.map(async (item) => {
-            let currentValue = null;
+        function summarizeInventory(items, currentName, currentValue, nameField) {
+            const summary = emptyVaultSyncStats(total);
+            items.forEach((rows) => {
+                const sameName = rows.find((row) => String(row[nameField] || '') === currentName);
+                if (sameName) {
+                    summary.present += 1;
+                    if (sameName.value === currentValue) {
+                        summary.nameValueMatch += 1;
+                    } else {
+                        summary.nameOnlyMatch += 1;
+                    }
+                } else {
+                    summary.missing += 1;
+                }
+                if (currentValue !== null && currentValue !== undefined && currentValue !== '' && rows.some((row) => String(row[nameField] || '') !== currentName && row.value === currentValue)) {
+                    summary.valueOnlyMatch += 1;
+                }
+            });
+            return summary;
+        }
+
+        await Promise.all(vaults.map(async (vault) => {
+            const vaultHash = vault.vault_runtime_hash;
             try {
-                const detail = await request('/api/vaults/' + encodeURIComponent(currentVaultHash) + '/keys/' + encodeURIComponent(item.name));
-                currentValue = detail && detail.value !== undefined ? detail.value : null;
+                const configData = await request('/api/agents/' + encodeURIComponent(vaultHash) + '/configs');
+                configInventoryByVault[vaultHash] = (configData.configs || []).map((item) => ({
+                    key: item.key,
+                    value: item.value
+                }));
             } catch (_) {
-                currentValue = null;
+                configInventoryByVault[vaultHash] = [];
             }
-            let matched = currentValue === null ? 0 : 1;
-            await Promise.all(vaults.filter((vault) => vault.vault_runtime_hash !== currentVaultHash).map(async (vault) => {
-                try {
-                    const detail = await request('/api/vaults/' + encodeURIComponent(vault.vault_runtime_hash) + '/keys/' + encodeURIComponent(item.name));
-                    if (detail && detail.value === currentValue) matched += 1;
-                } catch (_) {
-                }
-            }));
-            nextStatus[vaultItemSyncKey('VK', item.name)] = { matched, total };
+
+            try {
+                const keyData = await request('/api/vaults/' + encodeURIComponent(vaultHash) + '/keys');
+                const keyRows = await Promise.all((keyData.secrets || []).map(async (item) => {
+                    try {
+                        const detail = await request('/api/vaults/' + encodeURIComponent(vaultHash) + '/keys/' + encodeURIComponent(item.name));
+                        return {
+                            name: item.name,
+                            value: detail && detail.value !== undefined ? detail.value : null
+                        };
+                    } catch (_) {
+                        return null;
+                    }
+                }));
+                keyInventoryByVault[vaultHash] = keyRows.filter(Boolean);
+            } catch (_) {
+                keyInventoryByVault[vaultHash] = [];
+            }
+        }));
+
+        state.configVaultItems.forEach((item) => {
+            const inventories = vaults.map((vault) => configInventoryByVault[vault.vault_runtime_hash] || []);
+            nextStatus[vaultItemSyncKey('VE', item.key)] = summarizeInventory(inventories, item.key, item.value, 'key');
         });
 
-        await Promise.all([...configTasks, ...keyTasks]);
+        state.vaultKeys.forEach((item) => {
+            const currentRows = keyInventoryByVault[currentVaultHash] || [];
+            const currentRow = currentRows.find((row) => row.name === item.name) || null;
+            const inventories = vaults.map((vault) => keyInventoryByVault[vault.vault_runtime_hash] || []);
+            nextStatus[vaultItemSyncKey('VK', item.name)] = summarizeInventory(inventories, item.name, currentRow ? currentRow.value : null, 'name');
+        });
+
         state.vaultItemSyncStatus = nextStatus;
     }
 
@@ -4079,7 +4156,10 @@
                 settingsCenterTitle,
                 settingsRightPaneTitle,
                 scopeClass,
-                renderSyncStatus,
+                renderPlacementStatus,
+                renderNameValueStatus,
+                renderNameOnlyStatus,
+                renderValueOnlyStatus,
                 vaultSyncStatus,
                 renderConfigRelations,
                 configRelationsByScope,
