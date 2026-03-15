@@ -127,13 +127,16 @@ package:
     - |
       PACKAGE_API_URL="${VEILKEY_GITLAB_API_URL:-${CI_API_V4_URL}}"
       PACKAGE_TOKEN="${VEILKEY_GITLAB_PACKAGE_PAT:-}"
-      if [[ -z "${PACKAGE_TOKEN}" ]]; then
-        PACKAGE_TOKEN="$(printf 'protocol=http\nhost=%s\n\n' "${CI_SERVER_HOST}" | git credential fill | awk -F= '/^password=/{print $2}')"
+      PACKAGE_HEADER_NAME="JOB-TOKEN"
+      PACKAGE_HEADER_VALUE="${CI_JOB_TOKEN}"
+      if [[ -n "${PACKAGE_TOKEN}" ]]; then
+        PACKAGE_HEADER_NAME="PRIVATE-TOKEN"
+        PACKAGE_HEADER_VALUE="${PACKAGE_TOKEN}"
       fi
-      curl --fail --header "PRIVATE-TOKEN: ${PACKAGE_TOKEN}" \
+      curl --fail --header "${PACKAGE_HEADER_NAME}: ${PACKAGE_HEADER_VALUE}" \
         --upload-file "dist/${PKG_NAME}.tar.gz" \
         "${PACKAGE_API_URL}/projects/${CI_PROJECT_ID}/packages/generic/${PKG_NAME}/${PKG_VERSION}/${PKG_NAME}.tar.gz"
-      curl --fail --header "PRIVATE-TOKEN: ${PACKAGE_TOKEN}" \
+      curl --fail --header "${PACKAGE_HEADER_NAME}: ${PACKAGE_HEADER_VALUE}" \
         --upload-file "dist/${PKG_NAME}.tar.gz.sha256" \
         "${PACKAGE_API_URL}/projects/${CI_PROJECT_ID}/packages/generic/${PKG_NAME}/${PKG_VERSION}/${PKG_NAME}.tar.gz.sha256"
   artifacts:
