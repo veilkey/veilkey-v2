@@ -5,7 +5,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 )
@@ -106,9 +105,9 @@ func (rl *UnlockRateLimiter) RecordSuccess(ip string) {
 // Middleware wraps an http.HandlerFunc to enforce rate limiting.
 func (rl *UnlockRateLimiter) Middleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		clientIP := strings.Split(r.RemoteAddr, ":")[0]
-		if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-			clientIP = ip
+		clientIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if clientIP == "" {
+			clientIP = r.RemoteAddr
 		}
 
 		if blocked, remaining := rl.IsBlocked(clientIP); blocked {
