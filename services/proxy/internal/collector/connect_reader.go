@@ -24,8 +24,8 @@ type connectEvent struct {
 	UID    uint32
 	Family uint32
 	Port   uint16
-	_      uint16
 	Comm   [16]byte
+	_      uint16
 	Addr4  uint32
 	Addr6  [16]byte
 }
