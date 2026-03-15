@@ -50,14 +50,18 @@ update_repo() {
 
 verify_version_file() {
   local version_file="${REPO_ROOT}/VERSION"
-  if [[ ! -f "${version_file}" ]]; then
-    log "VERSION file not found: ${version_file}"
-    exit 1
+  local repo_version repo_revision
+  if [[ -f "${version_file}" ]]; then
+    repo_version="$(tr -d '[:space:]' < "${version_file}")"
+    if [[ "${repo_version}" != "${TARGET_VERSION}" ]]; then
+      log "repo version ${repo_version} does not match requested target ${TARGET_VERSION}"
+      exit 1
+    fi
+    return 0
   fi
-  local repo_version
-  repo_version="$(tr -d '[:space:]' < "${version_file}")"
-  if [[ "${repo_version}" != "${TARGET_VERSION}" ]]; then
-    log "repo version ${repo_version} does not match requested target ${TARGET_VERSION}"
+  repo_revision="$(git -C "${REPO_ROOT}" rev-parse --short HEAD)"
+  if [[ "${repo_revision}" != "${TARGET_VERSION}" ]]; then
+    log "VERSION file not found and repo revision ${repo_revision} does not match requested target ${TARGET_VERSION}"
     exit 1
   fi
 }

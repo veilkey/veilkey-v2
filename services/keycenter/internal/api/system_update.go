@@ -54,6 +54,15 @@ func currentProductVersion() string {
 			}
 		}
 	}
+	for _, dir := range []string{".", "..", filepath.Join("..", ".."), filepath.Join("..", "..", "..")} {
+		cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
+		cmd.Dir = dir
+		if out, err := cmd.Output(); err == nil {
+			if value := strings.TrimSpace(string(out)); value != "" {
+				return value
+			}
+		}
+	}
 	return "unknown"
 }
 
