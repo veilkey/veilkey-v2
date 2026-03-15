@@ -25,7 +25,7 @@ resolve_target() {
   local vmid
   vmid="$(pct list 2>/dev/null | awk -v name="$TARGET_NAME" 'NR>1 && $NF==name{print $1; exit}')"
   if [[ -n "$vmid" ]]; then
-    printf '%s' "$vmid"
+    RESOLVED_VMID="$vmid"
     return 0
   fi
 
@@ -34,7 +34,7 @@ resolve_target() {
     if [[ -n "$vmid" ]]; then
       TARGET_NAME="veilkey-allinone"
       SERVICE_NAME="veilkey-server"
-      printf '%s' "$vmid"
+      RESOLVED_VMID="$vmid"
       return 0
     fi
   fi
@@ -47,7 +47,8 @@ mkdir -p "$(dirname "$BUILD_BIN")"
 CGO_ENABLED=1 go build -o "$BUILD_BIN" ./cmd/
 build_sha="$(sha256sum "$BUILD_BIN" | awk '{print $1}')"
 
-vmid="$(resolve_target)"
+resolve_target
+vmid="${RESOLVED_VMID:-}"
 [[ -n "$vmid" ]] || { echo "Error: target LXC not found: $TARGET_NAME" >&2; exit 1; }
 
 service_unit="$(lxc_exec "$vmid" "systemctl cat ${SERVICE_NAME}.service" 2>/dev/null)"
