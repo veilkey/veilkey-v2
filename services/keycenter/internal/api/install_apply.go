@@ -797,7 +797,7 @@ func (s *Server) runInstallApply(cfg *db.UIConfig, validation installValidationR
 		LastRunID:      runID,
 	}
 	run, loadErr := s.db.GetInstallRun(runID)
-	if loadErr == nil {
+	if loadErr == nil && run != nil {
 		run.Status = "succeeded"
 		run.OutputTail = outputTail
 		run.FinishedAt = &finishedAt
@@ -810,7 +810,7 @@ func (s *Server) runInstallApply(cfg *db.UIConfig, validation installValidationR
 		} else {
 			next.LastError = err.Error()
 		}
-		if loadErr == nil {
+		if loadErr == nil && run != nil {
 			run.Status = "failed"
 			run.LastError = next.LastError
 			run.OutputTail = outputTail
@@ -822,7 +822,7 @@ func (s *Server) runInstallApply(cfg *db.UIConfig, validation installValidationR
 	}
 
 	_ = s.markInstallApplyCompleted()
-	if loadErr == nil {
+	if loadErr == nil && run != nil {
 		_ = s.db.SaveInstallRun(run)
 	}
 	s.setInstallApplyState(next)
