@@ -113,9 +113,16 @@ async function request(path, options = {}) {
     }
     if (!resp.ok) {
         const message = data && data.error ? data.error : (text || ('HTTP ' + resp.status));
-        throw new Error(message);
+        const err = new Error(message);
+        err.status = resp.status;
+        err.path = path;
+        throw err;
     }
     return data;
+}
+
+function isIgnorableDetailError(err) {
+    return err && (err.status === 403 || err.status === 404);
 }
 
 function setBusy(key, value) {
@@ -1570,6 +1577,8 @@ async function loadSelectedVaultKeys() {
     state.vaultKeys = data.secrets || [];
     if (state.vaultKeys.length && (!state.selectedKey || !state.vaultKeys.some((item) => item.name === state.selectedKey.name))) {
         state.selectedKey = state.vaultKeys[0];
+    } else if (!state.vaultKeys.length || !state.vaultKeys.some((item) => item.name === state.selectedKey?.name)) {
+        state.selectedKey = null;
     }
 }
 
@@ -1578,7 +1587,12 @@ async function loadSelectedKeyDetail() {
         state.keyDetail = null;
         return;
     }
-    state.keyDetail = await request('/api/vaults/' + encodeURIComponent(state.selectedVault.vault_runtime_hash) + '/keys/' + encodeURIComponent(state.selectedKey.name));
+    try {
+        state.keyDetail = await request('/api/vaults/' + encodeURIComponent(state.selectedVault.vault_runtime_hash) + '/keys/' + encodeURIComponent(state.selectedKey.name));
+    } catch (err) {
+        if (!isIgnorableDetailError(err)) throw err;
+        state.keyDetail = null;
+    }
 }
 
 async function loadSelectedKeySummary() {
@@ -1586,7 +1600,12 @@ async function loadSelectedKeySummary() {
         state.keySummary = null;
         return;
     }
-    state.keySummary = await request('/api/vaults/' + encodeURIComponent(state.selectedVault.vault_runtime_hash) + '/keys/' + encodeURIComponent(state.selectedKey.name) + '/summary');
+    try {
+        state.keySummary = await request('/api/vaults/' + encodeURIComponent(state.selectedVault.vault_runtime_hash) + '/keys/' + encodeURIComponent(state.selectedKey.name) + '/summary');
+    } catch (err) {
+        if (!isIgnorableDetailError(err)) throw err;
+        state.keySummary = null;
+    }
 }
 
 async function loadSelectedKeyBindings() {
@@ -1594,8 +1613,13 @@ async function loadSelectedKeyBindings() {
         state.keyBindings = [];
         return;
     }
-    const data = await request('/api/vaults/' + encodeURIComponent(state.selectedVault.vault_runtime_hash) + '/keys/' + encodeURIComponent(state.selectedKey.name) + '/bindings');
-    state.keyBindings = data.bindings || [];
+    try {
+        const data = await request('/api/vaults/' + encodeURIComponent(state.selectedVault.vault_runtime_hash) + '/keys/' + encodeURIComponent(state.selectedKey.name) + '/bindings');
+        state.keyBindings = data.bindings || [];
+    } catch (err) {
+        if (!isIgnorableDetailError(err)) throw err;
+        state.keyBindings = [];
+    }
 }
 
 async function loadVaultAudit() {
@@ -1643,8 +1667,10 @@ async function loadConfigsForVault() {
     }
     const data = await request('/api/agents/' + encodeURIComponent(state.selectedConfigVault) + '/configs');
     state.configVaultItems = data.configs || [];
-    if (state.configVaultItems.length && !state.selectedConfigKey) {
+    if (state.configVaultItems.length && (!state.selectedConfigKey || !state.configVaultItems.some((item) => item.key === state.selectedConfigKey))) {
         state.selectedConfigKey = state.configVaultItems[0].key;
+    } else if (!state.configVaultItems.length || !state.configVaultItems.some((item) => item.key === state.selectedConfigKey)) {
+        state.selectedConfigKey = null;
     }
 }
 
@@ -1653,7 +1679,12 @@ async function loadSelectedConfigDetail() {
         state.configDetail = null;
         return;
     }
-    state.configDetail = await request('/api/agents/' + encodeURIComponent(state.selectedConfigVault) + '/configs/' + encodeURIComponent(state.selectedConfigKey));
+    try {
+        state.configDetail = await request('/api/agents/' + encodeURIComponent(state.selectedConfigVault) + '/configs/' + encodeURIComponent(state.selectedConfigKey));
+    } catch (err) {
+        if (!isIgnorableDetailError(err)) throw err;
+        state.configDetail = null;
+    }
 }
 
 async function loadConfigRelations() {
@@ -1680,14 +1711,18 @@ async function loadHostVaultKeys() {
     state.hostVaultKeys = data.secrets || [];
     if (state.hostVaultKeys.length && (!state.hostSelectedKey || !state.hostVaultKeys.some((item) => item.name === state.hostSelectedKey.name))) {
         state.hostSelectedKey = state.hostVaultKeys[0];
+    } else if (!state.hostVaultKeys.length || !state.hostVaultKeys.some((item) => item.name === state.hostSelectedKey?.name)) {
+        state.hostSelectedKey = null;
     }
 }
 
 async function loadHostVaultConfigs() {
     const data = await request('/api/host-vault/configs');
     state.hostVaultConfigs = data.configs || [];
-    if (state.hostVaultConfigs.length && !state.hostSelectedConfigKey) {
+    if (state.hostVaultConfigs.length && (!state.hostSelectedConfigKey || !state.hostVaultConfigs.some((item) => item.key === state.hostSelectedConfigKey))) {
         state.hostSelectedConfigKey = state.hostVaultConfigs[0].key;
+    } else if (!state.hostVaultConfigs.length || !state.hostVaultConfigs.some((item) => item.key === state.hostSelectedConfigKey)) {
+        state.hostSelectedConfigKey = null;
     }
 }
 
@@ -1696,7 +1731,12 @@ async function loadHostVaultKeyDetail() {
         state.hostKeyDetail = null;
         return;
     }
-    state.hostKeyDetail = await request('/api/host-vault/keys/' + encodeURIComponent(state.hostSelectedKey.name));
+    try {
+        state.hostKeyDetail = await request('/api/host-vault/keys/' + encodeURIComponent(state.hostSelectedKey.name));
+    } catch (err) {
+        if (!isIgnorableDetailError(err)) throw err;
+        state.hostKeyDetail = null;
+    }
 }
 
 async function loadHostVaultConfigDetail() {
@@ -1704,7 +1744,12 @@ async function loadHostVaultConfigDetail() {
         state.hostConfigDetail = null;
         return;
     }
-    state.hostConfigDetail = await request('/api/host-vault/configs/' + encodeURIComponent(state.hostSelectedConfigKey));
+    try {
+        state.hostConfigDetail = await request('/api/host-vault/configs/' + encodeURIComponent(state.hostSelectedConfigKey));
+    } catch (err) {
+        if (!isIgnorableDetailError(err)) throw err;
+        state.hostConfigDetail = null;
+    }
 }
 
 async function loadVaultItemSyncStatus() {
