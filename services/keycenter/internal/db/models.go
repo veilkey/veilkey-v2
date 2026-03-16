@@ -352,6 +352,35 @@ type Config struct {
 
 func (Config) TableName() string { return "configs" }
 
+// BulkApplyTemplate — bulk_apply_templates 테이블
+type BulkApplyTemplate struct {
+	TemplateID       string    `gorm:"primaryKey;column:template_id" json:"template_id"`
+	VaultRuntimeHash string    `gorm:"column:vault_runtime_hash;not null;index:idx_bulk_apply_templates_vault_name,priority:1" json:"vault_runtime_hash"`
+	Name             string    `gorm:"column:name;not null;index:idx_bulk_apply_templates_vault_name,priority:2" json:"name"`
+	Format           string    `gorm:"column:format;not null;default:env" json:"format"`
+	TargetPath       string    `gorm:"column:target_path;not null;default:''" json:"target_path"`
+	Body             string    `gorm:"column:body;type:text;not null;default:''" json:"body"`
+	Hook             string    `gorm:"column:hook;not null;default:''" json:"hook"`
+	Enabled          bool      `gorm:"column:enabled;not null;default:true" json:"enabled"`
+	CreatedAt        time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt        time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+}
+
+func (BulkApplyTemplate) TableName() string { return "bulk_apply_templates" }
+
+// BulkApplyRun — bulk_apply_runs 테이블
+type BulkApplyRun struct {
+	RunID            string    `gorm:"primaryKey;column:run_id" json:"run_id"`
+	VaultRuntimeHash string    `gorm:"column:vault_runtime_hash;not null;index:idx_bulk_apply_runs_vault_workflow_created,priority:1" json:"vault_runtime_hash"`
+	WorkflowName     string    `gorm:"column:workflow_name;not null;index:idx_bulk_apply_runs_vault_workflow_created,priority:2" json:"workflow_name"`
+	RunKind          string    `gorm:"column:run_kind;not null;index" json:"run_kind"`
+	Status           string    `gorm:"column:status;not null;index" json:"status"`
+	SummaryJSON      string    `gorm:"column:summary_json;type:text;not null;default:'{}'" json:"summary_json"`
+	CreatedAt        time.Time `gorm:"column:created_at;autoCreateTime;index:idx_bulk_apply_runs_vault_workflow_created,priority:3,sort:desc" json:"created_at"`
+}
+
+func (BulkApplyRun) TableName() string { return "bulk_apply_runs" }
+
 // Migration — migrations 테이블 (레거시 호환)
 type Migration struct {
 	Version   int       `gorm:"primaryKey;column:version" json:"version"`

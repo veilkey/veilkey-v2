@@ -38,6 +38,7 @@ func (s *Server) SetupAPIRoutes(mux *http.ServeMux) {
 	} {
 		mux.HandleFunc("GET "+path, s.handleOperatorShellEntry)
 	}
+	mux.HandleFunc("GET /vaults/{vault}", s.handleLegacyVaultRoute)
 	mux.HandleFunc("GET /vaults/local/{vault}", s.handleOperatorShellEntry)
 
 	mux.HandleFunc("GET /api/status", s.requireUnlocked(s.handleStatus))
@@ -92,4 +93,17 @@ func (s *Server) SetupAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dashboard", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusMovedPermanently)
 	})
+}
+
+func (s *Server) handleLegacyVaultRoute(w http.ResponseWriter, r *http.Request) {
+	vault := r.PathValue("vault")
+	if vault == "" {
+		http.NotFound(w, r)
+		return
+	}
+	target := "/vaults/local/" + vault
+	if raw := r.URL.RawQuery; raw != "" {
+		target += "?" + raw
+	}
+	http.Redirect(w, r, target, http.StatusMovedPermanently)
 }

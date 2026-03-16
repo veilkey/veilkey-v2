@@ -54,6 +54,12 @@ type cipherSecret struct {
 	Nonce      []byte
 }
 
+type resolvedAgentSecret struct {
+	Name  string `json:"name"`
+	Ref   string `json:"ref"`
+	Value string `json:"value"`
+}
+
 type cipherSecretField struct {
 	Name       string
 	FieldKey   string
@@ -210,4 +216,22 @@ func (s *Server) fetchAgentFieldCiphertext(agentURL, ref, fieldKey string) (*cip
 		Ciphertext: data.Ciphertext,
 		Nonce:      data.Nonce,
 	}, nil
+}
+
+func (s *Server) fetchAgentResolvedValue(agentURL, ref string) (*resolvedAgentSecret, error) {
+	resp, err := http.Get(agentURL + "/api/resolve/" + ref)
+	if err != nil {
+		return nil, fmt.Errorf("agent unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("agent returned %d", resp.StatusCode)
+	}
+
+	var data resolvedAgentSecret
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, fmt.Errorf("invalid agent response: %w", err)
+	}
+	return &data, nil
 }

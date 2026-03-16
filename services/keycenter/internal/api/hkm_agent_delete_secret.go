@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -18,37 +17,22 @@ func (s *Server) handleAgentDeleteSecret(w http.ResponseWriter, r *http.Request)
 	}
 
 	var trackedRef string
-	metaResp, err := s.httpClient.Get(agent.URL() + "/api/secrets/meta/" + name)
-	if err == nil {
-		defer metaResp.Body.Close()
-		if metaResp.StatusCode == http.StatusOK {
-			var meta struct {
-				Ref   string `json:"ref"`
-				Scope string `json:"scope"`
-			}
-			body, readErr := io.ReadAll(metaResp.Body)
-			if readErr == nil && json.Unmarshal(body, &meta) == nil && meta.Ref != "" {
-				if meta.Scope == "" {
-					meta.Scope = "LOCAL"
-				}
-				trackedRef = "VK:" + meta.Scope + ":" + meta.Ref
-			}
+	meta, status, _, err := s.fetchAgentSecretMeta(agent.URL(), name)
+	if err == nil && status == http.StatusOK && meta != nil && meta.Ref != "" {
+		if err := normalizeMeta(meta); err == nil {
+			trackedRef = meta.Token
 		}
 	}
 
 	req, _ := http.NewRequest("DELETE", agent.URL()+"/api/secrets/"+name, nil)
-	resp, err := s.httpClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		s.respondError(w, http.StatusBadGateway, "agent unreachable: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		s.respondError(w, http.StatusBadGateway, "failed to read agent response body")
-		return
-	}
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode == http.StatusOK && trackedRef != "" {
 		_ = s.deleteTrackedRef(trackedRef)
 		if metaRefParts := strings.Split(trackedRef, ":"); len(metaRefParts) == 3 {

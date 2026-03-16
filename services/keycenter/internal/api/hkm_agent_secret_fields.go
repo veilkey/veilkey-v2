@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 
@@ -35,31 +34,23 @@ func (s *Server) handleAgentSaveSecretFields(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	metaResp, err := s.httpClient.Get(agent.URL() + "/api/secrets/meta/" + name)
+	meta, statusCode, body, err := s.fetchAgentSecretMeta(agent.URL(), name)
 	if err != nil {
 		s.respondError(w, http.StatusBadGateway, "agent unreachable: "+err.Error())
 		return
 	}
-	defer metaResp.Body.Close()
-	if metaResp.StatusCode != http.StatusOK {
-		body, readErr := io.ReadAll(metaResp.Body)
-		if readErr != nil {
-			body = []byte(`{"error":"(unreadable body)"}`)
-		}
+	if statusCode != http.StatusOK {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(metaResp.StatusCode)
+		w.WriteHeader(statusCode)
 		w.Write(body)
 		return
 	}
-
-	var meta struct {
-		Name   string `json:"name"`
-		Ref    string `json:"ref"`
-		Scope  string `json:"scope"`
-		Status string `json:"status"`
+	if meta == nil || meta.Ref == "" {
+		s.respondError(w, http.StatusInternalServerError, "secret has no ref")
+		return
 	}
-	if err := json.NewDecoder(metaResp.Body).Decode(&meta); err != nil {
-		s.respondError(w, http.StatusBadGateway, "invalid agent metadata response")
+	if err := normalizeMeta(meta); err != nil {
+		s.respondError(w, http.StatusBadGateway, "agent returned unsupported secret scope: "+err.Error())
 		return
 	}
 	if meta.Status != "active" || (meta.Scope != "LOCAL" && meta.Scope != "EXTERNAL") {
@@ -95,26 +86,18 @@ func (s *Server) handleAgentSaveSecretFields(w http.ResponseWriter, r *http.Requ
 		responseFields = append(responseFields, map[string]string{"key": field.Key, "type": fieldType})
 	}
 
-	body, err := json.Marshal(map[string]interface{}{
+	reqBody, _ := json.Marshal(map[string]interface{}{
 		"name":   name,
 		"fields": payloadFields,
 	})
-	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, "failed to marshal request body")
-		return
-	}
-	resp, err := s.httpClient.Post(agent.URL()+"/api/secrets/fields", "application/json", bytes.NewReader(body))
+	resp, err := http.Post(agent.URL()+"/api/secrets/fields", "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		s.respondError(w, http.StatusBadGateway, "agent unreachable: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		s.respondError(w, http.StatusBadGateway, "failed to read agent response body")
-		return
-	}
+	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
@@ -124,18 +107,16 @@ func (s *Server) handleAgentSaveSecretFields(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{
 		"name":               name,
-		"ref":                meta.Ref,
-		"token":              "VK:" + meta.Scope + ":" + meta.Ref,
-		"scope":              meta.Scope,
-		"fields":             responseFields,
+			"ref":                meta.Ref,
+			"token":              meta.Token,
+			"scope":              meta.Scope,
+			"fields":             responseFields,
 		"saved":              len(responseFields),
 		"vault":              agent.Label,
 		"vault_runtime_hash": agent.AgentHash,
-	}); err != nil {
-		log.Printf("failed to encode response: %v", err)
-	}
+	})
 }
 
 func (s *Server) handleAgentGetSecretField(w http.ResponseWriter, r *http.Request) {
@@ -148,38 +129,27 @@ func (s *Server) handleAgentGetSecretField(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	metaResp, err := s.httpClient.Get(agent.URL() + "/api/secrets/meta/" + name)
+	meta, statusCode, body, err := s.fetchAgentSecretMeta(agent.URL(), name)
 	if err != nil {
 		s.respondError(w, http.StatusBadGateway, "agent unreachable: "+err.Error())
 		return
 	}
-	defer metaResp.Body.Close()
-	if metaResp.StatusCode != http.StatusOK {
-		body, readErr := io.ReadAll(metaResp.Body)
-		if readErr != nil {
-			body = []byte(`{"error":"(unreadable body)"}`)
-		}
+	if statusCode != http.StatusOK {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(metaResp.StatusCode)
+		w.WriteHeader(statusCode)
 		w.Write(body)
 		return
 	}
-
-	var secretData struct {
-		Ref    string `json:"ref"`
-		Scope  string `json:"scope"`
-		Status string `json:"status"`
-	}
-	if err := json.NewDecoder(metaResp.Body).Decode(&secretData); err != nil {
-		s.respondError(w, http.StatusBadGateway, "invalid agent response")
-		return
-	}
-	if secretData.Ref == "" {
+	if meta == nil || meta.Ref == "" {
 		s.respondError(w, http.StatusInternalServerError, "secret has no ref")
 		return
 	}
+	if err := normalizeMeta(meta); err != nil {
+		s.respondError(w, http.StatusBadGateway, "agent returned unsupported secret scope: "+err.Error())
+		return
+	}
 
-	cipher, err := s.fetchAgentFieldCiphertext(agent.URL(), secretData.Ref, fieldKey)
+	cipher, err := s.fetchAgentFieldCiphertext(agent.URL(), meta.Ref, fieldKey)
 	if err != nil {
 		if strings.Contains(err.Error(), "agent returned 404") {
 			s.respondError(w, http.StatusNotFound, "secret field not found")
@@ -205,10 +175,10 @@ func (s *Server) handleAgentGetSecretField(w http.ResponseWriter, r *http.Reques
 		"field":              fieldKey,
 		"type":               cipher.FieldType,
 		"value":              string(plaintext),
-		"ref":                secretData.Ref,
-		"token":              fmt.Sprintf("VK:%s:%s", secretData.Scope, secretData.Ref),
-		"scope":              secretData.Scope,
-		"status":             secretData.Status,
+		"ref":                meta.Ref,
+		"token":              fmt.Sprintf("VK:%s:%s", meta.Scope, meta.Ref),
+		"scope":              meta.Scope,
+		"status":             meta.Status,
 		"vault":              agent.Label,
 		"vault_runtime_hash": agent.AgentHash,
 	})
@@ -229,18 +199,14 @@ func (s *Server) handleAgentDeleteSecretField(w http.ResponseWriter, r *http.Req
 		s.respondError(w, http.StatusInternalServerError, "failed to build delete request")
 		return
 	}
-	resp, err := s.httpClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		s.respondError(w, http.StatusBadGateway, "agent unreachable: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		s.respondError(w, http.StatusBadGateway, "failed to read agent response body")
-		return
-	}
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)

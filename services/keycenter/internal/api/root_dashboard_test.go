@@ -22,8 +22,8 @@ func TestRootServesDashboardWhenUnlocked(t *testing.T) {
 	if !strings.Contains(body, "VeilKey KeyCenter") {
 		t.Fatalf("expected dashboard HTML, got %q", body)
 	}
-	if !strings.Contains(body, "Operations Console (Variation 9)") || !strings.Contains(body, "data-app=\"keycenter-admin-shell\"") || !strings.Contains(body, "Vaults") || !strings.Contains(body, "Functions") {
-		t.Fatalf("expected root dashboard to serve the admin-vue baseline")
+	if !strings.Contains(body, "Operations Console (Variation 9)") || !strings.Contains(body, "<div id=\"app\"></div>") || !strings.Contains(body, "/assets/") {
+		t.Fatalf("expected root dashboard to serve the built admin shell")
 	}
 	if strings.Contains(body, "Unlock first to enter the operator console.") {
 		t.Fatalf("expected unlocked root to skip locked landing")
@@ -118,8 +118,8 @@ func TestAdminVuePreviewServesHTML(t *testing.T) {
 	if !strings.Contains(body, "VeilKey KeyCenter") {
 		t.Fatalf("expected preview title, got %q", body)
 	}
-	if !strings.Contains(body, "Operations Console (Variation 9)") || !strings.Contains(body, "data-app=\"keycenter-admin-shell\"") || !strings.Contains(body, "Vaults") || !strings.Contains(body, "Functions") {
-		t.Fatalf("expected admin console sections in preview HTML")
+	if !strings.Contains(body, "Operations Console (Variation 9)") || !strings.Contains(body, "<div id=\"app\"></div>") || !strings.Contains(body, "/assets/") {
+		t.Fatalf("expected built admin shell in preview HTML")
 	}
 }
 
@@ -149,9 +149,24 @@ func TestOperatorShellRoutesServeHTML(t *testing.T) {
 			t.Fatalf("%s: expected 200, got %d", path, w.Code)
 		}
 		body := w.Body.String()
-		if !strings.Contains(body, "Operations Console (Variation 9)") || !strings.Contains(body, "data-app=\"keycenter-admin-shell\"") {
+		if !strings.Contains(body, "Operations Console (Variation 9)") || !strings.Contains(body, "<div id=\"app\"></div>") || !strings.Contains(body, "/assets/") {
 			t.Fatalf("%s: expected admin shell HTML", path)
 		}
+	}
+}
+
+func TestLegacyVaultRouteRedirectsToLocalVaultShell(t *testing.T) {
+	_, handler := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/vaults/861f91ae?tab=items", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMovedPermanently {
+		t.Fatalf("expected 301, got %d", w.Code)
+	}
+	if got := w.Header().Get("Location"); got != "/vaults/local/861f91ae?tab=items" {
+		t.Fatalf("expected redirect to local vault shell, got %q", got)
 	}
 }
 

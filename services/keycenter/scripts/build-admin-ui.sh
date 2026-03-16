@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVICE_ROOT="$(cd "$SELF_DIR/.." && pwd)"
+FRONTEND_DIR="$SERVICE_ROOT/frontend/admin"
+OUTPUT_DIR="$SERVICE_ROOT/internal/api/ui_dist"
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "npm is required to build the admin UI" >&2
+  exit 1
+fi
+
+cd "$FRONTEND_DIR"
+
+if [ -f package-lock.json ]; then
+  npm ci
+else
+  npm install
+fi
+
+npm run build
+
+rm -rf "$OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR"
+cp -R "$FRONTEND_DIR/dist/." "$OUTPUT_DIR/"

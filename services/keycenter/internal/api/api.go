@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -48,6 +49,7 @@ type Server struct {
 	timeouts      Timeouts
 	unlockLimiter *UnlockRateLimiter
 	httpClient    *http.Client
+	bulkApplyDir  string
 	updateMu      sync.RWMutex
 	updateState   systemUpdateState
 }
@@ -98,7 +100,17 @@ func NewServer(database *db.DB, kek []byte, trustedIPs []string) *Server {
 		ipMap[entry] = true
 	}
 	locked := kek == nil
-	srv := &Server{db: database, kek: kek, locked: locked, trustedIPs: ipMap, trustedCIDRs: cidrs, timeouts: DefaultTimeouts(), unlockLimiter: NewUnlockRateLimiter(), httpClient: InitHTTPClientFromEnv()}
+	srv := &Server{
+		db:            database,
+		kek:           kek,
+		locked:        locked,
+		trustedIPs:    ipMap,
+		trustedCIDRs:  cidrs,
+		timeouts:      DefaultTimeouts(),
+		unlockLimiter: NewUnlockRateLimiter(),
+		httpClient:    InitHTTPClientFromEnv(),
+		bulkApplyDir:  strings.TrimSpace(os.Getenv("VEILKEY_BULK_APPLY_DIR")),
+	}
 	if database.HasNodeInfo() {
 		if info, err := database.GetNodeInfo(); err == nil {
 			srv.identity = &NodeIdentity{
@@ -115,6 +127,17 @@ func NewServer(database *db.DB, kek []byte, trustedIPs []string) *Server {
 // SetTimeouts overrides default timeout settings
 func (s *Server) SetTimeouts(t Timeouts) {
 	s.timeouts = t
+}
+
+func (s *Server) SetBulkApplyDir(dir string) {
+	s.bulkApplyDir = strings.TrimSpace(dir)
+}
+
+func (s *Server) BulkApplyDir() string {
+	if strings.TrimSpace(s.bulkApplyDir) != "" {
+		return strings.TrimSpace(s.bulkApplyDir)
+	}
+	return "/etc/veilkey/bulk-apply"
 }
 
 func (s *Server) SetSalt(salt []byte) {

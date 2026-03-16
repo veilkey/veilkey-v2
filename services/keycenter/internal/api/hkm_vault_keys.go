@@ -3,9 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"slices"
 	"strings"
@@ -26,6 +24,29 @@ type agentSecretMeta struct {
 		Key  string `json:"key"`
 		Type string `json:"type"`
 	} `json:"fields"`
+}
+
+func normalizeFallbackSecretRef(raw string) (ref string, scope string, status string) {
+	scope = "TEMP"
+	status = "temp"
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", scope, status
+	}
+	parts := strings.Split(raw, ":")
+	if len(parts) == 3 && strings.EqualFold(parts[0], "VK") {
+		scope = strings.ToUpper(strings.TrimSpace(parts[1]))
+		ref = strings.TrimSpace(parts[2])
+		switch scope {
+		case "LOCAL", "EXTERNAL":
+			status = "active"
+		default:
+			scope = "TEMP"
+			status = "temp"
+		}
+		return ref, scope, status
+	}
+	return raw, scope, status
 }
 
 func vaultRespFromAgent(a *db.Agent) map[string]any {
@@ -84,11 +105,7 @@ func encodeStringArrayJSON(values []string) string {
 	if values == nil {
 		values = []string{}
 	}
-	encoded, err := json.Marshal(values)
-	if err != nil {
-		log.Printf("failed to marshal string array: %v", err)
-		return "[]"
-	}
+	encoded, _ := json.Marshal(values)
 	return string(encoded)
 }
 
@@ -185,15 +202,87 @@ func (s *Server) handleVaultList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) fetchAgentSecretMeta(agentURL, name string) (*agentSecretMeta, int, []byte, error) {
-	resp, err := s.httpClient.Get(agentURL + "/api/secrets/meta/" + name)
+	resp, err := http.Get(agentURL + "/api/secrets/meta/" + name)
 	if err != nil {
 		return nil, 0, nil, err
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, 0, nil, fmt.Errorf("failed to read agent response: %w", err)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusNotFound {
+		fallbackResp, err := http.Get(agentURL + "/api/secrets/" + name)
+		if err != nil {
+			return nil, 0, nil, err
+		}
+		defer fallbackResp.Body.Close()
+
+		fallbackBody, _ := io.ReadAll(fallbackResp.Body)
+		if fallbackResp.StatusCode == http.StatusOK {
+			var secret struct {
+				Name   string `json:"name"`
+				Ref    string `json:"ref"`
+				Scope  string `json:"scope"`
+				Status string `json:"status"`
+			}
+			if err := json.Unmarshal(fallbackBody, &secret); err == nil && strings.TrimSpace(secret.Ref) != "" {
+				ref, scope, status := normalizeFallbackSecretRef(secret.Ref)
+				if strings.TrimSpace(secret.Scope) != "" || strings.TrimSpace(secret.Status) != "" {
+					scope, status, err = normalizeScopeStatus("VK", secret.Scope, secret.Status, "TEMP")
+					if err != nil {
+						return nil, 0, nil, err
+					}
+				}
+				resolvedName := secret.Name
+				if strings.TrimSpace(resolvedName) == "" {
+					resolvedName = name
+				}
+				return &agentSecretMeta{
+					Name:   resolvedName,
+					Ref:    ref,
+					Scope:  scope,
+					Status: status,
+				}, http.StatusOK, fallbackBody, nil
+			}
+		}
+
+		listResp, err := http.Get(agentURL + "/api/secrets")
+		if err != nil {
+			return nil, fallbackResp.StatusCode, fallbackBody, nil
+		}
+		defer listResp.Body.Close()
+
+		listBody, _ := io.ReadAll(listResp.Body)
+		if listResp.StatusCode == http.StatusOK {
+			var listed struct {
+				Secrets []struct {
+					Name   string `json:"name"`
+					Ref    string `json:"ref"`
+					Scope  string `json:"scope"`
+					Status string `json:"status"`
+				} `json:"secrets"`
+			}
+			if err := json.Unmarshal(listBody, &listed); err == nil {
+				for _, item := range listed.Secrets {
+					if item.Name != name {
+						continue
+					}
+					ref, scope, status := normalizeFallbackSecretRef(item.Ref)
+					if strings.TrimSpace(item.Scope) != "" || strings.TrimSpace(item.Status) != "" {
+						scope, status, err = normalizeScopeStatus("VK", item.Scope, item.Status, "TEMP")
+						if err != nil {
+							return nil, 0, nil, err
+						}
+					}
+					return &agentSecretMeta{
+						Name:   item.Name,
+						Ref:    ref,
+						Scope:  scope,
+						Status: status,
+					}, http.StatusOK, listBody, nil
+				}
+			}
+		}
+		return nil, fallbackResp.StatusCode, fallbackBody, nil
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, resp.StatusCode, body, nil
@@ -916,14 +1005,10 @@ func (s *Server) handleVaultKeyUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.SetPathValue("agent", r.PathValue("vault"))
-	payload, err := json.Marshal(map[string]string{
+	payload, _ := json.Marshal(map[string]string{
 		"name":  name,
 		"value": req.Value,
 	})
-	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, "failed to marshal request body")
-		return
-	}
 	r.Body = ioNopCloser{bytes.NewReader(payload)}
 	r.ContentLength = int64(len(payload))
 	r.Header.Set("Content-Type", "application/json")
@@ -1013,17 +1098,13 @@ func (s *Server) handleVaultKeyFieldUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	r.SetPathValue("agent", r.PathValue("vault"))
-	payload, err := json.Marshal(map[string]any{
+	payload, _ := json.Marshal(map[string]any{
 		"fields": []map[string]string{{
 			"key":   fieldKey,
 			"type":  req.Type,
 			"value": req.Value,
 		}},
 	})
-	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, "failed to marshal request body")
-		return
-	}
 	r.Body = ioNopCloser{bytes.NewReader(payload)}
 	r.ContentLength = int64(len(payload))
 	r.Header.Set("Content-Type", "application/json")

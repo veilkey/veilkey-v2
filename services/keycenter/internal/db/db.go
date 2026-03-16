@@ -48,6 +48,8 @@ func (d *DB) migrate() error {
 		&AdminSession{},
 		&UIConfig{},
 		&Config{},
+		&BulkApplyTemplate{},
+		&BulkApplyRun{},
 	); err != nil {
 		return err
 	}

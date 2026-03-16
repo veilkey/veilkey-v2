@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 )
 
 func (s *Server) handleAgentSecrets(w http.ResponseWriter, r *http.Request) {
@@ -36,15 +37,20 @@ func (s *Server) handleAgentSecrets(w http.ResponseWriter, r *http.Request) {
 					if ref, ok := sec["ref"].(string); ok && ref != "" {
 						scope, _ := sec["scope"].(string)
 						status, _ := sec["status"].(string)
+						canonicalRef, fallbackScope, fallbackStatus := normalizeFallbackSecretRef(ref)
+						if strings.TrimSpace(scope) == "" && strings.TrimSpace(status) == "" {
+							scope, status = fallbackScope, fallbackStatus
+						}
 						scope, status, err = normalizeScopeStatus("VK", scope, status, "TEMP")
 						if err != nil {
 							s.respondError(w, http.StatusBadGateway, "agent returned unsupported secret scope: "+err.Error())
 							return
 						}
-						sec["token"] = "VK:" + scope + ":" + ref
+						sec["ref"] = canonicalRef
+						sec["token"] = "VK:" + scope + ":" + canonicalRef
 						sec["scope"] = scope
 						sec["status"] = status
-						_ = s.upsertTrackedRef("VK:"+scope+":"+ref, agent.KeyVersion, status, agent.AgentHash)
+						_ = s.upsertTrackedRef("VK:"+scope+":"+canonicalRef, agent.KeyVersion, status, agent.AgentHash)
 					}
 				}
 			}

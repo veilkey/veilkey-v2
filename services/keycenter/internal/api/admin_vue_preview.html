@@ -1596,13 +1596,19 @@
         return entry ? entry.path : '/';
     }
 
-    function applyRoute(pathname) {
+    function applyRoute(locationLike) {
+        const pathname = typeof locationLike === 'string' ? locationLike : locationLike.pathname;
+        const search = typeof locationLike === 'string' ? '' : locationLike.search;
+        const params = new URLSearchParams(search || '');
         const normalized = pathname !== '/' && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
         const localVaultMatch = normalized.match(/^\/vaults\/local(?:\/([^/]+))?$/);
         if (localVaultMatch) {
             state.activePage = 'vaults';
-            state.activeTabByPage.vaults = '키 / 환경값';
             state.routeSelectedVaultHash = localVaultMatch[1] ? decodeURIComponent(localVaultMatch[1]) : null;
+            const tab = params.get('tab') || 'items';
+            state.activeTabByPage.vaults = tab === 'functions' ? '함수' : tab === 'bulk-apply' ? '일괄변경' : '키 / 환경값';
+            state.bulkApplyView = params.get('view') || 'items';
+            state.routeSelectedFunctionName = null;
             return;
         }
         const matched = normalized === '/' ? { page: 'vaults', tab: '전체 볼트' } : routeByPath[normalized];

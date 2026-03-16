@@ -4,7 +4,6 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -13,15 +12,26 @@ import (
 var embeddedAssets embed.FS
 
 func (s *Server) assetHandler() http.Handler {
-	if devDir := strings.TrimSpace(os.Getenv("VEILKEY_UI_DEV_DIR")); devDir != "" {
-		assetsDir := filepath.Join(devDir, "assets")
-		if info, err := os.Stat(assetsDir); err == nil && info.IsDir() {
-			return http.StripPrefix("/assets/", http.FileServer(http.Dir(assetsDir)))
-		}
-	}
 	sub, err := fs.Sub(embeddedAssets, "assets")
 	if err != nil {
 		panic(err)
 	}
-	return http.StripPrefix("/assets/", http.FileServer(http.FS(sub)))
+	legacy := http.StripPrefix("/assets/", http.FileServer(http.FS(sub)))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if assetsDir := devUIAssetsDir(); assetsDir != "" {
+			http.StripPrefix("/assets/", http.FileServer(http.Dir(assetsDir))).ServeHTTP(w, r)
+			return
+		}
+		if uiAssets, ok := embeddedUIAssets(); ok {
+			name := filepath.Clean(strings.TrimPrefix(r.URL.Path, "/assets/"))
+			name = strings.TrimPrefix(name, "/")
+			if name != "" {
+				if _, err := fs.Stat(uiAssets, name); err == nil {
+					http.StripPrefix("/assets/", http.FileServer(http.FS(uiAssets))).ServeHTTP(w, r)
+					return
+				}
+			}
+		}
+		legacy.ServeHTTP(w, r)
+	})
 }
