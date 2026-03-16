@@ -69,10 +69,10 @@ func TestRootServesInstallGateWhenInstallIncomplete(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "이 리눅스 서버에 VeilKey 설치") {
+	if !strings.Contains(body, "VeilKey 첫 설치 시작") {
 		t.Fatalf("expected install gate HTML, got %q", body)
 	}
-	if !strings.Contains(body, "Linux Quick Install") {
+	if !strings.Contains(body, "Guided First Install") {
 		t.Fatalf("expected first-install wizard copy, got %q", body)
 	}
 	if !strings.Contains(body, "/api/install/runtime-config") {
@@ -80,6 +80,9 @@ func TestRootServesInstallGateWhenInstallIncomplete(t *testing.T) {
 	}
 	if !strings.Contains(body, "빠른 설치 저장") {
 		t.Fatalf("expected quick install actions in install gate")
+	}
+	if !strings.Contains(body, "새 all-in-one LXC (권장)") {
+		t.Fatalf("expected all-in-one quick target in install gate")
 	}
 	if strings.Contains(body, "VeilKey KeyCenter") {
 		t.Fatalf("expected install gate instead of dashboard")

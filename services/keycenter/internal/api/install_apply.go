@@ -137,15 +137,104 @@ func isAllowlistedInstallScript(path string) bool {
 
 func resolveInstallProfile(cfg *db.UIConfig) string {
 	profile := strings.TrimSpace(cfg.InstallProfile)
-	if profile != "" && profile != "linux-host" {
+	switch profile {
+	case "", "linux-host":
+		if strings.TrimSpace(cfg.LocalvaultURL) != "" {
+			return "proxmox-host-localvault"
+		}
+		return "proxmox-host"
+	case "lxc-allinone", "all-in-one", "linux-all-in-one":
+		return "proxmox-lxc-allinone"
+	default:
 		return profile
 	}
-	if strings.TrimSpace(cfg.LocalvaultURL) != "" {
-		return "proxmox-host-localvault"
-	}
-	return "proxmox-host"
 }
 
+func installTargetLabel(cfg *db.UIConfig) string {
+	switch resolveInstallProfile(cfg) {
+	case "proxmox-lxc-allinone":
+		return "lxc-allinone"
+	case "proxmox-host-localvault":
+		return "host-localvault"
+	default:
+		if strings.TrimSpace(cfg.LocalvaultURL) != "" {
+			return "host-existing-localvault"
+		}
+		return "linux-host"
+	}
+}
+
+func validateInstallConfig(cfg *db.UIConfig, req installValidateRequest) installValidationResult {
+	result := installValidationResult{
+		Valid:           true,
+		ResolvedProfile: resolveInstallProfile(cfg),
+		ResolvedRoot:    strings.TrimSpace(cfg.InstallRoot),
+		ResolvedScript:  installScriptPath(cfg),
+		ResolvedWorkdir: installWorkdir(cfg),
+	}
+	if result.ResolvedRoot == "" {
+		result.ResolvedRoot = "/"
+	}
+	if result.ResolvedWorkdir == "" && result.ResolvedScript != "" {
+		result.ResolvedWorkdir = filepath.Dir(result.ResolvedScript)
+	}
+
+	target := installTargetLabel(cfg)
+	if target == "linux-host" {
+		result.Warnings = append(result.Warnings, "linux-host quick path is not yet a validated production install target; prefer lxc-allinone or host-localvault")
+	}
+	if target == "host-localvault" && strings.TrimSpace(cfg.KeycenterURL) == "" {
+		result.Warnings = append(result.Warnings, "host-localvault install usually expects keycenter_url to be set before activation")
+	}
+
+	if result.ResolvedScript == "" {
+		result.Valid = false
+		result.Errors = append(result.Errors, "install script is not configured")
+	}
+	if result.ResolvedScript != "" && !isAllowlistedInstallScript(result.ResolvedScript) {
+		result.Valid = false
+		result.Errors = append(result.Errors, "install script is not in the server allowlist")
+	}
+	if result.ResolvedScript != "" {
+		if _, err := os.Stat(result.ResolvedScript); err != nil {
+			result.Valid = false
+			result.Errors = append(result.Errors, "install script is not available")
+		}
+	}
+	if result.ResolvedProfile == "" {
+		result.Valid = false
+		result.Errors = append(result.Errors, "install profile could not be resolved")
+	}
+	if result.ResolvedWorkdir == "" {
+		result.Valid = false
+		result.Errors = append(result.Errors, "install workdir is not configured")
+	}
+	if result.ResolvedWorkdir != "" {
+		if info, err := os.Stat(result.ResolvedWorkdir); err != nil || !info.IsDir() {
+			result.Valid = false
+			result.Errors = append(result.Errors, "install workdir is not available")
+		}
+	}
+
+	result.DangerousRoot = isDangerousInstallRoot(result.ResolvedRoot)
+	if result.DangerousRoot {
+		result.Warnings = append(result.Warnings, "install_root targets the live filesystem root")
+		if !req.ConfirmDangerousRoot {
+			result.Valid = false
+			result.NeedsConfirmation = true
+			result.Errors = append(result.Errors, "dangerous install_root requires explicit confirmation")
+		}
+	}
+
+	if strings.TrimSpace(cfg.KeycenterURL) == "" {
+		result.Warnings = append(result.Warnings, "keycenter_url is empty; post-install verification may be limited")
+	}
+	if strings.TrimSpace(cfg.LocalvaultURL) == "" {
+		result.Warnings = append(result.Warnings, "localvault_url is empty; localvault health verification will be skipped")
+	}
+	result.CommandPreview = installCommand(result.ResolvedScript, cfg)
+	return result
+}
 func isDangerousInstallRoot(root string) bool {
 	root = filepath.Clean(strings.TrimSpace(root))
 	return root == "/" || root == ""
@@ -198,70 +287,6 @@ func checkHealthEndpoint(client *http.Client, rawURL string) error {
 		return fmt.Errorf("health check returned status %d", resp.StatusCode)
 	}
 	return nil
-}
-
-func validateInstallConfig(cfg *db.UIConfig, req installValidateRequest) installValidationResult {
-	result := installValidationResult{
-		Valid:           true,
-		ResolvedProfile: resolveInstallProfile(cfg),
-		ResolvedRoot:    strings.TrimSpace(cfg.InstallRoot),
-		ResolvedScript:  installScriptPath(cfg),
-		ResolvedWorkdir: installWorkdir(cfg),
-	}
-	if result.ResolvedRoot == "" {
-		result.ResolvedRoot = "/"
-	}
-	if result.ResolvedWorkdir == "" && result.ResolvedScript != "" {
-		result.ResolvedWorkdir = filepath.Dir(result.ResolvedScript)
-	}
-
-	if result.ResolvedScript == "" {
-		result.Valid = false
-		result.Errors = append(result.Errors, "install script is not configured")
-	}
-	if result.ResolvedScript != "" && !isAllowlistedInstallScript(result.ResolvedScript) {
-		result.Valid = false
-		result.Errors = append(result.Errors, "install script is not in the server allowlist")
-	}
-	if result.ResolvedScript != "" {
-		if _, err := os.Stat(result.ResolvedScript); err != nil {
-			result.Valid = false
-			result.Errors = append(result.Errors, "install script is not available")
-		}
-	}
-	if result.ResolvedProfile == "" {
-		result.Valid = false
-		result.Errors = append(result.Errors, "install profile could not be resolved")
-	}
-	if result.ResolvedWorkdir == "" {
-		result.Valid = false
-		result.Errors = append(result.Errors, "install workdir is not configured")
-	}
-	if result.ResolvedWorkdir != "" {
-		if info, err := os.Stat(result.ResolvedWorkdir); err != nil || !info.IsDir() {
-			result.Valid = false
-			result.Errors = append(result.Errors, "install workdir is not available")
-		}
-	}
-
-	result.DangerousRoot = isDangerousInstallRoot(result.ResolvedRoot)
-	if result.DangerousRoot {
-		result.Warnings = append(result.Warnings, "install_root targets the live filesystem root")
-		if !req.ConfirmDangerousRoot {
-			result.Valid = false
-			result.NeedsConfirmation = true
-			result.Errors = append(result.Errors, "dangerous install_root requires explicit confirmation")
-		}
-	}
-
-	if strings.TrimSpace(cfg.KeycenterURL) == "" {
-		result.Warnings = append(result.Warnings, "keycenter_url is empty; post-install verification may be limited")
-	}
-	if strings.TrimSpace(cfg.LocalvaultURL) == "" {
-		result.Warnings = append(result.Warnings, "localvault_url is empty; localvault health verification will be skipped")
-	}
-	result.CommandPreview = installCommand(result.ResolvedScript, cfg)
-	return result
 }
 
 func encodeJSON(v any, fallback string) string {

@@ -471,13 +471,13 @@ summary::-webkit-details-marker{display:none}
 </style></head><body>
 <div class="shell">
 <div class="card">
-<div class="eyebrow">Linux Quick Install</div>
-<h1 id="title">이 리눅스 서버에 VeilKey 설치</h1>
-<p id="subtitle">LXC 여부를 가정하지 않고, 일반 리눅스 서버 기준으로 빠르게 시작합니다. 내부용 기본값은 자동으로 채우고 필요한 항목만 먼저 받습니다.</p>
+<div class="eyebrow">Guided First Install</div>
+<h1 id="title">VeilKey 첫 설치 시작</h1>
+<p id="subtitle">검증된 all-in-one LXC 경로를 기본 추천값으로 두고, 필요한 경우에만 일반 Linux host 경로로 전환합니다.</p>
 <div class="row">
 <span class="chip">flow: %s</span>
 <span class="chip">last_stage: %s</span>
-<span class="chip" id="target-chip">target: linux-host</span>
+<span class="chip" id="target-chip">target: lxc-allinone</span>
 </div>
 <div class="lang-switch">
 <button type="button" id="lang-ko" class="active">한국어</button>
@@ -487,6 +487,14 @@ summary::-webkit-details-marker{display:none}
 <div>
 <div class="section-title" id="quick-title">빠른 설치 정보</div>
 <div class="field-grid">
+<div class="field">
+<label for="target_mode" id="target-mode-label">설치 대상</label>
+<select id="target_mode">
+<option value="lxc-allinone">새 all-in-one LXC (권장)</option>
+<option value="linux-host">일반 Linux host</option>
+</select>
+<small id="target-mode-help">현재 실제 설치 검증이 끝난 경로는 all-in-one LXC입니다.</small>
+</div>
 <div class="field">
 <label for="public_host" id="public-host-label">접속 주소 또는 도메인</label>
 <input id="public_host" placeholder="wizard.example.internal">
@@ -514,7 +522,7 @@ summary::-webkit-details-marker{display:none}
 <div class="summary">
 <strong id="summary-title">자동으로 결정되는 내부 설정</strong>
 <ul>
-<li id="summary-profile">설치 프로파일: host 계열 기본 프로파일 자동 선택</li>
+<li id="summary-profile">설치 프로파일: 기본은 proxmox-lxc-allinone, host는 고급 경로로 유지</li>
 <li id="summary-script">설치 스크립트: 서버 허용 목록에서 자동 사용</li>
 <li id="summary-session">설치 단계: language → bootstrap → final_smoke</li>
 </ul>
@@ -528,7 +536,7 @@ summary::-webkit-details-marker{display:none}
 <button class="btn btn-primary" id="apply-install">설치 실행</button>
 <button class="btn btn-soft" id="reload-state">상태 새로고침</button>
 </div>
-<div class="note" id="note-text">고급 옵션을 열지 않아도 일반 리눅스 서버 기준 기본값으로 바로 저장하고 실행할 수 있습니다.</div>
+<div class="note" id="note-text">기본값은 all-in-one LXC 기준입니다. 일반 host 경로는 검증 후 적용하는 편이 안전합니다.</div>
 <div class="status-box"><pre id="wizard-status">Loading install wizard state…</pre></div>
 <div class="links">
 <a href="/health">Health</a>
@@ -604,13 +612,13 @@ summary::-webkit-details-marker{display:none}
 <div class="card">
 <div class="eyebrow" id="side-eyebrow">Why This Page Exists</div>
 <h1 style="font-size:24px" id="side-title">리눅스 서버 설치를 먼저 끝냅니다</h1>
-<p id="side-copy">브라우저는 설치 의도와 운영 정책만 저장합니다. 실제 설치 실행은 KeyCenter가 서버 측 runner를 통해 수행합니다.</p>
+<p id="side-copy">브라우저는 설치 의도와 운영 정책만 저장합니다. 실제 설치 실행은 KeyCenter가 서버 측 runner를 통해 수행하며, 기본 추천 경로는 all-in-one LXC입니다.</p>
 <div class="summary">
 <strong id="steps-title">권장 순서</strong>
 <ul>
-<li id="step-1">1. 접속 주소와 설치 루트를 입력합니다.</li>
-<li id="step-2">2. 필요하면 기존 LocalVault URL을 넣습니다.</li>
-<li id="step-3">3. 빠른 설치 저장 후 설치 실행을 누릅니다.</li>
+<li id="step-1">1. 설치 대상을 고르고 접속 주소와 루트를 입력합니다.</li>
+<li id="step-2">2. 먼저 검증만 실행으로 위험값과 프로파일을 확인합니다.</li>
+<li id="step-3">3. 문제가 없으면 설치 실행을 누릅니다.</li>
 <li id="step-4">4. 완료 후 /ready 가 열리면 운영 콘솔로 진입합니다.</li>
 </ul>
 </div>
@@ -628,9 +636,11 @@ const initialSessionState = %s;
 const initialRuntimeConfig = %s;
 const copy = {
   ko: {
-    title: '이 리눅스 서버에 VeilKey 설치',
-    subtitle: 'LXC 여부를 가정하지 않고, 일반 리눅스 서버 기준으로 빠르게 시작합니다. 내부용 기본값은 자동으로 채우고 필요한 항목만 먼저 받습니다.',
+    title: 'VeilKey 첫 설치 시작',
+    subtitle: '검증된 all-in-one LXC 경로를 기본 추천값으로 두고, 필요한 경우에만 일반 Linux host 경로로 전환합니다.',
     quickTitle: '빠른 설치 정보',
+    targetModeLabel: '설치 대상',
+    targetModeHelp: '현재 실제 설치 검증이 끝난 경로는 all-in-one LXC입니다.',
     publicHostLabel: '접속 주소 또는 도메인',
     publicHostHelp: '나중에 사용자가 접속할 KeyCenter 주소입니다. 비워두면 현재 호스트를 기준으로 추정합니다.',
     tlsModeLabel: 'TLS 방식',
@@ -640,7 +650,7 @@ const copy = {
     localvaultLabel: '기존 LocalVault URL (선택)',
     localvaultHelp: '올인원 설치가 아니고 기존 LocalVault를 연결할 때만 입력합니다.',
     summaryTitle: '자동으로 결정되는 내부 설정',
-    summaryProfile: '설치 프로파일: host 계열 기본 프로파일 자동 선택',
+    summaryProfile: '설치 프로파일: 기본은 proxmox-lxc-allinone, host는 고급 경로로 유지',
     summaryScript: '설치 스크립트: 서버 허용 목록에서 자동 사용',
     summarySession: '설치 단계: language -> bootstrap -> final_smoke',
     confirmDangerousRoot: '이 서버의 루트(/)에 직접 설치하는 위험을 이해했고, 필요한 경우에만 실행합니다.',
@@ -650,15 +660,15 @@ const copy = {
     reload: '상태 새로고침',
     saveSession: '세션만 저장',
     saveRuntime: '런타임 설정만 저장',
-    note: '고급 옵션을 열지 않아도 일반 리눅스 서버 기준 기본값으로 바로 저장하고 실행할 수 있습니다.',
+    note: '기본값은 all-in-one LXC 기준입니다. 일반 host 경로는 검증 후 적용하는 편이 안전합니다.',
     advanced: '고급 설정 열기',
-    sideEyebrow: 'Linux Install Guide',
-    sideTitle: '리눅스 서버 설치를 먼저 끝냅니다',
-    sideCopy: '브라우저는 설치 의도와 운영 정책만 저장합니다. 실제 설치 실행은 KeyCenter가 서버 측 runner를 통해 수행합니다.',
+    sideEyebrow: 'First Install Guide',
+    sideTitle: '검증된 설치 경로부터 적용합니다',
+    sideCopy: '브라우저는 설치 의도와 운영 정책만 저장합니다. 실제 설치 실행은 KeyCenter가 서버 측 runner를 통해 수행하며, 기본 추천 경로는 all-in-one LXC입니다.',
     stepsTitle: '권장 순서',
-    step1: '1. 접속 주소와 설치 루트를 입력합니다.',
-    step2: '2. 필요하면 기존 LocalVault URL을 넣습니다.',
-    step3: '3. 빠른 설치 저장 후 설치 실행을 누릅니다.',
+    step1: '1. 설치 대상을 고르고 접속 주소와 루트를 입력합니다.',
+    step2: '2. 먼저 검증만 실행으로 위험값과 프로파일을 확인합니다.',
+    step3: '3. 문제가 없으면 설치 실행을 누릅니다.',
     step4: '4. 완료 후 /ready가 열리면 운영 콘솔로 진입합니다.',
     bootstrap: 'Bootstrap 입력',
     custody: 'Custody 입력',
@@ -680,9 +690,11 @@ const copy = {
     noRuns: '아직 기록이 없습니다.'
   },
   en: {
-    title: 'Install VeilKey on this Linux server',
-    subtitle: 'This flow assumes a general Linux host, not LXC. Internal defaults are derived automatically so you only fill the minimum fields first.',
+    title: 'Start the first VeilKey install',
+    subtitle: 'The recommended default is the validated all-in-one LXC path. Switch to a general Linux host path only when needed.',
     quickTitle: 'Quick Install',
+    targetModeLabel: 'Install target',
+    targetModeHelp: 'The all-in-one LXC path is the one verified with a real install right now.',
     publicHostLabel: 'Access host or domain',
     publicHostHelp: 'This becomes the KeyCenter address operators will open later. Leave blank to derive from the current host.',
     tlsModeLabel: 'TLS mode',
@@ -692,7 +704,7 @@ const copy = {
     localvaultLabel: 'Existing LocalVault URL (optional)',
     localvaultHelp: 'Fill this only when you are connecting an existing LocalVault instead of all-in-one install.',
     summaryTitle: 'Derived internal settings',
-    summaryProfile: 'Install profile: auto-select the default host profile',
+    summaryProfile: 'Install profile: default to proxmox-lxc-allinone, keep host mode as an advanced path',
     summaryScript: 'Install script: auto-use server allowlisted runner',
     summarySession: 'Install stages: language -> bootstrap -> final_smoke',
     confirmDangerousRoot: 'I understand the risk of installing directly into the live root (/) and will only use it when intended.',
@@ -702,15 +714,15 @@ const copy = {
     reload: 'Reload State',
     saveSession: 'Save Session Only',
     saveRuntime: 'Save Runtime Only',
-    note: 'You can save and run directly with Linux-host defaults without opening advanced settings.',
+    note: 'Defaults target the all-in-one LXC path. Treat the general host path as a validate-first flow.',
     advanced: 'Open Advanced Settings',
-    sideEyebrow: 'Why This Page Exists',
-    sideTitle: 'Finish Linux host install first',
-    sideCopy: 'The browser stores install intent and policy only. Actual installation runs through a fixed server-side runner controlled by KeyCenter.',
+    sideEyebrow: 'First Install Guide',
+    sideTitle: 'Start with the validated install path',
+    sideCopy: 'The browser stores install intent and policy only. Actual installation runs through a fixed server-side runner controlled by KeyCenter, with all-in-one LXC as the default recommendation.',
     stepsTitle: 'Recommended order',
-    step1: '1. Enter the access host and install root.',
-    step2: '2. Add an existing LocalVault URL if needed.',
-    step3: '3. Save the quick setup, then run install.',
+    step1: '1. Pick the install target, then enter the access host and install root.',
+    step2: '2. Run validation first to confirm the resolved profile and risky values.',
+    step3: '3. Apply install only after validation is clean.',
     step4: '4. Enter the operator console after /ready opens.',
     bootstrap: 'Bootstrap Input',
     custody: 'Custody Input',
@@ -736,6 +748,7 @@ const statusEl = document.getElementById('wizard-status');
 const previewEl = document.getElementById('wizard-preview');
 const runsEl = document.getElementById('install-runs-list');
 const quickFields = {
+  target_mode: document.getElementById('target_mode'),
   public_host: document.getElementById('public_host'),
   tls_mode: document.getElementById('tls_mode')
 };
@@ -759,6 +772,18 @@ const fields = {
 const confirmDangerousRootEl = document.getElementById('confirm-dangerous-root');
 let currentLang = 'ko';
 
+function deriveTargetModeFromProfile(profile) {
+  switch ((profile || '').trim()) {
+    case 'proxmox-lxc-allinone':
+    case 'lxc-allinone':
+    case 'all-in-one':
+    case 'linux-all-in-one':
+      return 'lxc-allinone';
+    default:
+      return 'linux-host';
+  }
+}
+
 function guessCurrentHost() {
   const { protocol, hostname, port } = window.location;
   if (!hostname) {
@@ -768,6 +793,9 @@ function guessCurrentHost() {
 }
 
 function deriveInstallProfile() {
+  if (quickFields.target_mode.value === 'lxc-allinone') {
+    return 'proxmox-lxc-allinone';
+  }
   return fields.install_profile.value.trim() || 'proxmox-host';
 }
 
@@ -795,8 +823,8 @@ function syncDerivedFields() {
   fields.install_script.value = deriveInstallScript(fields.install_script.value.trim());
   fields.install_workdir.value = deriveInstallWorkdir(fields.install_workdir.value.trim());
   fields.keycenter_url.value = baseURL;
-  fields.deployment_mode.value = 'host-service';
-  fields.install_scope.value = fields.localvault_url.value.trim() ? 'host+existing-localvault' : 'host-only';
+  fields.deployment_mode.value = quickFields.target_mode.value === 'lxc-allinone' ? 'lxc-allinone' : 'host-service';
+  fields.install_scope.value = quickFields.target_mode.value === 'lxc-allinone' ? 'all-in-one' : (fields.localvault_url.value.trim() ? 'host+existing-localvault' : 'host-only');
   fields.bootstrap_mode.value = 'email';
   fields.mail_transport.value = 'smtp';
   fields.flow.value = 'wizard';
@@ -814,9 +842,10 @@ function setStatus(message) {
 
 function renderPreview() {
   syncDerivedFields();
+  document.getElementById('target-chip').textContent = 'target: ' + quickFields.target_mode.value;
   const preview = {
     language: currentLang,
-    target: 'linux-host',
+    target: quickFields.target_mode.value,
     session: {
       flow: fields.flow.value,
       deployment_mode: fields.deployment_mode.value,
@@ -826,6 +855,7 @@ function renderPreview() {
       planned_stages: fields.planned_stages.value.split(',').map((item) => item.trim()).filter(Boolean)
     },
     quick_setup: {
+      target_mode: quickFields.target_mode.value,
       public_host: quickFields.public_host.value,
       tls_mode: quickFields.tls_mode.value,
       install_root: fields.install_root.value,
@@ -874,6 +904,8 @@ function setLanguage(lang) {
   document.getElementById('title').textContent = t.title;
   document.getElementById('subtitle').textContent = t.subtitle;
   document.getElementById('quick-title').textContent = t.quickTitle;
+  document.getElementById('target-mode-label').textContent = t.targetModeLabel;
+  document.getElementById('target-mode-help').textContent = t.targetModeHelp;
   document.getElementById('public-host-label').textContent = t.publicHostLabel;
   document.getElementById('public-host-help').textContent = t.publicHostHelp;
   document.getElementById('tls-mode-label').textContent = t.tlsModeLabel;
@@ -920,7 +952,8 @@ function applySessionState(data) {
 }
 
 function applyRuntimeConfig(data) {
-  fields.install_profile.value = data.install_profile || 'proxmox-host';
+  fields.install_profile.value = data.install_profile || 'proxmox-lxc-allinone';
+  quickFields.target_mode.value = deriveTargetModeFromProfile(fields.install_profile.value);
   fields.install_root.value = data.install_root || '/';
   fields.install_script.value = data.install_script || '';
   fields.install_workdir.value = data.install_workdir || '';
@@ -931,6 +964,7 @@ function applyRuntimeConfig(data) {
   fields.tls_key_path.value = data.tls_key_path || '';
   fields.tls_ca_path.value = data.tls_ca_path || '';
   quickFields.tls_mode.value = (data.tls_cert_path || data.tls_key_path) ? 'existing' : 'later';
+  document.getElementById('target-chip').textContent = 'target: ' + quickFields.target_mode.value;
 }
 
 async function request(path, options) {

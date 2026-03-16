@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"veilkey-keycenter/internal/db"
 )
 
 func TestInstallApplyStatusReflectsResolvedProfile(t *testing.T) {
@@ -40,6 +42,13 @@ func TestInstallApplyStatusReflectsResolvedProfile(t *testing.T) {
 	}
 	if resp.Profile != "proxmox-host" {
 		t.Fatalf("profile = %q, want proxmox-host", resp.Profile)
+	}
+}
+
+func TestResolveInstallProfileMapsAllInOneAlias(t *testing.T) {
+	cfg := &db.UIConfig{InstallProfile: "lxc-allinone"}
+	if got := resolveInstallProfile(cfg); got != "proxmox-lxc-allinone" {
+		t.Fatalf("resolveInstallProfile = %q, want proxmox-lxc-allinone", got)
 	}
 }
 
