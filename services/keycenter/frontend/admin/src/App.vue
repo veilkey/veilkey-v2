@@ -89,7 +89,7 @@
                             <span class="nav-item-main">
                                 <span>{{ vault.display_name || vault.vault_name || vault.vault_runtime_hash }}</span>
                             </span>
-                            <span class="status-pill" :class="statusClass(vault.status || 'active')">{{ vault.status || 'active' }}</span>
+                            <span class="status-pill count-pill">{{ auditVaultCount(vault) }}</span>
                         </a>
                         <div v-if="!filteredVaults().length" class="empty">{{ t('no_vaults') }}</div>
                     </div>
@@ -900,6 +900,7 @@ const {
   selectedBulkApplyWorkflow,
   renderConfigRelations,
   configRelationsByScope,
+  auditVaultCount,
   encodeURIComponent
 } = useAdminApp();
 </script>

@@ -75,6 +75,7 @@ const state = reactive({
     auditVault: null,
     auditKey: null,
     auditRows: [],
+    auditCountByVault: {},
     trackedRefAudit: null,
     adminAuditRows: [],
     busy: {},
@@ -1785,6 +1786,23 @@ async function loadTrackedRefAudit() {
     state.trackedRefAudit = await request('/api/tracked-refs/audit');
 }
 
+async function loadAuditCountsPerVault() {
+    const counts = {};
+    await Promise.all(state.vaults.map(async (v) => {
+        try {
+            const data = await request('/api/vaults/' + encodeURIComponent(v.vault_runtime_hash) + '/audit?limit=1');
+            counts[v.vault_runtime_hash] = data.total_count || 0;
+        } catch {
+            counts[v.vault_runtime_hash] = 0;
+        }
+    }));
+    state.auditCountByVault = counts;
+}
+
+function auditVaultCount(vault) {
+    return state.auditCountByVault[vault.vault_runtime_hash] || 0;
+}
+
 async function loadAuditVaultFeed() {
     if (!state.auditVault) {
         state.auditRows = [];
@@ -1952,6 +1970,7 @@ async function syncPageData() {
         } else if (state.activePage === 'audit') {
             if (!state.vaults.length) await loadVaults();
             await loadTrackedRefAudit();
+            await loadAuditCountsPerVault();
             if (!state.auditVault && state.vaults.length) state.auditVault = state.vaults[0].vault_runtime_hash;
             await loadAuditVaultFeed();
         } else if (state.activePage === 'settings') {
@@ -2529,6 +2548,7 @@ return {
   selectedBulkApplyWorkflow,
                 renderConfigRelations,
                 configRelationsByScope,
+                auditVaultCount,
                 encodeURIComponent
     };
 }
