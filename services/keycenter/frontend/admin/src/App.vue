@@ -28,15 +28,6 @@
                         >
                             <span class="nav-item-main"><span>{{ t('all_vaults') }}</span></span>
                         </a>
-                        <a
-                            :href="routePath('vaults', 'HOST_VAULT')"
-                            class="nav-item"
-                            :class="{ active: activeTab() === 'HOST_VAULT' }"
-                            data-action="set-tab"
-                            data-tab="HOST_VAULT"
-                        >
-                            <span class="nav-item-main"><span>{{ t('host_vault') }}</span></span>
-                        </a>
                     </div>
                 </div>
                 <div class="sidebar-section">
@@ -47,7 +38,7 @@
                             :key="vault.vault_runtime_hash"
                             :href="'/vaults/local/' + encodeURIComponent(vault.vault_runtime_hash)"
                             class="nav-item"
-                            :class="{ active: activeTab() !== 'Host Vault' && state.selectedVault && vault.vault_runtime_hash === state.selectedVault.vault_runtime_hash }"
+                            :class="{ active: state.selectedVault && vault.vault_runtime_hash === state.selectedVault.vault_runtime_hash }"
                             data-action="select-vault"
                             :data-key="vault.vault_runtime_hash"
                         >
@@ -147,7 +138,7 @@
                             <template v-else>
                                 <div class="toolbar">
                                     <div class="toolbar-group">
-                                        <div v-if="activeTab() !== 'HOST_VAULT'" class="toolbar-group">
+                                        <div class="toolbar-group">
                                             <span class="segmented-label">{{ t('toolbar_work') }}</span>
                                             <div class="segmented" role="tablist" :aria-label="t('toolbar_work')">
                                                 <button class="btn" :class="activeTab() === 'VAULT_ITEMS' ? 'btn-primary' : 'btn-soft'" data-action="set-tab" data-tab="VAULT_ITEMS">{{ t('tab_vault_items') }}</button>
@@ -171,10 +162,10 @@
                                                 <button class="btn" :class="state.vaultItemKind === 'VK' ? 'btn-primary' : 'btn-soft'" data-action="set-vault-kind" data-kind="VK" :aria-pressed="state.vaultItemKind === 'VK' ? 'true' : 'false'">{{ t('filter_keys') }}</button>
                                             </div>
                                         </div>
-                                        <input class="field context-search" id="key-search" type="search" :placeholder="activeTab() === 'HOST_VAULT' ? t('search_host_vault') : t('search_current_vault')" :value="state.globalQuery">
+                                        <input class="field context-search" id="key-search" type="search" :placeholder="t('search_current_vault')" :value="state.globalQuery">
                                     </div>
                                     <span class="pill">{{ activeTab() === 'BULK_APPLY' ? (state.bulkApplyView === 'workflow' ? state.bulkApplyWorkflows.length : state.bulkApplyTemplates.length) : vaultVisibleRows().length }} {{ t('count_items') }}</span>
-                                    <button v-if="activeTab() !== 'HOST_VAULT' && activeTab() !== 'BULK_APPLY'" class="btn btn-primary" data-action="new-key">{{ state.vaultItemKind === 'VE' ? t('new_config') : t('new_key') }}</button>
+                                    <button v-if="activeTab() !== 'BULK_APPLY'" class="btn btn-primary" data-action="new-key">{{ state.vaultItemKind === 'VE' ? t('new_config') : t('new_key') }}</button>
                                 </div>
                             </template>
                         </div>
@@ -193,12 +184,11 @@
                                     <tbody>
                                         <tr
                                             v-for="row in allVaultRows()"
-                                            :key="row.is_host ? 'host' : row.vault_runtime_hash"
+                                            :key="row.vault_runtime_hash"
                                             class="is-clickable"
-                                            :class="{ 'is-selected': (activeTab() === 'HOST_VAULT' && row.is_host) || (activeTab() !== 'HOST_VAULT' && !row.is_host && state.selectedVault && row.vault_runtime_hash === state.selectedVault.vault_runtime_hash) }"
-                                            :data-action="row.is_host ? 'set-tab' : 'select-vault'"
-                                            :data-tab="row.is_host ? 'HOST_VAULT' : null"
-                                            :data-key="row.is_host ? null : row.vault_runtime_hash"
+                                            :class="{ 'is-selected': state.selectedVault && row.vault_runtime_hash === state.selectedVault.vault_runtime_hash }"
+                                            data-action="select-vault"
+                                            :data-key="row.vault_runtime_hash"
                                         >
                                             <td>{{ row.display_name || row.vault_name }}</td>
                                             <td><span class="code">{{ row.vault_id || row.vault_runtime_hash }}</span></td>
@@ -216,12 +206,9 @@
                                             <th>{{ t('table_kind') }}</th>
                                             <th>{{ t('table_name') }}</th>
                                             <th>{{ t('table_value') }}</th>
-                                            <th v-if="activeTab() === 'HOST_VAULT'">{{ t('table_scope') }}</th>
-                                            <template v-else>
-                                                <th>{{ t('table_sync') }}</th>
-                                                <th>{{ t('table_key_class') }}</th>
-                                                <th>{{ t('table_distribution') }}</th>
-                                            </template>
+                                            <th>{{ t('table_sync') }}</th>
+                                            <th>{{ t('table_key_class') }}</th>
+                                            <th>{{ t('table_distribution') }}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -230,52 +217,49 @@
                                             :key="row.item_kind + ':' + row.name"
                                             class="is-clickable"
                                             :class="{ 'is-selected': row.name === currentVaultSelectedName() && row.item_kind === currentVaultSelectedKind() }"
-                                            :data-action="activeTab() === 'HOST_VAULT' ? 'select-host-item' : 'select-vault-item'"
+                                            data-action="select-vault-item"
                                             :data-kind="row.item_kind"
                                             :data-key="row.name"
                                         >
                                             <td><span class="pill" :class="row.item_kind === 'VE' ? 'kind-ve' : 'kind-vk'">{{ vaultKindLabel(row.item_kind) }}</span></td>
                                             <td>{{ row.name }}</td>
                                             <td><span class="code">{{ vaultItemIdentifier(row) }}</span></td>
-                                            <td v-if="activeTab() === 'HOST_VAULT'"><span class="status-pill" :class="scopeClass(row.scope || (row.item_kind === 'VE' ? 'LOCAL' : 'TEMP'))">{{ row.scope || (row.item_kind === 'VE' ? 'LOCAL' : 'TEMP') }}</span></td>
-                                            <template v-else>
-                                                <td>
-                                                    <span
-                                                        v-if="vaultSyncStatus(row.item_kind, row.name).loading"
-                                                        class="muted"
-                                                    >{{ t('sync_checking') }}</span>
-                                                    <span
-                                                        v-else
-                                                        class="status-pill"
-                                                        :class="vaultSyncStatus(row.item_kind, row.name).className"
-                                                    >{{ vaultSyncStatus(row.item_kind, row.name).label }}</span>
-                                                </td>
-                                                <td>
-                                                    <span
-                                                        v-if="vaultKeyClassStatus(row.item_kind, row.name).loading"
-                                                        class="muted"
-                                                    >{{ t('sync_checking') }}</span>
-                                                    <span
-                                                        v-else
-                                                        class="status-pill"
-                                                        :class="vaultKeyClassStatus(row.item_kind, row.name).className"
-                                                    >{{ vaultKeyClassStatus(row.item_kind, row.name).label }}</span>
-                                                </td>
-                                                <td>
-                                                    <span
-                                                        v-if="vaultDistributionStatus(row.item_kind, row.name).loading"
-                                                        class="muted"
-                                                    >{{ t('sync_checking') }}</span>
-                                                    <span
-                                                        v-else
-                                                        class="status-pill"
-                                                        :class="vaultDistributionStatus(row.item_kind, row.name).className"
-                                                    >{{ vaultDistributionStatus(row.item_kind, row.name).label }}</span>
-                                                </td>
-                                            </template>
+                                            <td>
+                                                <span
+                                                    v-if="vaultSyncStatus(row.item_kind, row.name).loading"
+                                                    class="muted"
+                                                >{{ t('sync_checking') }}</span>
+                                                <span
+                                                    v-else
+                                                    class="status-pill"
+                                                    :class="vaultSyncStatus(row.item_kind, row.name).className"
+                                                >{{ vaultSyncStatus(row.item_kind, row.name).label }}</span>
+                                            </td>
+                                            <td>
+                                                <span
+                                                    v-if="vaultKeyClassStatus(row.item_kind, row.name).loading"
+                                                    class="muted"
+                                                >{{ t('sync_checking') }}</span>
+                                                <span
+                                                    v-else
+                                                    class="status-pill"
+                                                    :class="vaultKeyClassStatus(row.item_kind, row.name).className"
+                                                >{{ vaultKeyClassStatus(row.item_kind, row.name).label }}</span>
+                                            </td>
+                                            <td>
+                                                <span
+                                                    v-if="vaultDistributionStatus(row.item_kind, row.name).loading"
+                                                    class="muted"
+                                                >{{ t('sync_checking') }}</span>
+                                                <span
+                                                    v-else
+                                                    class="status-pill"
+                                                    :class="vaultDistributionStatus(row.item_kind, row.name).className"
+                                                >{{ vaultDistributionStatus(row.item_kind, row.name).label }}</span>
+                                            </td>
                                         </tr>
                                         <tr v-if="!vaultVisibleRows().length">
-                                            <td :colspan="activeTab() === 'HOST_VAULT' ? 4 : 6"><div class="empty">{{ t('empty_no_rows') }}</div></td>
+                                            <td :colspan="6"><div class="empty">{{ t('empty_no_rows') }}</div></td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -477,7 +461,7 @@
                                                 <div class="kv"><span class="label">{{ t('table_identifier') }}</span><span class="value">{{ vaultPanel().itemRefValue || '-' }}</span></div>
                                                 <div class="kv"><span class="label">{{ t('table_scope') }}</span><span class="value">{{ vaultPanel().currentScope }}</span></div>
                                                 <div class="kv"><span class="label">{{ t('table_status') }}</span><span class="value">{{ vaultPanel().status }}</span></div>
-                                                <div class="kv"><span class="label">{{ t('storage') }}</span><span class="value">{{ t('host_vault_storage') }}</span></div>
+                                                <div class="kv"><span class="label">{{ t('storage') }}</span><span class="value">Local Vault</span></div>
                                             </div>
                                         </div>
                                     </template>

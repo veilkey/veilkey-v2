@@ -64,13 +64,6 @@ const state = reactive({
     selectedBulkApplyTemplateName: null,
     selectedBulkApplyWorkflowName: null,
     routeSelectedVaultHash: null,
-    hostVaultKeys: [],
-    hostVaultConfigs: [],
-    hostSelectedKey: null,
-    hostSelectedConfigKey: null,
-    hostSelectedItemKind: 'VK',
-    hostKeyDetail: null,
-    hostConfigDetail: null,
     revealValue: false,
     functions: [],
     selectedFunction: null,
@@ -153,7 +146,6 @@ function activeTab() {
 function tabLabelKey(tab) {
     return {
         ALL_VAULTS: 'tab_all_vaults',
-        HOST_VAULT: 'tab_host_vault',
         VAULT_ITEMS: 'tab_vault_items',
         BULK_APPLY: 'tab_bulk_apply',
         FUNCTION_LIST: 'tab_function_list',
@@ -191,6 +183,10 @@ function routePath(page, tab) {
         const view = state.bulkApplyView === 'workflow' ? 'workflow' : 'items';
         return `/vaults/local/${encodeURIComponent(vaultHash)}?tab=bulk-apply&view=${encodeURIComponent(view)}`;
     }
+    if (page === 'audit' && tab === 'AUDIT_LOG') {
+        const vaultHash = state.auditVault;
+        return vaultHash ? `/audit/${encodeURIComponent(vaultHash)}` : '/audit';
+    }
     const entry = routeEntries.find((item) => item.page === page && item.tab === tab);
     return entry ? entry.path : '/';
 }
@@ -204,6 +200,15 @@ function applyRoute(pathname, search = window.location.search) {
         state.activeTabByPage.vaults = params.get('tab') === 'bulk-apply' ? 'BULK_APPLY' : 'VAULT_ITEMS';
         state.bulkApplyView = params.get('view') === 'workflow' ? 'workflow' : 'items';
         state.routeSelectedVaultHash = localVaultMatch[1] ? decodeURIComponent(localVaultMatch[1]) : null;
+        return;
+    }
+    const auditMatch = normalized.match(/^\/audit(?:\/([^/]+))?$/);
+    if (auditMatch) {
+        state.activePage = 'audit';
+        state.activeTabByPage.audit = 'AUDIT_LOG';
+        if (auditMatch[1]) {
+            state.auditVault = decodeURIComponent(auditMatch[1]);
+        }
         return;
     }
     const matched = normalized === '/' ? { page: 'vaults', tab: 'ALL_VAULTS' } : routeByPath[normalized];
@@ -307,9 +312,8 @@ function vaultDistributionStatus(kind, name) {
     return { loading: false, label, className: 'error' };
 }
 
-function vaultTargetOptions(includeHost = true) {
+function vaultTargetOptions() {
     const options = [];
-    if (includeHost) options.push({ value: 'host', label: t('host_vault') });
     (state.vaults || []).forEach((vault) => {
         options.push({
             value: vault.vault_runtime_hash,
@@ -432,16 +436,6 @@ function renderSecondarySidebar() {
                             <span>${escapeHTML(t('all_vaults'))}</span>
                         </span>
                     </a>
-                    <a
-                        href="${routePath('vaults', 'HOST_VAULT')}"
-                        class="nav-item${activeTab() === 'HOST_VAULT' ? ' active' : ''}"
-                        data-action="set-tab"
-                        data-tab="HOST_VAULT"
-                    >
-                        <span class="nav-item-main">
-                            <span>${escapeHTML(t('host_vault'))}</span>
-                        </span>
-                    </a>
                 </div>
             </div>
             <div class="sidebar-section">
@@ -450,7 +444,7 @@ function renderSecondarySidebar() {
                     ${vaults.map((item) => `
                         <a
                             href="/vaults/local/${encodeURIComponent(item.vault_runtime_hash)}"
-                            class="nav-item${activeTab() !== 'HOST_VAULT' && state.selectedVault && item.vault_runtime_hash === state.selectedVault.vault_runtime_hash ? ' active' : ''}"
+                            class="nav-item${state.selectedVault && item.vault_runtime_hash === state.selectedVault.vault_runtime_hash ? ' active' : ''}"
                             data-action="select-vault"
                             data-key="${escapeHTML(item.vault_runtime_hash)}"
                         >
@@ -612,7 +606,6 @@ function selectedKeyRecord() {
 function renderVaults() {
     const tab = activeTab();
     if (tab === 'ALL_VAULTS') return renderVaultInventory();
-    if (tab === 'HOST_VAULT') return renderHostVault();
     return renderVaultKeys();
 }
 
@@ -620,23 +613,8 @@ function filteredVaults() {
     return state.vaults.filter((vault) => matchesQuery(vault.display_name || vault.vault_name || vault.vault_runtime_hash));
 }
 
-function hostVaultRow() {
-    const nodeID = state.status?.vault_node_uuid || state.status?.node_id || 'host';
-    return {
-        is_host: true,
-        display_name: 'Host Vault',
-        vault_name: 'Host Vault',
-        vault_runtime_hash: 'host',
-        vault_id: `host:${String(nodeID).slice(0, 8)}`,
-        managed_paths: ['-'],
-        ip: '127.0.0.1',
-        status: 'active'
-    };
-}
-
 function renderVaultInventory() {
     const vaults = filteredVaults();
-    const allVaultRows = [hostVaultRow(), ...vaults];
     state.ui.leftHTML = '';
     state.ui.leftVisible = false;
     state.ui.twoPane = true;
@@ -648,7 +626,7 @@ function renderVaultInventory() {
                 <div class="toolbar-group">
                     <input class="field context-search" id="vault-search" type="search" placeholder="${escapeHTML(t('search_vaults'))}" value="${escapeHTML(state.globalQuery)}">
                 </div>
-                <span class="pill">${allVaultRows.length} ${escapeHTML(t('count_rows'))}</span>
+                <span class="pill">${vaults.length} ${escapeHTML(t('count_rows'))}</span>
                 <button class="btn btn-soft" data-action="refresh-vaults">${escapeHTML(t('refresh'))}</button>
             </div>
         `,
@@ -661,17 +639,15 @@ function renderVaultInventory() {
             { label: t('table_path'), render: (row) => escapeHTML((row.managed_paths && row.managed_paths[0]) || '-') },
             { label: 'IP', render: (row) => escapeHTML(row.ip || '-') },
             { label: t('table_status'), render: (row) => renderStatusPill(row.status, statusClass(row.status)) }
-        ], allVaultRows, (row) => {
+        ], vaults, (row) => {
             const classes = [];
-            if ((activeTab() === 'HOST_VAULT' && row.is_host) || (activeTab() !== 'HOST_VAULT' && !row.is_host && state.selectedVault && row.vault_runtime_hash === state.selectedVault.vault_runtime_hash)) classes.push('is-selected');
+            if (state.selectedVault && row.vault_runtime_hash === state.selectedVault.vault_runtime_hash) classes.push('is-selected');
             classes.push('is-clickable');
             return classes.join(' ');
-        }, (row) => row.is_host
-            ? `data-action="set-tab" data-tab="HOST_VAULT"`
-            : `data-action="select-vault" data-key="${escapeHTML(row.vault_runtime_hash)}"`)
+        }, (row) => `data-action="select-vault" data-key="${escapeHTML(row.vault_runtime_hash)}"`)
     );
 
-    const detail = activeTab() === 'HOST_VAULT' ? hostVaultRow() : (state.vaultDetail || selectedVaultRecord());
+    const detail = state.vaultDetail || selectedVaultRecord();
     renderRightPane(t('vault_detail'), detail ? `
         <div class="stack">
             <div class="card">
@@ -699,125 +675,6 @@ function renderVaultInventory() {
             </form>
         </div>
     ` : `<div class="empty">${escapeHTML(t('selected_vault_prompt'))}</div>`);
-}
-
-function renderHostVault() {
-    const keyRows = state.hostVaultKeys.map((item) => ({ ...item, item_kind: 'VK' }));
-    const configRows = state.hostVaultConfigs.map((item) => ({ ...item, name: item.key, item_kind: 'VE' }));
-    const selectedItemKind = state.vaultItemKind === 'VE'
-        ? 'VE'
-        : state.vaultItemKind === 'VK'
-            ? 'VK'
-            : state.hostSelectedItemKind;
-    const selectedItemName = selectedItemKind === 'VE' ? state.hostSelectedConfigKey : state.hostSelectedKey?.name;
-    const sourceRows = state.vaultItemKind === 'VE'
-        ? configRows
-        : state.vaultItemKind === 'ALL'
-            ? [...keyRows, ...configRows]
-            : keyRows;
-    const itemRows = sourceRows.filter((row) => matchesQuery(row.name));
-    if (selectedItemName && !itemRows.some((row) => row.name === selectedItemName && row.item_kind === selectedItemKind)) {
-        const selectedRow = sourceRows.find((row) => row.name === selectedItemName && row.item_kind === selectedItemKind);
-        if (selectedRow) itemRows.unshift(selectedRow);
-    }
-    const isConfigItem = selectedItemKind === 'VE';
-    const detail = isConfigItem ? state.hostConfigDetail : state.hostKeyDetail;
-    const visibleValue = detail?.value;
-    const detailName = isConfigItem ? state.hostSelectedConfigKey : state.hostSelectedKey?.name;
-    const canMoveItem = Boolean(detailName || visibleValue || (isConfigItem ? detail?.key : detail?.name));
-    const itemIdentifier = (row) => {
-        if (row.item_kind === 'VE') return row.value || row.ref || row.key || '-';
-        if (row.token) return row.token;
-        if (row.ref) return `VK:${row.scope || 'TEMP'}:${row.ref}`;
-        return row.name || '-';
-    };
-    state.ui.leftHTML = '';
-    state.ui.leftVisible = false;
-    state.ui.twoPane = true;
-
-    renderCenterPane(
-        t('host_vault_title'),
-        `
-            <div class="toolbar">
-                <div class="toolbar-group">
-                    <span class="segmented-label">${escapeHTML(t('toolbar_scope'))}</span>
-                    <div class="segmented" role="tablist" aria-label="${escapeHTML(t('toolbar_scope'))}">
-                        <button class="btn ${state.vaultItemKind === 'ALL' ? 'btn-primary' : 'btn-soft'}" data-action="set-vault-kind" data-kind="ALL" aria-pressed="${state.vaultItemKind === 'ALL' ? 'true' : 'false'}">${escapeHTML(t('filter_all'))}</button>
-                        <button class="btn ${state.vaultItemKind === 'VE' ? 'btn-primary' : 'btn-soft'}" data-action="set-vault-kind" data-kind="VE" aria-pressed="${state.vaultItemKind === 'VE' ? 'true' : 'false'}">${escapeHTML(t('filter_configs'))}</button>
-                        <button class="btn ${state.vaultItemKind === 'VK' ? 'btn-primary' : 'btn-soft'}" data-action="set-vault-kind" data-kind="VK" aria-pressed="${state.vaultItemKind === 'VK' ? 'true' : 'false'}">${escapeHTML(t('filter_keys'))}</button>
-                    </div>
-                    <input class="field context-search" id="key-search" type="search" placeholder="${escapeHTML(t('search_host_vault'))}" value="${escapeHTML(state.globalQuery)}">
-                </div>
-                <span class="pill">${itemRows.length} ${escapeHTML(t('count_items'))}</span>
-            </div>
-        `,
-        renderTable([
-            { label: t('table_kind'), render: (row) => `<span class="pill ${row.item_kind === 'VE' ? 'kind-ve' : 'kind-vk'}">${escapeHTML(vaultKindLabel(row.item_kind))}</span>` },
-            { label: t('table_name'), render: (row) => `<span>${escapeHTML(row.name)}</span>` },
-            { label: t('table_value'), render: (row) => `<span class="code">${escapeHTML(itemIdentifier(row))}</span>` },
-            { label: t('table_scope'), render: (row) => renderStatusPill(row.scope || (row.item_kind === 'VE' ? 'LOCAL' : 'TEMP'), scopeClass(row.scope || (row.item_kind === 'VE' ? 'LOCAL' : 'TEMP'))) }
-        ], itemRows, (row) => {
-            const classes = [];
-            if (row.name === selectedItemName && row.item_kind === selectedItemKind) classes.push('is-selected');
-            classes.push('is-clickable');
-            return classes.join(' ');
-        }, (row) => `data-action="select-host-item" data-kind="${escapeHTML(row.item_kind)}" data-key="${escapeHTML(row.name)}"`)
-    );
-
-    renderRightPane(isConfigItem ? t('config_detail') : t('key_detail'), `
-        <div class="stack">
-            ${canMoveItem ? `
-                <form class="stack" data-form="${isConfigItem ? 'promote-config' : 'promote-key'}">
-                    <div class="card">
-                        <div class="card-title">${escapeHTML(isConfigItem ? t('move_config') : t('move_key'))}</div>
-                        <div class="stack">
-                            <div class="kv"><span class="label">${escapeHTML(t('target_vault'))}</span><select class="select" name="target_vault">${renderTargetOptions(vaultTargetOptions(true), 'host')}</select></div>
-                            <div class="kv"><span class="label">${escapeHTML(t('target_scope'))}</span><select class="select" name="target_scope">${renderOptions(isConfigItem ? ['LOCAL', 'EXTERNAL', 'TEMP'] : ['TEMP', 'LOCAL', 'EXTERNAL'], detail?.scope || (isConfigItem ? 'LOCAL' : 'TEMP'))}</select></div>
-                            <div class="kv"><span class="label">${escapeHTML(t('value_to_send'))}</span><textarea class="textarea" name="move_value" placeholder="${escapeHTML(t('move_value_placeholder'))}">${escapeHTML(visibleValue || '')}</textarea></div>
-                        </div>
-                        <div class="muted">${escapeHTML(isConfigItem ? t('host_config_move_help') : t('host_key_move_help'))}</div>
-                    </div>
-                    <button class="btn btn-soft" type="submit"${visibleValue ? '' : ' disabled'}>${escapeHTML(isConfigItem ? t('move_config') : t('move_key'))}</button>
-                </form>
-            ` : ''}
-            <form class="stack" data-form="${isConfigItem ? 'save-host-config' : 'save-host-key'}">
-                <div class="card">
-                    <div class="card-title">${escapeHTML(detailName ? t('selected_item') : (isConfigItem ? t('new_config') : t('new_key')))}</div>
-                    <div class="stack">
-                        <div class="kv"><span class="label">${escapeHTML(isConfigItem ? t('config_name') : t('key_name'))}</span><input class="field" name="${isConfigItem ? 'key' : 'name'}" value="${escapeHTML(detailName || '')}" ${detailName ? 'readonly' : ''}></div>
-                        <div class="kv">
-                            <span class="label">${escapeHTML(isConfigItem ? t('config_value') : t('key_value'))}</span>
-                            <div class="row" style="align-items:center;">
-                                <button class="btn btn-soft" type="button" data-action="toggle-reveal">${escapeHTML(state.revealValue ? t('hide') : t('reveal'))}</button>
-                                ${state.revealValue && visibleValue ? `<button class="btn btn-soft" type="button" data-action="copy-value">${escapeHTML(t('copy'))}</button>` : ''}
-                            </div>
-                            <textarea class="textarea" name="value" placeholder="${escapeHTML(detailName ? t('overwrite_placeholder') : t('required'))}">${escapeHTML(state.revealValue ? (visibleValue || '') : '••••••••••••')}</textarea>
-                        </div>
-                        <div class="kv"><span class="label">${escapeHTML(t('table_scope'))}</span><select class="select" name="scope">${renderOptions(isConfigItem ? ['LOCAL', 'EXTERNAL', 'TEMP'] : ['TEMP', 'LOCAL', 'EXTERNAL'], detail?.scope || (isConfigItem ? 'LOCAL' : 'TEMP'))}</select></div>
-                    </div>
-                </div>
-                <div class="toolbar">
-                    <button class="btn btn-primary" type="submit">${escapeHTML(detailName ? t('save') : t('create'))}</button>
-                </div>
-            </form>
-            ${isConfigItem ? `
-                <details class="card" open>
-                    <summary class="card-title">${escapeHTML(t('local_external_relations'))}</summary>
-                    ${renderConfigRelations()}
-                </details>
-            ` : `
-                <div class="card">
-                    <div class="card-title">${escapeHTML(t('additional_info'))}</div>
-                    ${renderKVGrid([
-                        [t('table_identifier'), detail?.token || detail?.ref || '-'],
-                        [t('table_scope'), detail?.scope || 'TEMP'],
-                        [t('table_status'), detail?.status || 'temp'],
-                        [t('storage'), t('host_vault_storage')]
-                    ])}
-                </div>
-            `}
-        </div>
-    `);
 }
 
 function renderVaultKeys() {
@@ -1399,17 +1256,10 @@ function filteredFunctions() {
 }
 
 function allVaultRows() {
-    return [hostVaultRow(), ...filteredVaults()];
+    return filteredVaults();
 }
 
 function currentVaultSelectedKind() {
-    if (activeTab() === 'HOST_VAULT') {
-        return state.vaultItemKind === 'VE'
-            ? 'VE'
-            : state.vaultItemKind === 'VK'
-                ? 'VK'
-                : state.hostSelectedItemKind;
-    }
     return state.vaultItemKind === 'VE'
         ? 'VE'
         : state.vaultItemKind === 'VK'
@@ -1419,28 +1269,7 @@ function currentVaultSelectedKind() {
 
 function currentVaultSelectedName() {
     const kind = currentVaultSelectedKind();
-    if (activeTab() === 'HOST_VAULT') {
-        return kind === 'VE' ? state.hostSelectedConfigKey : state.hostSelectedKey?.name;
-    }
     return kind === 'VE' ? state.selectedConfigKey : state.selectedKey?.name;
-}
-
-function hostVaultVisibleRows() {
-    const keyRows = state.hostVaultKeys.map((item) => ({ ...item, item_kind: 'VK' }));
-    const configRows = state.hostVaultConfigs.map((item) => ({ ...item, name: item.key, item_kind: 'VE' }));
-    const sourceRows = state.vaultItemKind === 'VE'
-        ? configRows
-        : state.vaultItemKind === 'ALL'
-            ? [...keyRows, ...configRows]
-            : keyRows;
-    const selectedName = currentVaultSelectedName();
-    const selectedKind = currentVaultSelectedKind();
-    const rows = sourceRows.filter((row) => matchesQuery(row.name));
-    if (selectedName && !rows.some((row) => row.name === selectedName && row.item_kind === selectedKind)) {
-        const selectedRow = sourceRows.find((row) => row.name === selectedName && row.item_kind === selectedKind);
-        if (selectedRow) rows.unshift(selectedRow);
-    }
-    return rows;
 }
 
 function localVaultVisibleRows() {
@@ -1462,7 +1291,6 @@ function localVaultVisibleRows() {
 }
 
 function vaultVisibleRows() {
-    if (activeTab() === 'HOST_VAULT') return hostVaultVisibleRows();
     if (activeTab() === 'VAULT_ITEMS') return localVaultVisibleRows();
     return [];
 }
@@ -1470,13 +1298,12 @@ function vaultVisibleRows() {
 function vaultItemIdentifier(row) {
     if (row.item_kind === 'VE') return row.value || row.name || row.key || row.ref || '-';
     if (row.token) return row.token;
-    if (row.ref) return `VK:${row.scope || (activeTab() === 'HOST_VAULT' ? 'TEMP' : 'LOCAL')}:${row.ref}`;
+    if (row.ref) return `VK:${row.scope || 'LOCAL'}:${row.ref}`;
     return row.name || '-';
 }
 
 function vaultCenterTitle() {
     if (activeTab() === 'ALL_VAULTS') return t('vault_inventory');
-    if (activeTab() === 'HOST_VAULT') return t('host_vault_title');
     if (activeTab() === 'BULK_APPLY') return t('tab_bulk_apply');
     return t('current_vault_items');
 }
@@ -1502,50 +1329,40 @@ function selectedInventoryDetail() {
 }
 
 function vaultPanel() {
-    const isHost = activeTab() === 'HOST_VAULT';
     const isConfigItem = currentVaultSelectedKind() === 'VE';
-    const detail = isHost
-        ? (isConfigItem ? state.hostConfigDetail : state.hostKeyDetail)
-        : (isConfigItem ? state.configDetail : state.keyDetail);
-    const detailName = isHost
-        ? (isConfigItem ? state.hostSelectedConfigKey : state.hostSelectedKey?.name)
-        : (isConfigItem ? state.selectedConfigKey : state.selectedKey?.name);
+    const detail = isConfigItem ? state.configDetail : state.keyDetail;
+    const detailName = isConfigItem ? state.selectedConfigKey : state.selectedKey?.name;
     const visibleValue = detail?.value || '';
-    const keySummary = !isHost && !isConfigItem ? state.keySummary : null;
-    const keyRecord = !isHost && !isConfigItem ? (keySummary && keySummary.key ? keySummary.key : state.selectedKey) : null;
+    const keySummary = !isConfigItem ? state.keySummary : null;
+    const keyRecord = !isConfigItem ? (keySummary && keySummary.key ? keySummary.key : state.selectedKey) : null;
 
     return {
-        isHost,
         isConfigItem,
         detail,
         detailName,
         visibleValue,
         canMoveItem: Boolean(detailName || visibleValue || (isConfigItem ? detail?.key : detail?.name)),
-        targetVaultDefault: isHost ? 'host' : (state.selectedVault ? state.selectedVault.vault_runtime_hash : 'host'),
-        currentScope: detail?.scope || (isConfigItem ? 'LOCAL' : (isHost ? 'TEMP' : 'TEMP')),
+        targetVaultDefault: state.selectedVault ? state.selectedVault.vault_runtime_hash : '',
+        currentScope: detail?.scope || (isConfigItem ? 'LOCAL' : 'TEMP'),
         scopeOptions: isConfigItem ? ['LOCAL', 'EXTERNAL', 'TEMP'] : ['TEMP', 'LOCAL', 'EXTERNAL'],
-        moveHelperText: isConfigItem
-            ? (isHost ? t('host_config_move_help') : t('vault_config_move_help'))
-            : (isHost ? t('host_key_move_help') : t('vault_key_move_help')),
-        saveForm: isHost
-            ? (isConfigItem ? 'save-host-config' : 'save-host-key')
-            : (isConfigItem ? 'save-agent-config' : 'save-key'),
+        moveHelperText: isConfigItem ? t('vault_config_move_help') : t('vault_key_move_help'),
+        saveForm: isConfigItem ? 'save-agent-config' : 'save-key',
         createTitle: isConfigItem ? t('new_config') : t('new_key'),
-        showScopeSelect: isHost,
-        showDelete: !isHost && Boolean(detailName),
+        showScopeSelect: false,
+        showDelete: Boolean(detailName),
         deleteAction: isConfigItem ? 'delete-agent-config' : 'delete-key',
-        showKeyMeta: !isHost && !isConfigItem,
+        showKeyMeta: !isConfigItem,
         description: keyRecord && keyRecord.description ? keyRecord.description : '',
         tagsJSON: keyRecord && keyRecord.tags_json ? keyRecord.tags_json : '[]',
         configStatus: isConfigItem ? (detail?.status || 'active') : '',
         itemRefValue: isConfigItem
             ? (detailName || detail?.key || '')
-            : (detail?.token || (detail?.ref ? `VK:${detail.scope || (isHost ? 'TEMP' : 'LOCAL')}:${detail.ref}` : '')),
+            : (detail?.token || (detail?.ref ? `VK:${detail.scope || 'LOCAL'}:${detail.ref}` : '')),
         bindingsTotal: keySummary ? (keySummary.bindings_total || keySummary.bindings_count || 0) : 0,
         usageCount: keySummary ? (keySummary.usage_count || 0) : 0,
         bindings: keySummary && keySummary.bindings ? keySummary.bindings.slice(0, 5) : [],
         recentAudit: keySummary && keySummary.recent_audit ? keySummary.recent_audit.slice(0, 3) : [],
-        status: detail?.status || (isHost ? 'temp' : 'active')
+        status: detail?.status || 'active'
     };
 }
 
@@ -1803,52 +1620,6 @@ async function loadConfigRelations() {
         }));
     } catch (_) {
         state.configRelations = [];
-    }
-}
-
-async function loadHostVaultKeys() {
-    const data = await request('/api/host-vault/keys');
-    state.hostVaultKeys = data.secrets || [];
-    if (state.hostVaultKeys.length && (!state.hostSelectedKey || !state.hostVaultKeys.some((item) => item.name === state.hostSelectedKey.name))) {
-        state.hostSelectedKey = state.hostVaultKeys[0];
-    } else if (!state.hostVaultKeys.length || !state.hostVaultKeys.some((item) => item.name === state.hostSelectedKey?.name)) {
-        state.hostSelectedKey = null;
-    }
-}
-
-async function loadHostVaultConfigs() {
-    const data = await request('/api/host-vault/configs');
-    state.hostVaultConfigs = data.configs || [];
-    if (state.hostVaultConfigs.length && (!state.hostSelectedConfigKey || !state.hostVaultConfigs.some((item) => item.key === state.hostSelectedConfigKey))) {
-        state.hostSelectedConfigKey = state.hostVaultConfigs[0].key;
-    } else if (!state.hostVaultConfigs.length || !state.hostVaultConfigs.some((item) => item.key === state.hostSelectedConfigKey)) {
-        state.hostSelectedConfigKey = null;
-    }
-}
-
-async function loadHostVaultKeyDetail() {
-    if (!state.hostSelectedKey) {
-        state.hostKeyDetail = null;
-        return;
-    }
-    try {
-        state.hostKeyDetail = await request('/api/host-vault/keys/' + encodeURIComponent(state.hostSelectedKey.name));
-    } catch (err) {
-        if (!isIgnorableDetailError(err)) throw err;
-        state.hostKeyDetail = null;
-    }
-}
-
-async function loadHostVaultConfigDetail() {
-    if (!state.hostSelectedConfigKey) {
-        state.hostConfigDetail = null;
-        return;
-    }
-    try {
-        state.hostConfigDetail = await request('/api/host-vault/configs/' + encodeURIComponent(state.hostSelectedConfigKey));
-    } catch (err) {
-        if (!isIgnorableDetailError(err)) throw err;
-        state.hostConfigDetail = null;
     }
 }
 
@@ -2142,23 +1913,13 @@ async function syncPageData() {
                 await loadSelectedVaultDetail();
                 if (activeTab() === 'BULK_APPLY') {
                     await Promise.all([loadBulkApplyTemplates(), loadBulkApplyWorkflows()]);
-                } else if (activeTab() !== 'Host Vault') {
+                } else {
                     await loadSelectedVaultKeys();
                     state.selectedConfigVault = state.selectedVault.vault_runtime_hash;
                     await loadConfigsForVault();
                     await loadVaultItemSyncStatus();
                 }
-                if (activeTab() === 'HOST_VAULT') {
-                    await loadHostVaultKeys();
-                    await loadHostVaultConfigs();
-                    const useHostConfigDetail = state.vaultItemKind === 'VE'
-                        || (state.vaultItemKind === 'ALL' && state.hostSelectedItemKind === 'VE');
-                    if (useHostConfigDetail) {
-                        await loadHostVaultConfigDetail();
-                    } else {
-                        await loadHostVaultKeyDetail();
-                    }
-                } else if (activeTab() === 'VAULT_ITEMS') {
+                if (activeTab() === 'VAULT_ITEMS') {
                     const useConfigDetail = state.vaultItemKind === 'VE'
                         || (state.vaultItemKind === 'ALL' && state.selectedVaultItemKind === 'VE');
                     if (useConfigDetail) {
@@ -2313,22 +2074,6 @@ async function handleFormSubmit(form) {
             await syncPageData();
             return;
         }
-        if (formType === 'save-host-key') {
-            const payload = {
-                name: String(data.get('name') || '').trim(),
-                value: String(data.get('value') || '').trim(),
-                scope: String(data.get('scope') || 'TEMP')
-            };
-            await request('/api/host-vault/keys', {
-                method: 'POST',
-                body: JSON.stringify(payload)
-            });
-            state.hostSelectedItemKind = 'VK';
-            state.hostSelectedKey = { name: payload.name };
-            setMessage('ok', 'Host key saved.');
-            await syncPageData();
-            return;
-        }
         if (formType === 'save-key-fields') {
             const raw = String(data.get('fields_json') || '[]');
             const parsed = JSON.parse(raw);
@@ -2351,26 +2096,18 @@ async function handleFormSubmit(form) {
             return;
         }
         if (formType === 'promote-key') {
-            const isHostVault = activeTab() === 'HOST_VAULT';
             const targetVault = String(data.get('target_vault') || '').trim();
             const targetScope = String(data.get('target_scope') || 'TEMP').trim();
-            const value = String(data.get('move_value') || '').trim() || (isHostVault ? (state.hostKeyDetail?.value || '') : (state.keyDetail?.value || ''));
-            const name = String(data.get('name') || '').trim() || (isHostVault ? (state.hostSelectedKey?.name || state.hostKeyDetail?.name || '') : (state.selectedKey?.name || state.keyDetail?.name || ''));
+            const value = String(data.get('move_value') || '').trim() || (state.keyDetail?.value || '');
+            const name = String(data.get('name') || '').trim() || (state.selectedKey?.name || state.keyDetail?.name || '');
             if (!targetVault || !name || !value) throw new Error(t('promote_key_missing'));
-            if (targetVault === 'host') {
-                await request('/api/host-vault/keys', {
-                    method: 'POST',
-                    body: JSON.stringify({ name, value, scope: targetScope })
-                });
-            } else {
-                if (targetScope !== 'TEMP') {
-                    throw new Error(t('promote_key_scope_restricted'));
-                }
-                await request('/api/vaults/' + encodeURIComponent(targetVault) + '/keys', {
-                    method: 'POST',
-                    body: JSON.stringify({ name, value })
-                });
+            if (targetScope !== 'TEMP') {
+                throw new Error(t('promote_key_scope_restricted'));
             }
+            await request('/api/vaults/' + encodeURIComponent(targetVault) + '/keys', {
+                method: 'POST',
+                body: JSON.stringify({ name, value })
+            });
             setMessage('ok', t('key_sent'));
             await syncPageData();
             return;
@@ -2396,47 +2133,17 @@ async function handleFormSubmit(form) {
             await syncPageData();
             return;
         }
-        if (formType === 'save-host-config') {
-            const payload = {
-                key: String(data.get('key') || '').trim(),
-                value: String(data.get('value') || '').trim(),
-                scope: String(data.get('scope') || 'LOCAL'),
-                status: 'active'
-            };
-            await request('/api/host-vault/configs', {
+        if (formType === 'promote-config') {
+            const targetVault = String(data.get('target_vault') || '').trim();
+            const targetScope = String(data.get('target_scope') || 'LOCAL').trim();
+            const key = String(data.get('key') || '').trim() || (state.selectedConfigKey || state.configDetail?.key || '');
+            const value = String(data.get('move_value') || '').trim() || (state.configDetail?.value || '');
+            if (!targetVault || !key || !value) throw new Error(t('promote_config_missing'));
+            const payload = { key, value, scope: targetScope, status: 'active' };
+            await request('/api/agents/' + encodeURIComponent(targetVault) + '/configs', {
                 method: 'POST',
                 body: JSON.stringify(payload)
             });
-            state.hostSelectedItemKind = 'VE';
-            state.hostSelectedConfigKey = payload.key;
-            setMessage('ok', 'Host config saved.');
-            await syncPageData();
-            return;
-        }
-        if (formType === 'promote-config') {
-            const isHostVault = activeTab() === 'HOST_VAULT';
-            const targetVault = String(data.get('target_vault') || '').trim();
-            const targetScope = String(data.get('target_scope') || 'LOCAL').trim();
-            const key = String(data.get('key') || '').trim() || (isHostVault ? (state.hostSelectedConfigKey || state.hostConfigDetail?.key || '') : (state.selectedConfigKey || state.configDetail?.key || ''));
-            const value = String(data.get('move_value') || '').trim() || (isHostVault ? (state.hostConfigDetail?.value || '') : (state.configDetail?.value || ''));
-            if (!targetVault || !key || !value) throw new Error(t('promote_config_missing'));
-            const payload = {
-                key,
-                value,
-                scope: targetScope,
-                status: 'active'
-            };
-            if (targetVault === 'host') {
-                await request('/api/host-vault/configs', {
-                    method: 'POST',
-                    body: JSON.stringify(payload)
-                });
-            } else {
-                await request('/api/agents/' + encodeURIComponent(targetVault) + '/configs', {
-                    method: 'POST',
-                    body: JSON.stringify(payload)
-                });
-            }
             setMessage('ok', t('config_sent'));
             await syncPageData();
             return;
@@ -2591,23 +2298,6 @@ async function handleAction(action, dataset) {
         if (action === 'set-vault-kind') {
             state.vaultItemKind = dataset.kind || 'VK';
             state.revealValue = false;
-            if (activeTab() === 'HOST_VAULT') {
-                if (state.vaultItemKind === 'VK') {
-                    state.hostSelectedItemKind = 'VK';
-                    state.hostSelectedConfigKey = null;
-                    state.hostConfigDetail = null;
-                    if (!state.hostSelectedKey && state.hostVaultKeys.length) {
-                        state.hostSelectedKey = state.hostVaultKeys[0];
-                    }
-                } else if (state.vaultItemKind === 'VE') {
-                    state.hostSelectedItemKind = 'VE';
-                    state.hostKeyDetail = null;
-                    if (!state.hostSelectedConfigKey && state.hostVaultConfigs.length) {
-                        state.hostSelectedConfigKey = state.hostVaultConfigs[0].key;
-                    }
-                }
-                return syncPageData();
-            }
             if (state.vaultItemKind === 'VK') {
                 state.selectedVaultItemKind = 'VK';
                 state.selectedConfigKey = null;
@@ -2649,16 +2339,6 @@ async function handleAction(action, dataset) {
                 return syncPageData();
             }
             return selectKeyByName(dataset.key);
-        }
-        if (action === 'select-host-item') {
-            if ((dataset.kind || 'VK') === 'VE') {
-                state.hostSelectedItemKind = 'VE';
-                state.hostSelectedConfigKey = dataset.key;
-                return syncPageData();
-            }
-            state.hostSelectedItemKind = 'VK';
-            state.hostSelectedKey = state.hostVaultKeys.find((item) => item.name === dataset.key) || { name: dataset.key };
-            return syncPageData();
         }
         if (action === 'toggle-reveal') {
             state.revealValue = !state.revealValue;
@@ -2744,6 +2424,7 @@ async function handleAction(action, dataset) {
             state.auditVault = dataset.key;
             state.auditKey = null;
             await selectVaultByKey(dataset.key);
+            syncRoute(false);
             return syncPageData();
         }
         if (action === 'audit-page-select-key') {

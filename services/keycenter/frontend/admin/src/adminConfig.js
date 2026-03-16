@@ -1,5 +1,5 @@
 export const pageConfig = {
-    vaults: { labelKey: 'page_vaults', tabs: ['ALL_VAULTS', 'HOST_VAULT', 'VAULT_ITEMS', 'BULK_APPLY'] },
+    vaults: { labelKey: 'page_vaults', tabs: ['ALL_VAULTS', 'VAULT_ITEMS', 'BULK_APPLY'] },
     functions: { labelKey: 'page_functions', tabs: ['FUNCTION_LIST', 'FUNCTION_BINDINGS', 'FUNCTION_IMPACT', 'FUNCTION_RUN'] },
     audit: { labelKey: 'page_audit', tabs: ['AUDIT_LOG'] },
     settings: { labelKey: 'page_settings', tabs: ['UI', 'ADMIN'] }
@@ -7,7 +7,6 @@ export const pageConfig = {
 
 export const routeEntries = [
     { page: 'vaults', tab: 'ALL_VAULTS', path: '/vaults/all' },
-    { page: 'vaults', tab: 'HOST_VAULT', path: '/vaults/host' },
     { page: 'functions', tab: 'FUNCTION_LIST', path: '/functions/list' },
     { page: 'functions', tab: 'FUNCTION_BINDINGS', path: '/functions/bindings' },
     { page: 'functions', tab: 'FUNCTION_IMPACT', path: '/functions/impact' },

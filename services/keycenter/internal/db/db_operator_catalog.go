@@ -359,7 +359,7 @@ func (d *DB) ReplaceBindingsForTarget(bindingType, targetName string, entries []
 }
 
 func (d *DB) SaveAuditEvent(entry *AuditEvent) error {
-	return d.conn.Save(entry).Error
+	return d.conn.Create(entry).Error
 }
 
 func (d *DB) ListAuditEvents(entityType, entityID string) ([]AuditEvent, error) {
