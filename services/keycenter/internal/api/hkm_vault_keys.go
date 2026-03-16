@@ -338,7 +338,7 @@ func (s *Server) handleVaultAudit(w http.ResponseWriter, r *http.Request) {
 		s.respondError(w, http.StatusBadRequest, errMsg)
 		return
 	}
-	rows, total, err := s.db.ListAuditEventsLimited("vault", agent.NodeID, limit, offset)
+	rows, total, err := s.db.ListAuditEventsForVault(agent.NodeID, agent.AgentHash, limit, offset)
 	if err != nil {
 		s.respondError(w, http.StatusInternalServerError, "failed to list vault audit events")
 		return

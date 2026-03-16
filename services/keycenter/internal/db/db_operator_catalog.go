@@ -389,6 +389,28 @@ func (d *DB) ListAuditEventsLimited(entityType, entityID string, limit, offset i
 	return rows, total, err
 }
 
+func (d *DB) ListAuditEventsForVault(nodeID, agentHash string, limit, offset int) ([]AuditEvent, int64, error) {
+	where := "entity_id = ? OR entity_id = ? OR actor_id = ? OR actor_id = ?"
+	args := []any{nodeID, agentHash, nodeID, agentHash}
+
+	var total int64
+	if err := d.conn.Model(&AuditEvent{}).Where(where, args...).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	q := d.conn.Model(&AuditEvent{}).Where(where, args...)
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	if offset > 0 {
+		q = q.Offset(offset)
+	}
+
+	var rows []AuditEvent
+	err := q.Order("created_at DESC").Find(&rows).Error
+	return rows, total, err
+}
+
 func (d *DB) ListRecentAdminAuditEvents(limit, offset int) ([]AuditEvent, int64, error) {
 	query := d.conn.Model(&AuditEvent{}).Where(
 		"entity_type IN ? OR action LIKE ? OR source LIKE ?",
