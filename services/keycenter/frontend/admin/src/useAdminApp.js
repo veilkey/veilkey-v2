@@ -496,7 +496,7 @@ function renderSecondarySidebar() {
                 <div class="nav-list">
                     ${vaults.map((item) => `
                         <a
-                            href="${routePath('audit', 'AUDIT_LOG')}"
+                            href="/audit/${encodeURIComponent(item.vault_runtime_hash)}"
                             class="nav-item${state.auditVault === item.vault_runtime_hash ? ' active' : ''}"
                             data-action="audit-page-select-vault"
                             data-key="${escapeHTML(item.vault_runtime_hash)}"
@@ -504,7 +504,7 @@ function renderSecondarySidebar() {
                             <span class="nav-item-main">
                                 <span>${escapeHTML(item.display_name || item.vault_name || item.vault_runtime_hash)}</span>
                             </span>
-                            ${renderStatusPill(item.status || 'active', statusClass(item.status || 'active'))}
+                            <span class="status-pill count-pill">${auditVaultCount(item)}</span>
                         </a>
                     `).join('') || `<div class="empty">${escapeHTML(t('no_vaults'))}</div>`}
                 </div>
@@ -1420,6 +1420,76 @@ function syncTemplatePageLayout() {
     state.ui.rightHTML = '';
 }
 
+function renderAuditPage() {
+    state.ui.leftHTML = '';
+    state.ui.leftVisible = false;
+    state.ui.twoPane = true;
+    renderSecondarySidebar();
+
+    const rows = state.auditRows;
+    const selected = state.selectedAuditRow;
+    const vault = state.vaults.find((v) => v.vault_runtime_hash === state.auditVault) || null;
+
+    state.ui.centerHTML = `
+        <div class="pane-header">
+            <div class="pane-title"><strong>${escapeHTML(t('tab_audit_log'))}</strong></div>
+            <div class="toolbar">
+                <span class="pill">${rows.length} ${escapeHTML(t('count_events'))}</span>
+            </div>
+        </div>
+        <div class="pane-content">
+            <div class="table-wrap">
+                <table>
+                    <thead><tr>
+                        <th>${escapeHTML(t('time'))}</th>
+                        <th>${escapeHTML(t('action'))}</th>
+                        <th>${escapeHTML(t('actor'))}</th>
+                        <th>${escapeHTML(t('target'))}</th>
+                    </tr></thead>
+                    <tbody>
+                        ${rows.length ? rows.map((row, i) => `
+                            <tr class="is-clickable${selected && selected.event_id === row.event_id ? ' is-selected' : ''}" data-action="select-audit-row" data-index="${i}">
+                                <td>${escapeHTML(row.created_at || row.timestamp || '-')}</td>
+                                <td>${escapeHTML(row.action || '-')}</td>
+                                <td>${escapeHTML(row.actor_type || row.actor_id || '-')}</td>
+                                <td>${escapeHTML(row.entity_id || '-')}</td>
+                            </tr>
+                        `).join('') : `<tr><td colspan="4"><div class="empty">${escapeHTML(t('empty_no_rows'))}</div></td></tr>`}
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
+
+    const detail = selected || (rows.length ? rows[0] : null);
+    const vaultInfo = vault ? `
+        <div class="card" style="margin-top:12px">
+            <div class="card-title">${escapeHTML(vault.display_name || vault.vault_name)}</div>
+            <div class="inline-grid">
+                <div class="kv"><span class="label">status</span><span class="value">${escapeHTML(vault.status || '-')}</span></div>
+                <div class="kv"><span class="label">secrets</span><span class="value">${vault.secrets_count || 0}</span></div>
+                <div class="kv"><span class="label">configs</span><span class="value">${vault.configs_count || 0}</span></div>
+                <div class="kv"><span class="label">IP</span><span class="value">${escapeHTML(vault.ip || '-')}</span></div>
+                <div class="kv"><span class="label">role</span><span class="value">${escapeHTML(vault.agent_role || '-')}</span></div>
+                <div class="kv"><span class="label">last seen</span><span class="value">${escapeHTML(vault.last_seen || '-')}</span></div>
+                <div class="kv"><span class="label">version</span><span class="value">${vault.version || '-'}</span></div>
+            </div>
+        </div>` : '';
+
+    state.ui.rightHTML = `
+        <div class="pane-header">
+            <div class="pane-title"><strong>${escapeHTML(t('audit_event_detail'))}</strong></div>
+        </div>
+        <div class="pane-content">
+            ${detail ? `
+                <div class="card">
+                    <div class="card-title">${escapeHTML(detail.action || 'event')} · ${escapeHTML(detail.entity_type || '-')}</div>
+                    <pre class="code">${escapeHTML(formatJSON(detail))}</pre>
+                </div>
+            ` : `<div class="empty">${escapeHTML(t('select_vault_for_detail'))}</div>`}
+            ${vaultInfo}
+        </div>`;
+}
+
 function render() {
     renderTopbarStatus();
     renderSidebar();
@@ -1428,8 +1498,12 @@ function render() {
         syncVaultVuePanels();
         return;
     }
-    if (state.activePage === 'functions' || state.activePage === 'audit' || state.activePage === 'settings') {
+    if (state.activePage === 'functions' || state.activePage === 'settings') {
         syncTemplatePageLayout();
+        return;
+    }
+    if (state.activePage === 'audit') {
+        renderAuditPage();
         return;
     }
     renderSecondarySidebar();
@@ -2449,6 +2523,12 @@ async function handleAction(action, dataset) {
             await selectVaultByKey(dataset.key);
             syncRoute(false);
             return syncPageData();
+        }
+        if (action === 'select-audit-row') {
+            const idx = parseInt(dataset.index, 10);
+            state.selectedAuditRow = state.auditRows[idx] || null;
+            render();
+            return;
         }
         if (action === 'audit-page-select-key') {
             state.auditKey = dataset.key;
