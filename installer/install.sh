@@ -653,6 +653,14 @@ require_profile_file() {
   }
 }
 
+profile_env_default() {
+  local profile="$1"
+  local key="$2"
+  local file
+  file="$(profile_file "${profile}")"
+  awk -F= -v key="${key}" '$1 == key {print $2; exit}' "${file}"
+}
+
 profile_has_component() {
   local profile="$1"
   local component="$2"
@@ -684,13 +692,15 @@ render_profile_envs() {
     default_enable_localvault=0
   fi
   if profile_has_component "${profile}" "proxy"; then
-    # Proxy runtime still depends on a veilkey-cli binary that is not yet
-    # packaged as part of the default installer surface. Keep proxy assets
-    # staged, but require an explicit opt-in before enabling proxy units.
-    default_enable_proxy=0
+    default_enable_proxy="$(profile_env_default "${profile}" "VEILKEY_ENABLE_PROXY")"
+    default_enable_proxy="${default_enable_proxy:-0}"
   else
     default_enable_proxy=0
   fi
+  default_enable_keycenter="${VEILKEY_ENABLE_KEYCENTER_DEFAULT:-$(profile_env_default "${profile}" "VEILKEY_ENABLE_KEYCENTER" || true)}"
+  default_enable_keycenter="${default_enable_keycenter:-$(if profile_has_component "${profile}" "keycenter"; then echo 1; else echo 0; fi)}"
+  default_enable_localvault="${VEILKEY_ENABLE_LOCALVAULT_DEFAULT:-$(profile_env_default "${profile}" "VEILKEY_ENABLE_LOCALVAULT" || true)}"
+  default_enable_localvault="${default_enable_localvault:-$(if profile_has_component "${profile}" "localvault"; then echo 1; else echo 0; fi)}"
 
   enable_keycenter="${VEILKEY_ENABLE_KEYCENTER:-${default_enable_keycenter}}"
   enable_localvault="${VEILKEY_ENABLE_LOCALVAULT:-${default_enable_localvault}}"

@@ -9,9 +9,11 @@ tmp_manifest="$(mktemp)"
 tmp_err="$(mktemp)"
 trap 'rm -rf "$tmp_bundle" "$tmp_root"; rm -f "$tmp_manifest" "$tmp_err"' EXIT
 
-VEILKEY_INSTALLER_MANIFEST="$tmp_manifest" ./install.sh init >/dev/null
+env -u VEILKEY_INSTALLER_GITLAB_API_BASE \
+  VEILKEY_INSTALLER_MANIFEST="$tmp_manifest" ./install.sh init >/dev/null
 
-if VEILKEY_INSTALLER_MANIFEST="$tmp_manifest" ./install.sh install-profile proxmox-host "$tmp_root" "$tmp_bundle" >/dev/null 2>"$tmp_err"; then
+if env -u VEILKEY_INSTALLER_GITLAB_API_BASE \
+  VEILKEY_INSTALLER_MANIFEST="$tmp_manifest" ./install.sh install-profile proxmox-host "$tmp_root" "$tmp_bundle" >/dev/null 2>"$tmp_err"; then
   echo "expected install-profile to fail without VEILKEY_INSTALLER_GITLAB_API_BASE when manifest still has placeholder URLs" >&2
   exit 1
 fi
