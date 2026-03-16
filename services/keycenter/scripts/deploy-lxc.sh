@@ -104,4 +104,8 @@ main() {
   echo "Deployed ${SERVICE_NAME} to LXC ${vmid} via ${exec_path}"
 }
 
+if [[ "${VEILKEY_SOURCE_ONLY:-0}" == "1" ]]; then
+  return 0 2>/dev/null || exit 0
+fi
+
 main "$@"
