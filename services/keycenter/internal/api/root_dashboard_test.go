@@ -25,6 +25,9 @@ func TestRootServesDashboardWhenUnlocked(t *testing.T) {
 	if !strings.Contains(body, "Operations Console (Variation 9)") || !strings.Contains(body, "<div id=\"app\"></div>") || !strings.Contains(body, "/assets/") {
 		t.Fatalf("expected root dashboard to serve the built admin shell")
 	}
+	if !strings.Contains(body, "/favicon.svg") {
+		t.Fatalf("expected root dashboard to include favicon link")
+	}
 	if strings.Contains(body, "Unlock first to enter the operator console.") {
 		t.Fatalf("expected unlocked root to skip locked landing")
 	}
@@ -152,6 +155,9 @@ func TestOperatorShellRoutesServeHTML(t *testing.T) {
 		if !strings.Contains(body, "Operations Console (Variation 9)") || !strings.Contains(body, "<div id=\"app\"></div>") || !strings.Contains(body, "/assets/") {
 			t.Fatalf("%s: expected admin shell HTML", path)
 		}
+		if !strings.Contains(body, "/favicon.svg") {
+			t.Fatalf("%s: expected admin shell to include favicon link", path)
+		}
 	}
 }
 
@@ -212,5 +218,24 @@ func TestAdminMockupPreviewRoutesServeHTML(t *testing.T) {
 		if !strings.Contains(body, "VeilKey KeyCenter") || !strings.Contains(body, "Operations Console (Variation 9)") || !strings.Contains(body, "<div id=\"app\"></div>") {
 			t.Fatalf("%s: expected built admin shell", tt.path)
 		}
+	}
+}
+
+func TestFaviconServedFromAdminStaticAssets(t *testing.T) {
+	_, handler := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/favicon.svg", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "image/svg+xml") {
+		t.Fatalf("expected svg content type, got %q", got)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "<svg") {
+		t.Fatalf("expected favicon svg body")
 	}
 }
