@@ -1,4 +1,4 @@
-status=pending
+status=validated
 date=2026-03-16
 object=proxmox-allinone-proxy-cli-runtime
 repo=/opt/veilkey-selfhosted-repo
