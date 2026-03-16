@@ -68,6 +68,24 @@ for (const helper of helperCalls) {
   }
 }
 
+function extractLiteralActions(source) {
+  return new Set([
+    ...[...source.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]),
+    ...[...source.matchAll(/'((?:set|select|refresh|delete|toggle|clear|copy|run|jump|load|audit)-[^']+)'/g)].map((match) => match[1])
+  ]);
+}
+
+const templateActions = extractLiteralActions(template);
+const handledActions = new Set(
+  [...useAdminApp.matchAll(/if \(action === '([^']+)'\)/g)].map((match) => match[1])
+);
+
+for (const action of templateActions) {
+  if (!handledActions.has(action)) {
+    fail(`useAdminApp contract check failed: template uses data-action="${action}" but handleAction() does not handle it.`);
+  }
+}
+
 const pageConfigMatch = adminConfig.match(/export const pageConfig = (\{[\s\S]*?\n\});/);
 const routeEntriesMatch = adminConfig.match(/export const routeEntries = (\[[\s\S]*?\n\]);/);
 if (!pageConfigMatch || !routeEntriesMatch) {
@@ -86,6 +104,31 @@ for (const [page, config] of Object.entries(pageConfig)) {
     if (!routeSet.has(`${page}::${tab}`)) {
       fail(`adminConfig contract check failed: missing route entry for ${page} / ${tab}.`);
     }
+  }
+}
+
+const stateMatch = useAdminApp.match(/const state = reactive\((\{[\s\S]*?\n\})\);/);
+if (!stateMatch) {
+  fail('useAdminApp contract check failed: reactive state block not found.');
+}
+
+const stateObject = Function(`"use strict"; return (${stateMatch[1]});`)();
+const stateRefs = new Set([...template.matchAll(/\bstate\.([A-Za-z_][A-Za-z0-9_]*)/g)].map((match) => match[1]));
+const stateUIRefs = new Set([...template.matchAll(/\bstate\.ui\.([A-Za-z_][A-Za-z0-9_]*)/g)].map((match) => match[1]));
+
+for (const key of stateRefs) {
+  if (!(key in stateObject)) {
+    fail(`useAdminApp contract check failed: template reads state.${key} but it is not initialized in reactive state.`);
+  }
+}
+
+if (!stateObject.ui || typeof stateObject.ui !== 'object') {
+  fail('useAdminApp contract check failed: state.ui is not initialized as an object.');
+}
+
+for (const key of stateUIRefs) {
+  if (!(key in stateObject.ui)) {
+    fail(`useAdminApp contract check failed: template reads state.ui.${key} but it is not initialized in state.ui.`);
   }
 }
 
