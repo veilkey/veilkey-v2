@@ -31,6 +31,22 @@ func (s *Server) handleAgentSecrets(w http.ResponseWriter, r *http.Request) {
 
 	var data map[string]interface{}
 	if json.Unmarshal(body, &data) == nil {
+		if data == nil {
+			data = map[string]interface{}{
+				"secrets": []interface{}{},
+				"count":   0,
+			}
+		}
+		if _, ok := data["secrets"]; !ok || data["secrets"] == nil {
+			data["secrets"] = []interface{}{}
+		}
+		if _, ok := data["count"]; !ok || data["count"] == nil {
+			if secrets, ok := data["secrets"].([]interface{}); ok {
+				data["count"] = len(secrets)
+			} else {
+				data["count"] = 0
+			}
+		}
 		if secrets, ok := data["secrets"].([]interface{}); ok {
 			for _, item := range secrets {
 				if sec, ok := item.(map[string]interface{}); ok {
