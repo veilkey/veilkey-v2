@@ -147,6 +147,22 @@
                             <template v-else>
                                 <div class="toolbar">
                                     <div class="toolbar-group">
+                                        <div v-if="activeTab() !== 'Host Vault'" class="toolbar-group">
+                                            <span class="segmented-label">작업</span>
+                                            <div class="segmented" role="tablist" aria-label="작업">
+                                                <button class="btn" :class="activeTab() === '키 / 환경값' ? 'btn-primary' : 'btn-soft'" data-action="set-tab" data-tab="키 / 환경값">키 / 환경값</button>
+                                                <button class="btn" :class="activeTab() === '일괄변경' ? 'btn-primary' : 'btn-soft'" data-action="set-tab" data-tab="일괄변경">일괄변경</button>
+                                            </div>
+                                        </div>
+                                        <template v-if="activeTab() === '일괄변경'">
+                                            <div class="toolbar-group">
+                                                <span class="segmented-label">보기</span>
+                                                <div class="segmented" role="tablist" aria-label="일괄변경 보기">
+                                                    <button class="btn" :class="state.bulkApplyView === 'items' ? 'btn-primary' : 'btn-soft'" data-action="set-bulk-apply-view" data-view="items">항목</button>
+                                                    <button class="btn" :class="state.bulkApplyView === 'workflow' ? 'btn-primary' : 'btn-soft'" data-action="set-bulk-apply-view" data-view="workflow">워크플로우</button>
+                                                </div>
+                                            </div>
+                                        </template>
                                         <div class="toolbar-group">
                                             <span class="segmented-label">표시 대상</span>
                                             <div class="segmented" role="tablist" aria-label="표시 대상">
@@ -157,8 +173,8 @@
                                         </div>
                                         <input class="field context-search" id="key-search" type="search" :placeholder="activeTab() === 'Host Vault' ? '호스트 볼트 안에서 검색' : '현재 볼트 안에서 검색'" :value="state.globalQuery">
                                     </div>
-                                    <span class="pill">{{ vaultVisibleRows().length }}개 항목</span>
-                                    <button v-if="activeTab() !== 'Host Vault'" class="btn btn-primary" data-action="new-key">{{ state.vaultItemKind === 'VE' ? '새 환경값' : '새 키' }}</button>
+                                    <span class="pill">{{ activeTab() === '일괄변경' ? (state.bulkApplyView === 'workflow' ? state.bulkApplyWorkflows.length : state.bulkApplyTemplates.length) : vaultVisibleRows().length }}개 항목</span>
+                                    <button v-if="activeTab() !== 'Host Vault' && activeTab() !== '일괄변경'" class="btn btn-primary" data-action="new-key">{{ state.vaultItemKind === 'VE' ? '새 환경값' : '새 키' }}</button>
                                 </div>
                             </template>
                         </div>
@@ -193,7 +209,7 @@
                                     </tbody>
                                 </table>
                             </div>
-                            <div v-else class="table-wrap">
+                            <div v-else-if="activeTab() !== '일괄변경'" class="table-wrap">
                                 <table>
                                     <thead>
                                         <tr>
@@ -264,6 +280,64 @@
                                     </tbody>
                                 </table>
                             </div>
+                            <div v-else class="table-wrap">
+                                <table v-if="state.bulkApplyView === 'items'">
+                                    <thead>
+                                        <tr>
+                                            <th>이름</th>
+                                            <th>형식</th>
+                                            <th>대상 경로</th>
+                                            <th>정의 상태</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr
+                                            v-for="row in state.bulkApplyTemplates"
+                                            :key="row.name"
+                                            class="is-clickable"
+                                            :class="{ 'is-selected': state.selectedBulkApplyTemplateName === row.name }"
+                                            data-action="select-bulk-template"
+                                            :data-key="row.name"
+                                        >
+                                            <td>{{ row.name }}</td>
+                                            <td>{{ row.format || '-' }}</td>
+                                            <td><span class="code">{{ row.target_path || '-' }}</span></td>
+                                            <td><span class="status-pill" :class="statusClass(row.validation_status || 'active')">{{ row.validation_status || '-' }}</span></td>
+                                        </tr>
+                                        <tr v-if="!state.bulkApplyTemplates.length">
+                                            <td colspan="4"><div class="empty">등록된 일괄변경 항목이 없습니다.</div></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                                <table v-else>
+                                    <thead>
+                                        <tr>
+                                            <th>이름</th>
+                                            <th>라벨</th>
+                                            <th>단계 수</th>
+                                            <th>정의 상태</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr
+                                            v-for="row in state.bulkApplyWorkflows"
+                                            :key="row.name"
+                                            class="is-clickable"
+                                            :class="{ 'is-selected': state.selectedBulkApplyWorkflowName === row.name }"
+                                            data-action="select-bulk-workflow"
+                                            :data-key="row.name"
+                                        >
+                                            <td>{{ row.name }}</td>
+                                            <td>{{ row.label || '-' }}</td>
+                                            <td>{{ row.step_count || ((row.steps && row.steps.length) || 0) }}</td>
+                                            <td><span class="status-pill" :class="statusClass(row.validation_status || 'active')">{{ row.validation_status || '-' }}</span></td>
+                                        </tr>
+                                        <tr v-if="!state.bulkApplyWorkflows.length">
+                                            <td colspan="4"><div class="empty">등록된 워크플로우가 없습니다.</div></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </section>
                     <section class="pane" id="right-pane">
@@ -299,7 +373,7 @@
                                 </div>
                                 <div v-else class="empty">왼쪽에서 볼트를 선택하세요.</div>
                             </template>
-                            <template v-else>
+                            <template v-else-if="activeTab() !== '일괄변경'">
                                 <div class="stack">
                                     <form v-if="vaultPanel().canMoveItem" class="stack" :data-form="vaultPanel().isConfigItem ? 'promote-config' : 'promote-key'">
                                         <div class="card">
@@ -408,6 +482,46 @@
                                         </div>
                                     </template>
                                 </div>
+                            </template>
+                            <template v-else>
+                                <div v-if="state.bulkApplyView === 'items' && selectedBulkApplyTemplate()" class="stack">
+                                    <div class="card">
+                                        <div class="card-title">항목 상세</div>
+                                        <div class="inline-grid">
+                                            <div class="kv"><span class="label">이름</span><span class="value">{{ selectedBulkApplyTemplate().name || '-' }}</span></div>
+                                            <div class="kv"><span class="label">형식</span><span class="value">{{ selectedBulkApplyTemplate().format || '-' }}</span></div>
+                                            <div class="kv"><span class="label">대상 경로</span><span class="value">{{ selectedBulkApplyTemplate().target_path || '-' }}</span></div>
+                                            <div class="kv"><span class="label">훅</span><span class="value">{{ selectedBulkApplyTemplate().hook || '-' }}</span></div>
+                                            <div class="kv"><span class="label">정의 상태</span><span class="value">{{ selectedBulkApplyTemplate().validation_status || '-' }}</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="card">
+                                        <div class="card-title">템플릿 본문</div>
+                                        <pre class="code">{{ selectedBulkApplyTemplate().body || '' }}</pre>
+                                    </div>
+                                </div>
+                                <div v-else-if="state.bulkApplyView === 'workflow' && selectedBulkApplyWorkflow()" class="stack">
+                                    <div class="card">
+                                        <div class="card-title">워크플로우 상세</div>
+                                        <div class="inline-grid">
+                                            <div class="kv"><span class="label">이름</span><span class="value">{{ selectedBulkApplyWorkflow().name || '-' }}</span></div>
+                                            <div class="kv"><span class="label">라벨</span><span class="value">{{ selectedBulkApplyWorkflow().label || '-' }}</span></div>
+                                            <div class="kv"><span class="label">훅</span><span class="value">{{ selectedBulkApplyWorkflow().hook || '-' }}</span></div>
+                                            <div class="kv"><span class="label">단계 수</span><span class="value">{{ selectedBulkApplyWorkflow().step_count || ((selectedBulkApplyWorkflow().steps && selectedBulkApplyWorkflow().steps.length) || 0) }}</span></div>
+                                            <div class="kv"><span class="label">정의 상태</span><span class="value">{{ selectedBulkApplyWorkflow().validation_status || '-' }}</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="card">
+                                        <div class="card-title">단계</div>
+                                        <div v-if="selectedBulkApplyWorkflow().steps && selectedBulkApplyWorkflow().steps.length" class="stack">
+                                            <div v-for="step in selectedBulkApplyWorkflow().steps" :key="step.name" class="value">
+                                                {{ step.name }} · {{ step.format || '-' }} · {{ step.target_path || '-' }}
+                                            </div>
+                                        </div>
+                                        <div v-else class="empty">정의된 단계가 없습니다.</div>
+                                    </div>
+                                </div>
+                                <div v-else class="empty">왼쪽에서 항목 또는 워크플로우를 선택하세요.</div>
                             </template>
                         </div>
                     </section>
@@ -797,6 +911,8 @@ const {
   vaultSyncStatus,
   vaultDistributionStatus,
   vaultKeyClassStatus,
+  selectedBulkApplyTemplate,
+  selectedBulkApplyWorkflow,
   renderConfigRelations,
   configRelationsByScope,
   encodeURIComponent

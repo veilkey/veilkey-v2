@@ -52,6 +52,11 @@ const state = reactive({
     vaultItemKind: 'ALL',
     selectedVaultItemKind: 'VK',
     vaultItemSyncStatus: {},
+    bulkApplyView: 'items',
+    bulkApplyTemplates: [],
+    bulkApplyWorkflows: [],
+    selectedBulkApplyTemplateName: null,
+    selectedBulkApplyWorkflowName: null,
     routeSelectedVaultHash: null,
     hostVaultKeys: [],
     hostVaultConfigs: [],
@@ -149,16 +154,24 @@ function routePath(page, tab) {
         const vaultHash = state.selectedVault?.vault_runtime_hash || state.routeSelectedVaultHash;
         return vaultHash ? `/vaults/local/${encodeURIComponent(vaultHash)}` : '/vaults/local';
     }
+    if (page === 'vaults' && tab === '일괄변경') {
+        const vaultHash = state.selectedVault?.vault_runtime_hash || state.routeSelectedVaultHash;
+        if (!vaultHash) return '/vaults/local';
+        const view = state.bulkApplyView === 'workflow' ? 'workflow' : 'items';
+        return `/vaults/local/${encodeURIComponent(vaultHash)}?tab=bulk-apply&view=${encodeURIComponent(view)}`;
+    }
     const entry = routeEntries.find((item) => item.page === page && item.tab === tab);
     return entry ? entry.path : '/';
 }
 
-function applyRoute(pathname) {
+function applyRoute(pathname, search = window.location.search) {
     const normalized = pathname !== '/' && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
     const localVaultMatch = normalized.match(/^\/vaults\/local(?:\/([^/]+))?$/);
     if (localVaultMatch) {
+        const params = new URLSearchParams(search || '');
         state.activePage = 'vaults';
-        state.activeTabByPage.vaults = '키 / 환경값';
+        state.activeTabByPage.vaults = params.get('tab') === 'bulk-apply' ? '일괄변경' : '키 / 환경값';
+        state.bulkApplyView = params.get('view') === 'workflow' ? 'workflow' : 'items';
         state.routeSelectedVaultHash = localVaultMatch[1] ? decodeURIComponent(localVaultMatch[1]) : null;
         return;
     }
@@ -171,7 +184,8 @@ function applyRoute(pathname) {
 
 function syncRoute(replace) {
     const nextPath = routePath(state.activePage, activeTab());
-    if (window.location.pathname === nextPath) return;
+    const currentURL = window.location.pathname + window.location.search;
+    if (currentURL === nextPath) return;
     const fn = replace ? 'replaceState' : 'pushState';
     window.history[fn]({ page: state.activePage, tab: activeTab() }, '', nextPath);
 }
@@ -202,6 +216,16 @@ function vaultItemSyncEntry(kind, name) {
     return state.vaultItemSyncStatus[vaultItemSyncKey(kind, name)];
 }
 
+function itemValueFingerprint(kind, item) {
+    if (!item) return '';
+    if (kind === 'VE') {
+        return item.ref || item.token || item.value || item.key || item.name || '';
+    }
+    if (item.token) return item.token;
+    if (item.scope && item.ref) return `VK:${item.scope}:${item.ref}`;
+    return item.ref || item.value || item.name || '';
+}
+
 function renderSyncStatus(kind, name) {
     const item = vaultItemSyncEntry(kind, name);
     if (!item) return '<span class="muted">확인중</span>';
@@ -214,13 +238,13 @@ function vaultSyncStatus(kind, name) {
     if (!item) {
         return { loading: true, label: '확인중', className: '' };
     }
-    if (item.matched === item.total) {
+    if (item.exactCount >= item.comparableCount && item.comparableCount > 0) {
         return { loading: false, label: '동기화됨', className: 'active' };
     }
-    if (item.matched === 1) {
-        return { loading: false, label: '미동기화', className: 'pending' };
+    if (item.exactCount > 1) {
+        return { loading: false, label: '부분동기화', className: 'pending' };
     }
-    return { loading: false, label: '부분동기화', className: 'error' };
+    return { loading: false, label: '미동기화', className: 'error' };
 }
 
 function vaultKeyClassStatus(kind, name) {
@@ -228,10 +252,10 @@ function vaultKeyClassStatus(kind, name) {
     if (!item) {
         return { loading: true, label: '확인중', className: '' };
     }
-    if (item.matched === 1) {
+    if (item.presentCount <= 1) {
         return { loading: false, label: '유일키', className: 'pending' };
     }
-    if (item.matched === item.total) {
+    if (item.presentCount >= item.comparableCount && item.comparableCount > 0) {
         return { loading: false, label: '글로벌키', className: 'active' };
     }
     return { loading: false, label: '파편화 키', className: 'error' };
@@ -242,13 +266,14 @@ function vaultDistributionStatus(kind, name) {
     if (!item) {
         return { loading: true, label: '확인중', className: '' };
     }
-    if (item.matched === item.total) {
-        return { loading: false, label: `${item.matched}/${item.total}`, className: 'active' };
+    const label = `${item.exactCount}/${item.comparableCount}`;
+    if (item.exactCount >= item.comparableCount && item.comparableCount > 0) {
+        return { loading: false, label, className: 'active' };
     }
-    if (item.matched === 1) {
-        return { loading: false, label: `${item.matched}/${item.total}`, className: 'pending' };
+    if (item.exactCount > 1) {
+        return { loading: false, label, className: 'pending' };
     }
-    return { loading: false, label: `${item.matched}/${item.total}`, className: 'error' };
+    return { loading: false, label, className: 'error' };
 }
 
 function vaultTargetOptions(includeHost = true) {
@@ -1421,12 +1446,24 @@ function vaultItemIdentifier(row) {
 function vaultCenterTitle() {
     if (activeTab() === '전체 볼트') return t('vault_inventory');
     if (activeTab() === 'Host Vault') return t('host_vault_title');
+    if (activeTab() === '일괄변경') return '일괄변경';
     return t('current_vault_items');
 }
 
 function vaultRightPaneTitle() {
     if (activeTab() === '전체 볼트') return currentLocale() === 'en' ? 'Vault Detail' : '볼트 상세';
+    if (activeTab() === '일괄변경') {
+        return state.bulkApplyView === 'workflow' ? '워크플로우 상세' : '항목 상세';
+    }
     return currentVaultSelectedKind() === 'VE' ? t('config_detail') : t('key_detail');
+}
+
+function selectedBulkApplyTemplate() {
+    return state.bulkApplyTemplates.find((item) => item.name === state.selectedBulkApplyTemplateName) || null;
+}
+
+function selectedBulkApplyWorkflow() {
+    return state.bulkApplyWorkflows.find((item) => item.name === state.selectedBulkApplyWorkflowName) || null;
 }
 
 function selectedInventoryDetail() {
@@ -1815,7 +1852,7 @@ async function loadVaultItemSyncStatus() {
                 const data = await request('/api/agents/' + encodeURIComponent(vaultHash) + '/configs');
                 const configs = new Map();
                 (data.configs || []).forEach((item) => {
-                    configs.set(item.key, true);
+                    configs.set(item.key, itemValueFingerprint('VE', item));
                 });
                 normalizedConfigsByVault.set(vaultHash, configs);
             }
@@ -1827,7 +1864,7 @@ async function loadVaultItemSyncStatus() {
             const data = await request('/api/vaults/' + encodeURIComponent(vaultHash) + '/keys');
             const keys = new Map();
             (data.keys || data.secrets || []).forEach((item) => {
-                keys.set(item.name, true);
+                keys.set(item.name, itemValueFingerprint('VK', item));
             });
             normalizedKeysByVault.set(vaultHash, keys);
         } catch (_) {
@@ -1837,34 +1874,82 @@ async function loadVaultItemSyncStatus() {
 
     state.configVaultItems.forEach((item) => {
         const configKey = item.key || item.name;
-        let matched = 0;
-        let total = 0;
+        const currentFingerprint = itemValueFingerprint('VE', item);
+        let comparableCount = 0;
+        let presentCount = 0;
+        let exactCount = 0;
         vaults.forEach((vault) => {
             const entry = normalizedConfigsByVault.get(vault.vault_runtime_hash);
             if (!(entry instanceof Map)) return;
-            total += 1;
+            comparableCount += 1;
             if (entry.has(configKey)) {
-                matched += 1;
+                presentCount += 1;
+                if (entry.get(configKey) === currentFingerprint) {
+                    exactCount += 1;
+                }
             }
         });
-        nextStatus[vaultItemSyncKey('VE', configKey)] = { matched: Math.max(matched, 1), total: Math.max(total, 1) };
+        nextStatus[vaultItemSyncKey('VE', configKey)] = {
+            presentCount,
+            exactCount,
+            comparableCount: Math.max(comparableCount, 1)
+        };
     });
 
     state.vaultKeys.forEach((item) => {
-        let matched = 0;
-        let total = 0;
+        const currentFingerprint = itemValueFingerprint('VK', item);
+        let comparableCount = 0;
+        let presentCount = 0;
+        let exactCount = 0;
         vaults.forEach((vault) => {
             const entry = normalizedKeysByVault.get(vault.vault_runtime_hash);
             if (!(entry instanceof Map)) return;
-            total += 1;
+            comparableCount += 1;
             if (entry.has(item.name)) {
-                matched += 1;
+                presentCount += 1;
+                if (entry.get(item.name) === currentFingerprint) {
+                    exactCount += 1;
+                }
             }
         });
-        nextStatus[vaultItemSyncKey('VK', item.name)] = { matched: Math.max(matched, 1), total: Math.max(total, 1) };
+        nextStatus[vaultItemSyncKey('VK', item.name)] = {
+            presentCount,
+            exactCount,
+            comparableCount: Math.max(comparableCount, 1)
+        };
     });
 
     state.vaultItemSyncStatus = nextStatus;
+}
+
+async function loadBulkApplyTemplates() {
+    if (!state.selectedVault) {
+        state.bulkApplyTemplates = [];
+        state.selectedBulkApplyTemplateName = null;
+        return;
+    }
+    const data = await request('/api/vaults/' + encodeURIComponent(state.selectedVault.vault_runtime_hash) + '/bulk-apply/templates');
+    state.bulkApplyTemplates = data.templates || [];
+    if (state.bulkApplyTemplates.length && !state.bulkApplyTemplates.some((item) => item.name === state.selectedBulkApplyTemplateName)) {
+        state.selectedBulkApplyTemplateName = state.bulkApplyTemplates[0].name;
+    } else if (!state.bulkApplyTemplates.length) {
+        state.selectedBulkApplyTemplateName = null;
+    }
+}
+
+async function loadBulkApplyWorkflows() {
+    if (!state.selectedVault) {
+        state.bulkApplyWorkflows = [];
+        state.selectedBulkApplyWorkflowName = null;
+        return;
+    }
+    const data = await request('/api/vaults/' + encodeURIComponent(state.selectedVault.vault_runtime_hash) + '/bulk-apply/workflows');
+    state.bulkApplyWorkflows = data.workflows || [];
+    if (state.bulkApplyWorkflows.length && !state.bulkApplyWorkflows.some((item) => item.name === state.selectedBulkApplyWorkflowName)) {
+        state.selectedBulkApplyWorkflowName = state.bulkApplyWorkflows[0].name;
+    } else if (!state.bulkApplyWorkflows.length) {
+        state.selectedBulkApplyWorkflowName = null;
+    }
 }
 
 async function loadFunctions() {
@@ -2032,7 +2117,9 @@ async function syncPageData() {
             if (!state.vaults.length) await loadVaults();
             if (state.selectedVault) {
                 await loadSelectedVaultDetail();
-                if (activeTab() !== 'Host Vault') {
+                if (activeTab() === '일괄변경') {
+                    await Promise.all([loadBulkApplyTemplates(), loadBulkApplyWorkflows()]);
+                } else if (activeTab() !== 'Host Vault') {
                     await loadSelectedVaultKeys();
                     state.selectedConfigVault = state.selectedVault.vault_runtime_hash;
                     await loadConfigsForVault();
@@ -2105,7 +2192,10 @@ async function setPage(page) {
 
 async function setTab(tab) {
     state.activeTabByPage[state.activePage] = tab;
-    if (!(state.activePage === 'vaults' && tab === '키 / 환경값')) {
+    if (state.activePage === 'vaults' && tab === '일괄변경' && !state.bulkApplyView) {
+        state.bulkApplyView = 'items';
+    }
+    if (!(state.activePage === 'vaults' && (tab === '키 / 환경값' || tab === '일괄변경'))) {
         state.routeSelectedVaultHash = null;
     }
     syncRoute(false);
@@ -2512,6 +2602,22 @@ async function handleAction(action, dataset) {
             }
             return syncPageData();
         }
+        if (action === 'set-bulk-apply-view') {
+            state.bulkApplyView = dataset.view === 'workflow' ? 'workflow' : 'items';
+            syncRoute(false);
+            render();
+            return;
+        }
+        if (action === 'select-bulk-template') {
+            state.selectedBulkApplyTemplateName = dataset.key || null;
+            render();
+            return;
+        }
+        if (action === 'select-bulk-workflow') {
+            state.selectedBulkApplyWorkflowName = dataset.key || null;
+            render();
+            return;
+        }
         if (action === 'select-vault-item') {
             if ((dataset.kind || 'VK') === 'VE') {
                 state.selectedVaultItemKind = 'VE';
@@ -2651,12 +2757,12 @@ async function handleAction(action, dataset) {
   }
 
   function onPopState() {
-    applyRoute(window.location.pathname);
+    applyRoute(window.location.pathname, window.location.search);
     syncPageData();
   }
 
 async function boot() {
-    applyRoute(window.location.pathname);
+    applyRoute(window.location.pathname, window.location.search);
     await loadStatus();
     await loadUIConfig();
     await loadVaults();
@@ -2715,6 +2821,8 @@ return {
   vaultSyncStatus,
   vaultDistributionStatus,
   vaultKeyClassStatus,
+  selectedBulkApplyTemplate,
+  selectedBulkApplyWorkflow,
                 renderConfigRelations,
                 configRelationsByScope,
                 encodeURIComponent

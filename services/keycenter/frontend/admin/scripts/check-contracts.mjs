@@ -61,10 +61,25 @@ const helperCalls = new Set(
     .filter((name) => !['if', 'for', 'encodeURIComponent'].includes(name))
 );
 
+const importedHelpers = new Set(
+  [...useAdminApp.matchAll(/import\s*\{\s*([\s\S]*?)\s*\}\s*from\s*['"][^'"]+['"]/g)]
+    .flatMap((match) =>
+      match[1]
+        .split(',')
+        .map((name) => name.trim())
+        .filter(Boolean)
+    )
+);
+
 for (const helper of helperCalls) {
   if (helper === 'pageConfig') continue;
   if (!destructured.has(helper)) {
     fail(`App.vue contract check failed: template calls "${helper}()" but it is not destructured from useAdminApp().`);
+  }
+  const functionPattern = new RegExp(`function\\s+${helper}\\s*\\(`);
+  const arrowPattern = new RegExp(`(?:const|let|var)\\s+${helper}\\s*=\\s*(?:async\\s*)?\\(`);
+  if (!functionPattern.test(useAdminApp) && !arrowPattern.test(useAdminApp) && !importedHelpers.has(helper)) {
+    fail(`useAdminApp contract check failed: template calls "${helper}()" but no function definition for "${helper}" exists in useAdminApp.js.`);
   }
 }
 
@@ -83,6 +98,15 @@ const handledActions = new Set(
 for (const action of templateActions) {
   if (!handledActions.has(action)) {
     fail(`useAdminApp contract check failed: template uses data-action="${action}" but handleAction() does not handle it.`);
+  }
+}
+
+if (template.includes('일괄변경')) {
+  if (!/bulkApplyView/.test(useAdminApp) || !/bulkApplyTemplates/.test(useAdminApp) || !/bulkApplyWorkflows/.test(useAdminApp)) {
+    fail('useAdminApp contract check failed: bulk-apply UI exists but bulk apply state is not fully initialized.');
+  }
+  if (!/tab === '일괄변경'/.test(useAdminApp) || !/bulk-apply/.test(useAdminApp)) {
+    fail('useAdminApp contract check failed: bulk-apply tab exists but route/query handling is missing.');
   }
 }
 
