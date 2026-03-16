@@ -25,8 +25,8 @@ Repository helper:
 
 Development:
 
-- `VEILKEY_UI_DEV_DIR` can point to a built UI directory that contains `index.html` and `assets/`
-- if no built UI is present, KeyCenter falls back to the legacy `admin_vue_preview.html`
+- `VEILKEY_UI_DEV_DIR` can point only to a built UI directory that contains `index.html` and `assets/`
+- KeyCenter no longer falls back to the legacy `admin_vue_preview.html`
 
 Current structure:
 
@@ -52,4 +52,4 @@ Remaining migration work:
 - remove legacy imperative render paths from the admin app
 - split `useAdminApp.js` into page-level modules
 - replace remaining `v-html`/imperative render paths with Vue-owned templates
-- reduce dependency on the legacy `admin_vue_preview.html` fallback
+- remove dependency on the legacy `admin_vue_preview.html` fallback

@@ -20,11 +20,9 @@ func devUIIndex() ([]byte, bool) {
 	if devDir == "" {
 		return nil, false
 	}
-	for _, name := range []string{"index.html", "admin_vue_preview.html"} {
-		path := filepath.Join(devDir, name)
-		if body, err := os.ReadFile(path); err == nil {
-			return body, true
-		}
+	path := filepath.Join(devDir, "index.html")
+	if body, err := os.ReadFile(path); err == nil {
+		return body, true
 	}
 	return nil, false
 }

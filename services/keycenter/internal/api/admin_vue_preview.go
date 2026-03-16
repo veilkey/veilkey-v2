@@ -1,12 +1,6 @@
 package api
 
-import (
-	_ "embed"
-	"net/http"
-)
-
-//go:embed admin_vue_preview.html
-var adminVuePreviewHTML string
+import "net/http"
 
 func (s *Server) handleAdminVuePreview(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -18,5 +12,5 @@ func (s *Server) handleAdminVuePreview(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(body)
 		return
 	}
-	_, _ = w.Write([]byte(adminVuePreviewHTML))
+	http.Error(w, "admin ui build is not available", http.StatusServiceUnavailable)
 }

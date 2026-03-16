@@ -28,5 +28,5 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(body)
 		return
 	}
-	_, _ = w.Write([]byte(adminVuePreviewHTML))
+	http.Error(w, "admin ui build is not available", http.StatusServiceUnavailable)
 }
