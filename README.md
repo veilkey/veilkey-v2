@@ -241,6 +241,24 @@ The practical difference is:
 | generic password manager | store/retrieve secrets | VeilKey focuses on node registration, runtime identity, and policy-driven execution |
 | file-encryption workflow | encrypt files in repos | VeilKey adds KeyCenter + LocalVault runtime topology and heartbeat/rebind flows |
 
+### Current Gaps
+
+Compared with more productized operator stacks such as OpenClaw, the current weak points are still visible.
+
+- there is no single unified gateway surface in front of all operator and agent traffic
+- session-level context compaction is not a first-class runtime feature yet
+- health exposure is clearer than before, but not fully standardized across every service
+- the proxy role exists, but its boundary is still less immediately legible than the KeyCenter and LocalVault split
+
+That means the runtime model is strong, but the product shell is still catching up.
+
+### Near-Term Priorities
+
+1. add one shared gateway layer in front of operator and agent-facing entrypoints
+2. standardize `/healthz` and deployment healthcheck contracts across services
+3. promote context compaction and session reset policy to a first-class runtime feature
+4. make the proxy boundary and operator path more explicit in docs and runbooks
+
 ## Contributing
 
 Start with [`CONTRIBUTING.md`](./CONTRIBUTING.md).
