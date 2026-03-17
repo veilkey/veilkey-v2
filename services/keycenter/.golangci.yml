@@ -65,8 +65,3 @@ linters:
         - offBy1
         - singleCaseSwitch
 
-issues:
-
-run:
-  exclude-dirs:
-    - vendor
