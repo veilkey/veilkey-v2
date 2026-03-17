@@ -49,6 +49,44 @@ if echo "$CLI_OUTPUT" | grep -qE 'veilkey|Usage|scan'; then
   echo "    veilkey exec <command>    VK: 해시 resolve + 실행"
   echo "    veilkey resolve <ref>     VK: 해시 → 원본 값"
   echo ""
+  echo "  ┌──────────────────────────────────────────────────────┐"
+  echo "  │  권장: 아래를 ~/.bashrc 또는 ~/.zshrc 에 추가하세요  │"
+  echo "  └──────────────────────────────────────────────────────┘"
+  echo ""
+  SHELL_SNIPPET='# VeilKey CLI — 시크릿 자동 필터링
+alias curl="veilkey wrap curl"
+alias wget="veilkey wrap wget"
+alias ssh="veilkey wrap ssh"
+alias scp="veilkey wrap scp"
+alias git="veilkey wrap git"
+alias cat="veilkey filter"'
+  echo "$SHELL_SNIPPET"
+  echo ""
+
+  # Detect shell rc file
+  SHELL_RC=""
+  if [[ -n "${ZSH_VERSION:-}" ]] || [[ "$SHELL" == */zsh ]]; then
+    SHELL_RC="$HOME/.zshrc"
+  else
+    SHELL_RC="$HOME/.bashrc"
+  fi
+
+  # Ask to auto-append (skip in non-interactive)
+  if [[ -t 0 ]] && [[ "${NONINTERACTIVE:-}" != "1" ]]; then
+    echo ""
+    read -rp "  $SHELL_RC 에 자동 추가할까요? [y/N]: " add_aliases
+    if [[ "${add_aliases,,}" == "y" ]]; then
+      echo "" >> "$SHELL_RC"
+      echo "$SHELL_SNIPPET" >> "$SHELL_RC"
+      info "alias 추가 완료: $SHELL_RC"
+      info "적용하려면: source $SHELL_RC"
+    else
+      info "수동으로 위 내용을 shell rc 파일에 붙여넣으세요."
+    fi
+  else
+    info "비대화형 모드: 위 내용을 shell rc 파일에 수동으로 추가하세요."
+  fi
+  echo ""
 else
   error "설치 후 검증 실패. $INSTALL_BIN 확인 필요."
 fi
