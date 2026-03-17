@@ -9,4 +9,3 @@ linters:
     - ineffassign
     - gosimple
     - gofmt
-
