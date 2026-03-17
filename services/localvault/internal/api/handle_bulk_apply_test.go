@@ -16,6 +16,12 @@ func TestHandleBulkApplyExecuteReturnsPostchecks(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "mattermost", "config", "config.json")
 	overridePath := filepath.Join(tmpDir, "systemd", "mattermost.service.d", "override.conf")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(overridePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	allowedBulkApplyTargets[configPath] = struct{}{}
 	allowedBulkApplyTargets[overridePath] = struct{}{}
 	t.Cleanup(func() {
@@ -102,6 +108,9 @@ func TestHandleBulkApplyPrecheckAcceptsGitLabConfig(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	gitlabPath := filepath.Join(tmpDir, "gitlab", "gitlab.rb")
+	if err := os.MkdirAll(filepath.Dir(gitlabPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	allowedBulkApplyTargets[gitlabPath] = struct{}{}
 	t.Cleanup(func() { delete(allowedBulkApplyTargets, gitlabPath) })
 
