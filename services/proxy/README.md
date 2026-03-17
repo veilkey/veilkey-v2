@@ -240,6 +240,6 @@ Behavior:
 
 ## License
 
-GNU Affero General Public License v3.0 (AGPL-3.0)
+MIT License
 
-See [`AGPL-COMPLIANCE.md`](AGPL-COMPLIANCE.md) for the operator checklist used for deployed network services.
+See [`LICENSE-NOTE.md`](LICENSE-NOTE.md) for the short operator note used for releases and deployments.
