@@ -6,6 +6,4 @@ linters:
     - govet
     - staticcheck
     - unused
-    - gosimple
-    - gofmt
     - ineffassign
