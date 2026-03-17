@@ -113,6 +113,7 @@ install -m 0755 "$repo_root/deploy/host/veilkey-veilroot-session" "$bin_dir/veil
 install -m 0755 "$repo_root/deploy/host/veilkey-veilroot-observe" "$bin_dir/veilkey-veilroot-observe"
 install -m 0755 "$repo_root/deploy/host/veilkey-veilroot-egress-guard" "$bin_dir/veilkey-veilroot-egress-guard"
 install -m 0755 "$repo_root/deploy/host/verify-veilroot-session.sh" "$bin_dir/verify-veilroot-session"
+install -m 0755 "$repo_root/deploy/host/vk" "$bin_dir/vk"
 install -m 0644 "$repo_root/deploy/host/veilkey-veilroot-observe@.service" "$systemd_dir/veilkey-veilroot-observe@.service"
 install -m 0644 "$repo_root/deploy/host/veilkey-veilroot-egress-guard@.service" "$systemd_dir/veilkey-veilroot-egress-guard@.service"
 
@@ -223,3 +224,13 @@ echo "  locale: VEILKEY_LOCALE=ko|en (default: LANG)"
 echo "  verify: ${bin_dir}/verify-veilroot-session codex"
 echo "  optional: $systemctl_bin enable --now veilkey-veilroot-observe@codex.service"
 echo "  optional: $systemctl_bin enable --now veilkey-veilroot-egress-guard@codex.service"
+
+# /usr/local/bin/veilroot wrapper
+cat >"${bin_dir}/veilroot" <<'WRAPPER'
+#!/usr/bin/env bash
+exec /usr/local/bin/veilroot-shell open "$@"
+WRAPPER
+chmod 0755 "${bin_dir}/veilroot"
+
+# register veilroot-shell in /etc/shells
+grep -q veilroot-shell /etc/shells || echo /usr/local/bin/veilroot-shell >> /etc/shells
