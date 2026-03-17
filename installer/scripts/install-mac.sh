@@ -188,7 +188,7 @@ EOF
   if [[ ! -f "${VEILKEY_ETC}/proxy.env" ]]; then
     sudo tee "${VEILKEY_ETC}/proxy.env" >/dev/null <<EOF
 VEILKEY_LOCALVAULT_URL=https://127.0.0.1:${LOCALVAULT_PORT}
-VEILKEY_HUB_URL=https://127.0.0.1:${KEYCENTER_PORT}
+VEILKEY_KEYCENTER_URL=https://127.0.0.1:${KEYCENTER_PORT}
 VEILKEY_PROXY_ACCESS_LOG_FORMAT=jsonl
 EOF
     ok "  ${VEILKEY_ETC}/proxy.env"
