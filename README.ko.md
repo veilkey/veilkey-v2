@@ -108,6 +108,40 @@ cd veilkey-selfhosted/installer
 
 - [`installer/INSTALL.md`](./installer/INSTALL.md)
 
+최소 성공 확인은 이 정도까지 보이면 됩니다.
+
+```bash
+curl http://127.0.0.1:10181/health
+curl http://127.0.0.1:10180/health
+```
+
+기대 결과:
+
+- KeyCenter health 응답
+- LocalVault health 응답
+- 등록 후 중앙 화면이나 상태 조회에서 노드가 보임
+
+## 이게 아닌 것
+
+- hosted SaaS 비밀관리 서비스
+- 개인용 범용 비밀번호 저장소
+- 단일 바이너리 로컬 secret 도구
+- 노드 런타임과 분리된 cloud-only 제어면
+
+## 트레이드오프
+
+- hosted 서비스보다 운영 복잡도가 높습니다
+- 호스트, LXC, 네트워크 설정 영향을 더 많이 받습니다
+- 설치와 런타임 검증을 직접 해야 하는 대신, 제어권도 직접 가집니다
+
+## 대략적인 비교
+
+| 도구 형태 | 기본 모델 | VeilKey 차이점 |
+|---|---|---|
+| hosted secret SaaS | 중앙 hosted control plane | 런타임과 상태를 직접 인프라 안에 둡니다 |
+| 범용 비밀번호 관리자 | 저장/조회 중심 | 노드 등록, runtime identity, 정책 기반 실행까지 다룹니다 |
+| 파일 암호화 워크플로우 | 저장소 파일 암호화 | KeyCenter + 여러 LocalVault + heartbeat/rebind 흐름이 있습니다 |
+
 ## 기여
 
 기여 규칙은 여기서 시작합니다.
