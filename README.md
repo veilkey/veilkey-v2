@@ -6,6 +6,8 @@ It packages the runtime services, installer, and operator CLI needed to run Veil
 
 Korean summary: [`README.ko.md`](./README.ko.md)
 
+Canonical domain: `https://veil-key.com`
+
 ## What VeilKey Is
 
 VeilKey is a self-hosted secret and execution-boundary system for local AI and operator workflows.

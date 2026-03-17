@@ -2,6 +2,8 @@
 
 This document explains the shortest operator-facing model of VeilKey.
 
+Canonical home: `https://veil-key.com`
+
 ## Core Split
 
 - `KeyCenter`

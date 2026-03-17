@@ -4,6 +4,8 @@
 
 `veilkey-selfhosted`는 VeilKey의 self-hosted 제품 레포입니다.
 
+공식 도메인: `https://veil-key.com`
+
 이 레포에는 직접 인프라에 설치해서 돌리기 위한 핵심 요소가 같이 들어 있습니다.
 
 - `KeyCenter`
