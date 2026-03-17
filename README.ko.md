@@ -121,6 +121,33 @@ curl http://127.0.0.1:10180/health
 - LocalVault health 응답
 - 등록 후 중앙 화면이나 상태 조회에서 노드가 보임
 
+### 성공했을 때 보이는 것
+
+KeyCenter는 처음엔 locked 상태로 뜨고, unlock 뒤에 정상 상태로 바뀝니다.
+
+```json
+GET /health
+{"status":"locked"}
+```
+
+```json
+POST /api/unlock
+{"status":"unlocked"}
+```
+
+```json
+GET /health
+{"status":"ok"}
+```
+
+LocalVault 쪽에서는 운영 흐름에서 이런 출력이 보입니다.
+
+```text
+heartbeat sent
+rotation applied and heartbeat sent
+rebind prepared with key_version=9
+```
+
 ## 이게 아닌 것
 
 - hosted SaaS 비밀관리 서비스

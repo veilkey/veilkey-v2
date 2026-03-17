@@ -149,6 +149,33 @@ Expected result:
 - LocalVault health responds
 - the node can heartbeat and appear in the central view after registration
 
+### What Success Looks Like
+
+KeyCenter starts in a locked state and becomes usable after unlock:
+
+```json
+GET /health
+{"status":"locked"}
+```
+
+```json
+POST /api/unlock
+{"status":"unlocked"}
+```
+
+```json
+GET /health
+{"status":"ok"}
+```
+
+For LocalVault, the operational path should produce explicit lifecycle output:
+
+```text
+heartbeat sent
+rotation applied and heartbeat sent
+rebind prepared with key_version=9
+```
+
 The full operator guide lives in [`installer/INSTALL.md`](./installer/INSTALL.md).
 
 ## Main Use Cases
