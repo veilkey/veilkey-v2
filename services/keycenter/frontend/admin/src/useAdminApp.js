@@ -771,12 +771,10 @@ function renderVaultKeys() {
                         <div class="card-title">${escapeHTML(isConfigItem ? t('move_config') : t('move_key'))}</div>
                         <div class="stack">
                             <div class="kv"><span class="label">${escapeHTML(t('target_vault'))}</span><select class="select" name="target_vault">${renderTargetOptions(vaultTargetOptions(true), state.selectedVault ? state.selectedVault.vault_runtime_hash : 'host')}</select></div>
-                            <div class="kv"><span class="label">${escapeHTML(t('target_scope'))}</span><select class="select" name="target_scope">${renderOptions(isConfigItem ? ['LOCAL', 'EXTERNAL', 'TEMP'] : ['TEMP', 'LOCAL', 'EXTERNAL'], isConfigItem ? (state.configDetail?.scope || 'LOCAL') : (state.keyDetail?.scope || 'TEMP'))}</select></div>
-                            <div class="kv"><span class="label">${escapeHTML(t('value_to_send'))}</span><textarea class="textarea" name="move_value" placeholder="${escapeHTML(t('move_value_placeholder'))}">${escapeHTML(visibleValue || '')}</textarea></div>
                         </div>
                         <div class="muted">${escapeHTML(isConfigItem ? t('vault_config_move_help') : t('vault_key_move_help'))}</div>
                     </div>
-                    <button class="btn btn-soft" type="submit"${visibleValue ? '' : ' disabled'}>${escapeHTML(isConfigItem ? t('move_config') : t('move_key'))}</button>
+                    <button class="btn btn-soft" type="submit"${detailName ? '' : ' disabled'}>${escapeHTML(isConfigItem ? t('move_config') : t('move_key'))}</button>
                 </form>
             ` : ''}
             <form class="stack" data-form="${isConfigItem ? 'save-agent-config' : 'save-key'}">
@@ -2194,13 +2192,9 @@ async function handleFormSubmit(form) {
         }
         if (formType === 'promote-key') {
             const targetVault = String(data.get('target_vault') || '').trim();
-            const targetScope = String(data.get('target_scope') || 'TEMP').trim();
-            const value = String(data.get('move_value') || '').trim() || (state.keyDetail?.value || '');
             const name = String(data.get('name') || '').trim() || (state.selectedKey?.name || state.keyDetail?.name || '');
+            const value = state.keyDetail?.value || '';
             if (!targetVault || !name || !value) throw new Error(t('promote_key_missing'));
-            if (targetScope !== 'TEMP') {
-                throw new Error(t('promote_key_scope_restricted'));
-            }
             await request('/api/vaults/' + encodeURIComponent(targetVault) + '/keys', {
                 method: 'POST',
                 body: JSON.stringify({ name, value })
@@ -2232,11 +2226,10 @@ async function handleFormSubmit(form) {
         }
         if (formType === 'promote-config') {
             const targetVault = String(data.get('target_vault') || '').trim();
-            const targetScope = String(data.get('target_scope') || 'LOCAL').trim();
             const key = String(data.get('key') || '').trim() || (state.selectedConfigKey || state.configDetail?.key || '');
-            const value = String(data.get('move_value') || '').trim() || (state.configDetail?.value || '');
+            const value = state.configDetail?.value || '';
             if (!targetVault || !key || !value) throw new Error(t('promote_config_missing'));
-            const payload = { key, value, scope: targetScope, status: 'active' };
+            const payload = { key, value, scope: 'LOCAL', status: 'active' };
             await request('/api/agents/' + encodeURIComponent(targetVault) + '/configs', {
                 method: 'POST',
                 body: JSON.stringify(payload)
