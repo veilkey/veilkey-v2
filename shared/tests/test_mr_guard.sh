@@ -31,15 +31,19 @@ EOF2
   git -C "$tmp" checkout -q -b feature
   bash -c "cd '$tmp' && $setup"
   result=0
-  if ! (cd "$tmp" && CI_MERGE_REQUEST_TARGET_BRANCH_NAME=main CI_MERGE_REQUEST_DIFF_BASE_SHA="$(git rev-parse main)" bash scripts/check-mr-guard.sh) >/tmp/mr-guard.out 2>/tmp/mr-guard.err; then
+  local out_file err_file
+  out_file="$(mktemp)"
+  err_file="$(mktemp)"
+  if ! (cd "$tmp" && CI_MERGE_REQUEST_TARGET_BRANCH_NAME=main CI_MERGE_REQUEST_DIFF_BASE_SHA="$(git rev-parse main)" bash scripts/check-mr-guard.sh) >"$out_file" 2>"$err_file"; then
     result=1
   fi
   if [[ "$result" != "$expect" ]]; then
     echo "case $name failed" >&2
     echo "stdout:" >&2
-    cat /tmp/mr-guard.out >&2 || true
+    cat "$out_file" >&2 || true
     echo "stderr:" >&2
-    cat /tmp/mr-guard.err >&2 || true
+    cat "$err_file" >&2 || true
+    rm -f "$out_file" "$err_file"
     exit 1
   fi
 }

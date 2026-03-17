@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"testing"
 )
@@ -14,20 +13,11 @@ func TestHandleBulkApplyExecuteReturnsPostchecks(t *testing.T) {
 	server := setupReencryptTestServer(t)
 	handler := server.SetupRoutes()
 
-	configDir := "/opt/mattermost/config"
-	overrideDir := "/etc/systemd/system/mattermost.service.d"
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
-		t.Fatalf("mkdir config dir: %v", err)
-	}
-	if err := os.MkdirAll(overrideDir, 0o755); err != nil {
-		t.Fatalf("mkdir override dir: %v", err)
-	}
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "mattermost", "config")
+	overrideDir := filepath.Join(tmpDir, "systemd", "mattermost.service.d")
 	configPath := filepath.Join(configDir, "config.json")
 	overridePath := filepath.Join(overrideDir, "override.conf")
-	t.Cleanup(func() {
-		_ = os.Remove(configPath)
-		_ = os.Remove(overridePath)
-	})
 
 	body, err := json.Marshal(map[string]any{
 		"name": "mattermost-apply",
@@ -106,14 +96,8 @@ func TestHandleBulkApplyPrecheckAcceptsGitLabConfig(t *testing.T) {
 	server := setupReencryptTestServer(t)
 	handler := server.SetupRoutes()
 
-	gitlabDir := "/etc/gitlab"
-	if err := os.MkdirAll(gitlabDir, 0o755); err != nil {
-		t.Fatalf("mkdir gitlab dir: %v", err)
-	}
-	gitlabPath := filepath.Join(gitlabDir, "gitlab.rb")
-	t.Cleanup(func() {
-		_ = os.Remove(gitlabPath)
-	})
+	tmpDir := t.TempDir()
+	gitlabPath := filepath.Join(tmpDir, "gitlab", "gitlab.rb")
 
 	body, err := json.Marshal(map[string]any{
 		"name": "gitlab-phase1-apply",
