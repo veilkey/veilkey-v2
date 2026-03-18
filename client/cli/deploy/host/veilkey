@@ -5,6 +5,23 @@ veilkey_cli_bin="${VEILKEY_CLI_BIN:-/usr/local/bin/veilkey-cli}"
 vk_bin="${VEILKEY_VK_BIN:-/usr/local/bin/vk}"
 session_config_bin="${VEILKEY_SESSION_CONFIG_BIN:-/usr/local/bin/veilkey-session-config}"
 
+clear_proxy_overrides() {
+  unset VEILKEY_PROXY_URL HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy
+}
+
+trim_wrapping_quotes() {
+  local value="$1"
+  while [[ "${value}" == \"*\" && "${value}" == *\" ]]; do
+    value="${value#\"}"
+    value="${value%\"}"
+  done
+  while [[ "${value}" == \'*\' && "${value}" == *\' ]]; do
+    value="${value#\'}"
+    value="${value%\'}"
+  done
+  printf '%s' "${value}"
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -26,8 +43,7 @@ sanitize_exported_env() {
   for key in VEILKEY_PROXY_URL HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY VEILKEY_LOCALVAULT_URL VEILKEY_KEYCENTER_URL VEILKEY_API VEILKEY_PLAINTEXT_ACTION; do
     value="${!key-}"
     [[ -n "${value}" ]] || continue
-    value="${value#\'}"
-    value="${value%\'}"
+    value="$(trim_wrapping_quotes "${value}")"
     export "${key}=${value}"
   done
 }
@@ -38,6 +54,7 @@ load_session_env() {
     exit 1
   fi
 
+  clear_proxy_overrides
   eval "$("${session_config_bin}" shell-exports)"
   sanitize_exported_env
 }

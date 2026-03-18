@@ -1,30 +1,30 @@
 [proxy.default]
-listen = "127.0.0.1:18080"
-url = "http://127.0.0.1:18080"
-no_proxy = "127.0.0.1,localhost,.internal.example,.vhost.example"
+listen = ""
+url = ""
+no_proxy = ""
 plaintext_action = "issue-temp-and-block"
 allow_hosts_enabled = false
 allow_hosts = []
 
 [proxy.tools.codex]
-listen = "127.0.0.1:18080"
-url = "http://127.0.0.1:18080"
+listen = ""
+url = ""
 plaintext_action = "issue-temp-and-block"
 plaintext_resolve_hosts = []
 allow_hosts_enabled = false
 allow_hosts = []
 
 [proxy.tools.claude]
-listen = "127.0.0.1:18080"
-url = "http://127.0.0.1:18080"
+listen = ""
+url = ""
 plaintext_action = "issue-temp-and-block"
 plaintext_resolve_hosts = []
 allow_hosts_enabled = false
 allow_hosts = []
 
 [proxy.tools.opencode]
-listen = "127.0.0.1:18080"
-url = "http://127.0.0.1:18080"
+listen = ""
+url = ""
 plaintext_action = "issue-temp-and-block"
 plaintext_resolve_hosts = []
 allow_hosts_enabled = false
@@ -47,8 +47,8 @@ default_profile = "codex"
 unit_prefix = "veilroot"
 
 [veilkey]
-localvault_url = "http://127.0.0.1:10180"
-keycenter_url = "http://hub.veilkey.example:10180"
+localvault_url = ""
+keycenter_url = ""
 
 # Environment examples:
 #   export VEILKEY_LOCALE=ko

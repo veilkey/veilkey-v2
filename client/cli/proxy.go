@@ -42,10 +42,14 @@ type proxyLogEntry struct {
 
 func cmdProxy(args []string) {
 	fs := flag.NewFlagSet("proxy", flag.ExitOnError)
-	listen := fs.String("listen", "127.0.0.1:18080", "listen address")
+	listen := fs.String("listen", "", "listen address")
 	var allowHosts multiFlag
 	fs.Var(&allowHosts, "allow-host", "allowed hostname (repeatable)")
 	fs.Parse(args)
+	if strings.TrimSpace(*listen) == "" {
+		fmt.Fprintln(os.Stderr, "proxy listen address is required (--listen)")
+		os.Exit(1)
+	}
 
 	server := &proxyServer{
 		allowHosts: make(map[string]struct{}, len(allowHosts)),
@@ -61,7 +65,7 @@ func cmdProxy(args []string) {
 	}
 
 	httpServer := &http.Server{
-		Addr:    *listen,
+		Addr:    strings.TrimSpace(*listen),
 		Handler: server,
 	}
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
