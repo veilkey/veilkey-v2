@@ -4,7 +4,7 @@ set -euo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_ROOT="$(cd "$SELF_DIR/.." && pwd)"
 FRONTEND_DIR="$SERVICE_ROOT/frontend/admin"
-OUTPUT_DIR="$SERVICE_ROOT/internal/api/ui_dist"
+OUTPUT_DIR="$SERVICE_ROOT/internal/api/admin/ui_dist"
 
 if ! command -v npm >/dev/null 2>&1; then
   echo "npm is required to build the admin UI" >&2
@@ -27,7 +27,7 @@ mkdir -p "$OUTPUT_DIR"
 cp -R "$FRONTEND_DIR/dist/." "$OUTPUT_DIR/"
 
 # --- Install Wizard UI ---
-INSTALL_OUTPUT_DIR="$SERVICE_ROOT/internal/api/install_ui_dist"
+INSTALL_OUTPUT_DIR="$SERVICE_ROOT/internal/api/install/install_ui_dist"
 rm -rf "$INSTALL_OUTPUT_DIR"
 mkdir -p "$INSTALL_OUTPUT_DIR"
 
