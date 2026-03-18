@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWatchlistMatching(t *testing.T) {
@@ -131,5 +132,49 @@ func TestReloadWatchlist(t *testing.T) {
 
 	if len(d.watchlist) != 2 {
 		t.Fatalf("after reload, expected 2 entries, got %d", len(d.watchlist))
+	}
+}
+
+func TestWatchlistExpiryPrune(t *testing.T) {
+	dir := "/tmp/veilkey-cli-test-expiry"
+	os.MkdirAll(dir, 0755)
+	defer os.RemoveAll(dir)
+
+	past := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
+	future := time.Now().UTC().Add(1 * time.Hour).Format(time.RFC3339)
+	content := "expired-val\tVK:TEMP:dead\t" + past + "\n" +
+		"valid-val\tVK:TEMP:beef\t" + future + "\n" +
+		"no-ttl-val\tVK:5:abcd1234\n"
+	watchlistPath := dir + "/watchlist"
+	os.WriteFile(watchlistPath, []byte(content), 0644)
+
+	os.Setenv("VEILKEY_STATE_DIR", dir)
+	defer os.Unsetenv("VEILKEY_STATE_DIR")
+
+	cfg := testConfig()
+	logger := NewSessionLogger(dir + "/session.log")
+	d := NewSecretDetector(cfg, nil, logger, true)
+
+	// Expired entry should be pruned, valid + no-ttl should remain
+	if len(d.watchlist) != 2 {
+		t.Fatalf("expected 2 watchlist entries after prune, got %d", len(d.watchlist))
+	}
+	if d.watchlist[0].Value != "valid-val" {
+		t.Errorf("expected valid-val first, got %s", d.watchlist[0].Value)
+	}
+	if d.watchlist[1].Value != "no-ttl-val" {
+		t.Errorf("expected no-ttl-val second, got %s", d.watchlist[1].Value)
+	}
+
+	// File should be rewritten without expired entry
+	data, _ := os.ReadFile(watchlistPath)
+	if strings.Contains(string(data), "expired-val") {
+		t.Error("expired entry should be removed from watchlist file")
+	}
+	if !strings.Contains(string(data), "valid-val") {
+		t.Error("valid entry should remain in watchlist file")
+	}
+	if !strings.Contains(string(data), "no-ttl-val") {
+		t.Error("no-ttl entry should remain in watchlist file")
 	}
 }
