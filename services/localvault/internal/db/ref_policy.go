@@ -1,60 +1,32 @@
 package db
 
-import "fmt"
+import "github.com/veilkey/veilkey-go-package/refs"
 
-// RefSep is the canonical separator between family, scope, and ID components.
-const RefSep = ":"
+// Re-export refs package types and constants for backward compatibility.
+type RefScope = refs.RefScope
+type RefStatus = refs.RefStatus
 
-// RefScope is a typed ref scope identifier. Using a named type prevents
-// arbitrary strings from being assigned to scope fields.
-type RefScope string
+const RefSep = refs.RefSep
 
-// RefStatus is a typed ref status value.
-type RefStatus string
-
-// Ref family identifiers (untyped — used as plain strings in MakeRef and SQL).
 const (
-	RefFamilyVK = "VK" // secret refs
-	RefFamilyVE = "VE" // config/env refs
+	RefFamilyVK = refs.RefFamilyVK
+	RefFamilyVE = refs.RefFamilyVE
 )
 
-// Ref scope identifiers.
 const (
-	RefScopeLocal    RefScope = "LOCAL"
-	RefScopeTemp     RefScope = "TEMP"
-	RefScopeExternal RefScope = "EXTERNAL"
+	RefScopeLocal    = refs.RefScopeLocal
+	RefScopeTemp     = refs.RefScopeTemp
+	RefScopeExternal = refs.RefScopeExternal
 )
 
-// Ref status values.
 const (
-	RefStatusActive  RefStatus = "active"
-	RefStatusTemp    RefStatus = "temp"
-	RefStatusArchive RefStatus = "archive"
-	RefStatusBlock   RefStatus = "block"
-	RefStatusRevoke  RefStatus = "revoke"
+	RefStatusActive  = refs.RefStatusActive
+	RefStatusTemp    = refs.RefStatusTemp
+	RefStatusArchive = refs.RefStatusArchive
+	RefStatusBlock   = refs.RefStatusBlock
+	RefStatusRevoke  = refs.RefStatusRevoke
 )
 
-// Scan implements sql.Scanner so db/sql can scan string columns directly into RefScope.
-func (s *RefScope) Scan(src any) error {
-	str, ok := src.(string)
-	if !ok {
-		return fmt.Errorf("RefScope: expected string, got %T", src)
-	}
-	*s = RefScope(str)
-	return nil
-}
-
-// Scan implements sql.Scanner so db/sql can scan string columns directly into RefStatus.
-func (s *RefStatus) Scan(src any) error {
-	str, ok := src.(string)
-	if !ok {
-		return fmt.Errorf("RefStatus: expected string, got %T", src)
-	}
-	*s = RefStatus(str)
-	return nil
-}
-
-// MakeRef constructs a canonical ref string: "FAMILY:SCOPE:ID".
 func MakeRef(family string, scope RefScope, id string) string {
-	return family + RefSep + string(scope) + RefSep + id
+	return refs.MakeRef(family, scope, id)
 }

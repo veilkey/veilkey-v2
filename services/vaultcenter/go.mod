@@ -12,6 +12,7 @@ require (
 require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	github.com/veilkey/veilkey-go-package v0.1.0 // indirect
 	github.com/wneessen/go-mail v0.7.2 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/term v0.41.0 // indirect

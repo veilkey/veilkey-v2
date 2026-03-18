@@ -71,10 +71,10 @@ func (s *Server) exactLookupHostRefs(plaintext string) ([]exactLookupMatch, erro
 		matches = append(matches, exactLookupMatch{
 			Ref:        tracked.RefCanonical,
 			Family:     tracked.RefFamily,
-			Scope:      tracked.RefScope,
+			Scope:      string(tracked.RefScope),
 			ID:         tracked.RefID,
 			SecretName: tracked.SecretName,
-			Status:     tracked.Status,
+			Status:     string(tracked.Status),
 		})
 	}
 
