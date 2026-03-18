@@ -16,6 +16,7 @@ import (
 	"golang.org/x/term"
 
 	"veilkey-vaultcenter/internal/api"
+	"veilkey-vaultcenter/internal/commands"
 	"veilkey-vaultcenter/internal/crypto"
 	"veilkey-vaultcenter/internal/db"
 )
@@ -43,9 +44,14 @@ func runServer() {
 	}
 	saltFile := filepath.Join(dataDir, "salt")
 
+	if _, err := os.Stat(saltFile); os.IsNotExist(err) {
+		commands.RunSetupServer(dbPath, dataDir)
+		return
+	}
+
 	salt, err := os.ReadFile(saltFile)
 	if err != nil {
-		log.Fatal("Salt file not found. Run with 'init --root' first.")
+		log.Fatalf("Failed to read salt file: %v", err)
 	}
 
 	database, err := db.New(dbPath)

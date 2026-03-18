@@ -17,7 +17,7 @@ import (
 
 var setupMu sync.Mutex
 
-func runSetupServer(dbPath, dataDir string) {
+func RunSetupServer(dbPath, dataDir string) {
 	addr := os.Getenv("VEILKEY_ADDR")
 	if addr == "" {
 		log.Fatal("VEILKEY_ADDR is required")

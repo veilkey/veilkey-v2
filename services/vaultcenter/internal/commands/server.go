@@ -25,7 +25,7 @@ func RunServer() {
 	saltFile := filepath.Join(dataDir, "salt")
 
 	if _, err := os.Stat(saltFile); os.IsNotExist(err) {
-		runSetupServer(dbPath, dataDir)
+		RunSetupServer(dbPath, dataDir)
 		return
 	}
 
