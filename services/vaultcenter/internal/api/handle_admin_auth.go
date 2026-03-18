@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log"
+	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"veilkey-vaultcenter/internal/db"
@@ -15,7 +17,72 @@ const adminSessionCookie = "vk_session"
 const adminSessionDuration = 24 * time.Hour
 const adminSessionIdleDuration = 2 * time.Hour
 
+const loginMaxAttempts = 10
+const loginLockDuration = 15 * time.Minute
+
+type loginAttempt struct {
+	count     int
+	lockedAt  time.Time
+}
+
+var (
+	loginMu       sync.Mutex
+	loginAttempts = map[string]*loginAttempt{}
+)
+
+func remoteIP(r *http.Request) string {
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return ip
+}
+
+func checkLoginRateLimit(ip string) bool {
+	loginMu.Lock()
+	defer loginMu.Unlock()
+	a := loginAttempts[ip]
+	if a == nil {
+		return true
+	}
+	if !a.lockedAt.IsZero() {
+		if time.Since(a.lockedAt) > loginLockDuration {
+			delete(loginAttempts, ip)
+			return true
+		}
+		return false
+	}
+	return true
+}
+
+func recordLoginFailure(ip string) {
+	loginMu.Lock()
+	defer loginMu.Unlock()
+	a := loginAttempts[ip]
+	if a == nil {
+		a = &loginAttempt{}
+		loginAttempts[ip] = a
+	}
+	a.count++
+	if a.count >= loginMaxAttempts {
+		a.lockedAt = time.Now()
+		log.Printf("admin login: too many failures from %s, locked for %v", ip, loginLockDuration)
+	}
+}
+
+func clearLoginAttempts(ip string) {
+	loginMu.Lock()
+	delete(loginAttempts, ip)
+	loginMu.Unlock()
+}
+
 func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
+	ip := remoteIP(r)
+	if !checkLoginRateLimit(ip) {
+		s.respondError(w, http.StatusTooManyRequests, "too many failed attempts, try again later")
+		return
+	}
+
 	var req struct {
 		Password string `json:"password"`
 	}
@@ -25,9 +92,11 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !s.db.VerifyAdminPassword(req.Password) {
+		recordLoginFailure(ip)
 		s.respondError(w, http.StatusUnauthorized, "invalid password")
 		return
 	}
+	clearLoginAttempts(ip)
 
 	token, err := generateSecureToken(32)
 	if err != nil {

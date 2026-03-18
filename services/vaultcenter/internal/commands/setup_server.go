@@ -176,13 +176,17 @@ func handleSetupInit(w http.ResponseWriter, r *http.Request, database *db.DB, sa
 
 	// Store admin password as VK:TEMP ref (1-hour window)
 	adminTempRef := ""
-	if pwCipher, pwNonce, pwErr := crypto.Encrypt(dek, []byte(req.AdminPassword)); pwErr == nil {
-		if refID, refErr := generateInitRef(16); refErr == nil {
-			parts := db.RefParts{Family: "VK", Scope: "TEMP", ID: refID}
-			encoded := base64.StdEncoding.EncodeToString(pwCipher) + ":" + base64.StdEncoding.EncodeToString(pwNonce)
-			if saveErr := database.SaveRefWithExpiry(parts, encoded, 1, "temp", expiresAt, "ADMIN_PASSWORD"); saveErr == nil {
-				adminTempRef = parts.Canonical()
-			}
+	if pwCipher, pwNonce, pwErr := crypto.Encrypt(dek, []byte(req.AdminPassword)); pwErr != nil {
+		log.Printf("setup: failed to encrypt admin password for temp ref: %v", pwErr)
+	} else if refID, refErr := generateInitRef(16); refErr != nil {
+		log.Printf("setup: failed to generate admin temp ref ID: %v", refErr)
+	} else {
+		parts := db.RefParts{Family: "VK", Scope: "TEMP", ID: refID}
+		encoded := base64.StdEncoding.EncodeToString(pwCipher) + ":" + base64.StdEncoding.EncodeToString(pwNonce)
+		if saveErr := database.SaveRefWithExpiry(parts, encoded, 1, "temp", expiresAt, "ADMIN_PASSWORD"); saveErr != nil {
+			log.Printf("setup: failed to save admin temp ref: %v", saveErr)
+		} else {
+			adminTempRef = parts.Canonical()
 		}
 	}
 

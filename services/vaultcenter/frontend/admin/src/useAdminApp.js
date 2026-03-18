@@ -1588,11 +1588,11 @@ function renderKeycenterPage() {
                     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
                         <button class="action-btn" data-action="copy-temp-ref" data-ref="${escapeHTML(selected.ref_canonical)}">${escapeHTML(t('copy'))} Ref</button>
                         ${linkedVault ? `
-                            <a href="/vaults/local/${encodeURIComponent(linkedVault.vault_runtime_hash)}"
-                               class="action-btn" data-action="set-page" data-page="vaults"
-                               style="text-decoration:none">
+                            <button class="action-btn"
+                                data-action="navigate-to-vault"
+                                data-key="${escapeHTML(linkedVault.vault_runtime_hash)}">
                                 ${escapeHTML(t('keycenter_goto_vault'))} →
-                            </a>
+                            </button>
                         ` : ''}
                     </div>
                 </div>
@@ -2646,7 +2646,20 @@ async function handleAction(action, dataset) {
             return;
         }
         if (action === 'copy-temp-ref') {
-            try { await navigator.clipboard.writeText(dataset.ref || ''); } catch {}
+            const btn = event?.target?.closest('[data-action="copy-temp-ref"]');
+            try {
+                await navigator.clipboard.writeText(dataset.ref || '');
+                if (btn) { btn.textContent = '✓'; setTimeout(() => { btn.textContent = t('copy') + ' Ref'; }, 1500); }
+            } catch {
+                if (btn) { btn.textContent = '복사 실패'; setTimeout(() => { btn.textContent = t('copy') + ' Ref'; }, 1500); }
+            }
+            return;
+        }
+        if (action === 'navigate-to-vault') {
+            await selectVaultByKey(dataset.key);
+            state.activePage = 'vaults';
+            syncRoute(false);
+            render();
             return;
         }
     } catch (err) {
