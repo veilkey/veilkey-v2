@@ -96,6 +96,8 @@ while IFS='=' read -r _vk_key _vk_val; do
   _vk_key="${_vk_key#export }"
   [[ "$_vk_key" =~ ^[A-Za-z_][A-Za-z_0-9]*$ ]] || continue
   _vk_val="${_vk_val%\"}" ; _vk_val="${_vk_val#\"}"
+  _vk_quote="$(printf "\\047")"
+  _vk_val="${_vk_val//$_vk_quote/}"
   export "${_vk_key}=${_vk_val}"
 done < <(/usr/local/bin/veilkey-session-config tool-shell-exports "$tool")
 if [[ "${VEILKEY_VERIFIED_SESSION:-}" == "1" || "${VEILKEY_VEILROOT:-}" == "1" || "${VEILKEY_ACTIVE:-}" == "1" ]]; then
@@ -111,6 +113,8 @@ while IFS='=' read -r _vk_key _vk_val; do
   _vk_key="\${_vk_key#export }"
   [[ "\$_vk_key" =~ ^[A-Za-z_][A-Za-z_0-9]*$ ]] || continue
   _vk_val="\${_vk_val%\"}" ; _vk_val="\${_vk_val#\"}"
+  _vk_quote="\$(printf "\\047")"
+  _vk_val="\${_vk_val//\$_vk_quote/}"
   export "\${_vk_key}=\${_vk_val}"
 done < <(/usr/local/bin/veilkey-session-config shell-exports)
 export VEILKEY_PROXY_STATE=active
@@ -133,6 +137,8 @@ while IFS='=' read -r _vk_key _vk_val; do
   _vk_key="\${_vk_key#export }"
   [[ "\$_vk_key" =~ ^[A-Za-z_][A-Za-z_0-9]*$ ]] || continue
   _vk_val="\${_vk_val%\"}" ; _vk_val="\${_vk_val#\"}"
+  _vk_quote="\$(printf "\\047")"
+  _vk_val="\${_vk_val//\$_vk_quote/}"
   export "\${_vk_key}=\${_vk_val}"
 done < <(/usr/local/bin/veilkey-session-config shell-exports)
 alias codex="\$HOME/.local/bin/codex"
