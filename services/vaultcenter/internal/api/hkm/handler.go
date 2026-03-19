@@ -36,9 +36,6 @@ type Deps interface {
 	// IsTrustedIPString returns true if the given IP is trusted.
 	IsTrustedIPString(ip string) bool
 
-	// SaveAuditEvent records an audit event.
-	SaveAuditEvent(entityType, entityID, action, actorType, actorID, reason, source string, before, after map[string]any)
-
 	// SubmitTx submits a write TX and blocks until committed.
 	// Returns the result log (e.g. canonical ref) or error.
 	SubmitTx(ctx context.Context, txType chain.TxType, payload any) (string, error)
