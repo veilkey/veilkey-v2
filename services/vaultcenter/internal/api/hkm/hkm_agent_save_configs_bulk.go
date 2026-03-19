@@ -57,22 +57,6 @@ func (h *Handler) handleAgentSaveConfigsBulk(w http.ResponseWriter, r *http.Requ
 	if resp.StatusCode == http.StatusOK {
 		for key := range reqData.Configs {
 			_ = h.upsertTrackedRef(r.Context(), makeRef(refFamilyVE, normScope, key), agent.KeyVersion, normStatus, agent.AgentHash)
-			h.deps.SaveAuditEvent(
-				"config",
-				makeRef(refFamilyVE, normScope, key),
-				"save",
-				"agent",
-				agent.AgentHash,
-				"bulk_update",
-				"agent_save_configs_bulk",
-				nil,
-				map[string]any{
-					"key":                key,
-					"ref":                makeRef(refFamilyVE, normScope, key),
-					"vault_runtime_hash": agent.AgentHash,
-					"status":             string(normStatus),
-				},
-			)
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")

@@ -70,22 +70,6 @@ func (h *Handler) handleAgentSaveConfig(w http.ResponseWriter, r *http.Request) 
 			respData["vault"] = agent.Label
 			setRuntimeHashAliases(respData, agent.AgentHash)
 			_ = h.upsertTrackedRef(r.Context(), makeRef(refFamilyVE, normScope, key), agent.KeyVersion, normStatus, agent.AgentHash)
-			h.deps.SaveAuditEvent(
-				"config",
-				makeRef(refFamilyVE, normScope, key),
-				"save",
-				"agent",
-				agent.AgentHash,
-				"",
-				"agent_save_config",
-				nil,
-				map[string]any{
-					"key":                key,
-					"ref":                makeRef(refFamilyVE, normScope, key),
-					"vault_runtime_hash": agent.AgentHash,
-					"status":             string(normStatus),
-				},
-			)
 			if marshaled, marshalErr := json.Marshal(respData); marshalErr == nil {
 				respBody = marshaled
 			}

@@ -38,22 +38,6 @@ func (h *Handler) handleAgentDeleteSecret(w http.ResponseWriter, r *http.Request
 		if metaRefParts := strings.Split(trackedRef, ":"); len(metaRefParts) == 3 {
 			_ = h.deleteTrackedRef(r.Context(), makeRef(refFamilyVK, refScopeTemp, metaRefParts[2]))
 		}
-		h.deps.SaveAuditEvent(
-			"secret",
-			trackedRef,
-			"delete",
-			"agent",
-			agent.AgentHash,
-			"",
-			"agent_delete_secret",
-			map[string]any{
-				"name": trackedRef,
-				"ref":  trackedRef,
-			},
-			map[string]any{
-				"name": name,
-			},
-		)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
