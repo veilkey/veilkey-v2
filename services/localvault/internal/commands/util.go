@@ -6,13 +6,7 @@ import (
 	"strings"
 
 	"veilkey-localvault/internal/db"
-
-	"github.com/veilkey/veilkey-go-package/cmdutil"
 )
-
-func readPasswordFromFileEnv() string {
-	return cmdutil.ReadPasswordFromFileEnv()
-}
 
 func readDataDirPassword(dataDir string) string {
 	path := filepath.Join(dataDir, "password")
@@ -21,10 +15,6 @@ func readDataDirPassword(dataDir string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(data))
-}
-
-func readPassword(prompt string) string {
-	return cmdutil.ReadPassword(prompt)
 }
 
 func ensureVaultIdentity(database *db.DB, nodeID string) (string, string, error) {
