@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"veilkey-vaultcenter/internal/api"
+	"veilkey-vaultcenter/internal/chain"
 	"github.com/veilkey/veilkey-go-package/crypto"
 	"veilkey-vaultcenter/internal/db"
 )
@@ -82,6 +83,19 @@ func RunServer() {
 		log.Fatal("VEILKEY_PASSWORD env var is no longer supported (password exposed in process environment). Use VEILKEY_PASSWORD_FILE instead.")
 	} else {
 		log.Println("Server started in LOCKED mode. POST /api/unlock with password to unlock.")
+	}
+
+	// CometBFT chain node (optional — set VEILKEY_CHAIN_HOME to enable)
+	if chainHome := os.Getenv("VEILKEY_CHAIN_HOME"); chainHome != "" {
+		cometNode, chainErr := chain.StartNode(database, chainHome)
+		if chainErr != nil {
+			log.Fatalf("Failed to start chain node: %v", chainErr)
+		}
+		defer chain.StopNode(cometNode)
+		server.SetChainClient(chain.NewClient(cometNode))
+		log.Printf("CometBFT chain node started (home=%s)", chainHome)
+	} else {
+		log.Println("Chain disabled (VEILKEY_CHAIN_HOME not set, using DB direct mode)")
 	}
 
 	gcStop := make(chan struct{})

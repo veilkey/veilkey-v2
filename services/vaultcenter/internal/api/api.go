@@ -517,7 +517,7 @@ func (s *Server) SetupRoutes() http.Handler {
 		mux.HandleFunc("POST /api/admin/tracked-refs/cleanup", s.requireReadyForOps(s.adminHandler.RequireAdminSession(s.hkmHandler.HandleTrackedRefCleanup)))
 	}
 
-	return logMiddleware(mux)
+	return logMiddleware(TxActorMiddleware(mux))
 }
 
 func logMiddleware(next http.Handler) http.Handler {
