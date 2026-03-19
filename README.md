@@ -46,35 +46,80 @@ veil CLI (PTY 마스킹)
 - VaultCenter만 탈취 → agentDEK 있지만 ciphertext 없음
 - LocalVault만 탈취 → ciphertext 있지만 agentDEK 없음
 
-## Quick Start (macOS)
+## Installation
+
+### macOS
 
 ```bash
-git clone https://github.com/veilkey/veilkey-selfhosted.git
-cd veilkey-selfhosted
+curl -sL https://gist.githubusercontent.com/dalsoop/990c3706a62834599b0d9f5316a314ad/raw/install-veilkey.sh | bash
+```
 
-# 1. 서버 시작
+이 한 줄로:
+- repo 클론 (`~/.veilkey`)
+- Docker 서비스 시작 (VaultCenter + LocalVault + veil)
+- Rust CLI 빌드 + ad-hoc 코드 서명
+- 셸 환경변수 설정 (`~/.zshrc`)
+
+설치 후:
+1. `https://localhost:11181` → 마스터 + 관리자 비밀번호 설정
+2. 터미널 재시작
+3. `veil` 입력 → 보호 셸 진입
+
+삭제:
+```bash
+curl -sL https://gist.githubusercontent.com/dalsoop/990c3706a62834599b0d9f5316a314ad/raw/uninstall-veilkey.sh | bash
+```
+
+### Linux
+
+```bash
+# 1. 의존성
+sudo apt install -y git docker.io docker-compose-plugin
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+
+# 2. 클론 + 서비스 시작
+git clone https://github.com/veilkey/veilkey-selfhosted.git ~/.veilkey
+cd ~/.veilkey
 docker compose up -d
 
-# 2. veil CLI 설치 (빌드 + 서명 + 셸 설정)
-bash scripts/install-veil-mac.sh
+# 3. CLI 빌드 + 설치
+cargo build --release
+sudo cp target/release/{veil,veilkey,veilkey-cli,veilkey-session-config} /usr/local/bin/
 
-# 3. VaultCenter 셋업
-open https://localhost:11181    # 마스터 + 관리자 비밀번호 설정
+# 4. 셸 설정
+cat >> ~/.bashrc << 'EOF'
+# VeilKey
+export VEILKEY_LOCALVAULT_URL="https://localhost:11181"
+export VEILKEY_TLS_INSECURE=1
+export VEILKEY_CONFIG="$HOME/.veilkey.yml"
+export VEILKEY_BIN=/usr/local/bin/veilkey
+export VEILKEY_CLI_BIN=/usr/local/bin/veilkey-cli
+export VEILKEY_VK_BIN=/usr/local/bin/veilkey
+export VEILKEY_SESSION_CONFIG_BIN=/usr/local/bin/veilkey-session-config
+EOF
+cp services/veil-cli/examples/.veilkey.yml ~/.veilkey.yml
+source ~/.bashrc
 
-# 4. LocalVault 등록
-#    keycenter에서 등록 토큰 발급 후:
-docker compose exec localvault sh -c \
-  "echo 'password' | veilkey-localvault init --root --token vk_reg_xxx --center https://vaultcenter:10181"
-docker compose restart localvault
-
-# 5. 시크릿 저장
-#    keycenter에서 임시키 생성 → 볼트에 격상
-
-# 6. veil 셸 진입
+# 5. 셋업 + 진입
+# https://localhost:11181 → 비밀번호 설정
 veil
 ```
 
-`veil` 안에서는 모든 등록된 시크릿이 자동 마스킹됩니다. AI가 출력을 봐도 `VK:LOCAL:xxx`만 보임.
+### Setup (공통)
+
+설치 후 VaultCenter 셋업:
+
+1. **`https://localhost:11181`** 접속 → 마스터 + 관리자 비밀번호 설정
+2. **LocalVault 등록** — keycenter에서 등록 토큰 발급:
+```bash
+docker compose exec localvault sh -c \
+  "echo 'password' | veilkey-localvault init --root \
+    --token vk_reg_xxx --center https://vaultcenter:10181"
+docker compose restart localvault
+```
+3. **시크릿 저장** — keycenter에서 임시키 생성 → 볼트에 격상
+4. **`veil`** 입력 → 보호 셸. 모든 등록된 시크릿이 자동 마스킹. AI가 출력을 봐도 `VK:LOCAL:xxx`만 보임.
 
 ## Key Features
 
