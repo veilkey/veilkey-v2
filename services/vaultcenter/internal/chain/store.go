@@ -26,9 +26,9 @@ type Store interface {
 	SaveAuditEvent(event *AuditRecord) error
 }
 
-// ConfigReader provides read access to config values.
-// Used by the ABCI Application for chain state recovery.
-type ConfigReader interface {
+// ChainMeta provides read/write access to chain metadata (height, hash).
+// Used by the ABCI Application for state recovery and commit persistence.
+type ChainMeta interface {
 	GetConfigValue(key string) (string, error)
 	SaveConfig(key, value string) error
 }

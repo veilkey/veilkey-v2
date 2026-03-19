@@ -18,7 +18,7 @@ import (
 
 // StartNode creates and starts a CometBFT node embedded in-process.
 // chainHome is the directory for CometBFT config/data (e.g. $dataDir/chain).
-func StartNode(store Store, cfgReader ConfigReader, chainHome string) (*nm.Node, error) {
+func StartNode(store Store, cfgReader ChainMeta, chainHome string) (*nm.Node, error) {
 	if err := ensureChainHome(chainHome); err != nil {
 		return nil, fmt.Errorf("chain: ensure home: %w", err)
 	}

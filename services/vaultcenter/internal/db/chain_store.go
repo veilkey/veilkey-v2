@@ -7,14 +7,14 @@ import (
 	"veilkey-vaultcenter/internal/chain"
 )
 
-// ChainStoreAdapter wraps *DB to implement chain.Store and chain.ConfigReader.
+// ChainStoreAdapter wraps *DB to implement chain.Store and chain.ChainMeta.
 type ChainStoreAdapter struct {
 	DB *DB
 }
 
 var (
 	_ chain.Store        = (*ChainStoreAdapter)(nil)
-	_ chain.ConfigReader = (*ChainStoreAdapter)(nil)
+	_ chain.ChainMeta = (*ChainStoreAdapter)(nil)
 )
 
 func (a *ChainStoreAdapter) SaveRefWithExpiryAndHash(parts chain.RefParts, ciphertext string, version int, status refs.RefStatus, expiresAt time.Time, secretName, plaintextHash string) error {

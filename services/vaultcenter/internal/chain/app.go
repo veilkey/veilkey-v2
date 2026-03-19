@@ -12,10 +12,10 @@ import (
 )
 
 // Application implements the CometBFT ABCI v0.38 interface.
-// It uses Store for TX execution and ConfigReader for chain state recovery.
+// It uses Store for TX execution and ChainMeta for chain state recovery.
 type Application struct {
 	store     Store
-	config    ConfigReader
+	config    ChainMeta
 	appHeight int64
 	appHash   []byte
 }
@@ -23,7 +23,7 @@ type Application struct {
 var _ abcitypes.Application = (*Application)(nil)
 
 // NewApplication creates an ABCI application backed by the given store.
-func NewApplication(store Store, config ConfigReader) *Application {
+func NewApplication(store Store, config ChainMeta) *Application {
 	app := &Application{store: store, config: config}
 	app.recoverState()
 	return app
