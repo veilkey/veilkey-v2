@@ -41,7 +41,7 @@ func (h *Handler) upsertTrackedRefNamed(ctx context.Context, ref string, version
 			return fmt.Errorf("ref %s belongs to different agent", ref)
 		}
 	}
-	_, err = h.deps.SubmitTx(ctx, chain.TxSaveTokenRef, chain.SaveTokenRefPayload{
+	err = h.deps.SubmitTxAsync(ctx, chain.TxSaveTokenRef, chain.SaveTokenRefPayload{
 		RefFamily:  parts.Family,
 		RefScope:   parts.Scope,
 		RefID:      parts.ID,
