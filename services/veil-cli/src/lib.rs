@@ -1,3 +1,11 @@
+pub mod api;
+pub mod config;
+pub mod detector;
+pub mod logger;
+pub mod output;
+pub mod project_config;
+pub mod state;
+
 use std::env;
 use std::path::Path;
 use std::process::{Command, Stdio};

@@ -1,18 +1,10 @@
-mod api;
-mod config;
-mod detector;
-mod logger;
-mod output;
-mod project_config;
-mod state;
-
-use api::VeilKeyClient;
-use config::load_config;
-use detector::SecretDetector;
-use logger::SessionLogger;
-use output::{Finding, Formatter};
-use project_config::load_project_config;
-use state::{current_paste_mode, set_paste_mode, state_dir};
+use veil_cli_rs::api::VeilKeyClient;
+use veil_cli_rs::config::load_config;
+use veil_cli_rs::detector::SecretDetector;
+use veil_cli_rs::logger::SessionLogger;
+use veil_cli_rs::output::{Finding, Formatter};
+use veil_cli_rs::project_config::load_project_config;
+use veil_cli_rs::state::{current_paste_mode, set_paste_mode, state_dir};
 use std::io::{self, BufRead, Read};
 use std::process;
 
@@ -139,7 +131,7 @@ fn cmd_exec(args: &[String], api_url: &str) {
         process::exit(1);
     }
     let client = VeilKeyClient::new(api_url);
-    let vk_re = regex::Regex::new(detector::VEILKEY_RE_STR).unwrap();
+    let vk_re = regex::Regex::new(veil_cli_rs::detector::VEILKEY_RE_STR).unwrap();
 
     let resolved: Vec<String> = args
         .iter()
@@ -560,7 +552,7 @@ fn cmd_proxy(args: &[String]) {
 
 #[cfg(unix)]
 mod pty_wrap {
-    use crate::{api::VeilKeyClient, config, state::state_dir};
+    use veil_cli_rs::{api::VeilKeyClient, config, state::state_dir};
     use nix::libc;
     use nix::sys::signal::{self, SigHandler, Signal};
     use nix::unistd::{execvp, fork, ForkResult};
@@ -621,7 +613,7 @@ mod pty_wrap {
         eprintln!("[veilkey] loaded {} secret(s) from vaults", mask_map.len());
 
         // 2. Also resolve VK refs in environment variables
-        let vk_re = regex::Regex::new(super::detector::VEILKEY_RE_STR).unwrap();
+        let vk_re = regex::Regex::new(veil_cli_rs::detector::VEILKEY_RE_STR).unwrap();
         let mut child_env: Vec<(String, String)> = Vec::new();
         for (key, value) in std::env::vars() {
             if vk_re.is_match(&value) {

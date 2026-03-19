@@ -4,7 +4,7 @@ set -euo pipefail
 found=0
 
 GO_SERVICES="services/localvault services/vaultcenter"
-RUST_SERVICES="services/veilkey-cli services/veil-cli"
+RUST_SERVICES="services/veil-cli"
 ALL_SERVICES="$GO_SERVICES $RUST_SERVICES"
 
 # 1. 하드코딩된 기본값 차단 (Go, Rust, Dockerfile, sh)
