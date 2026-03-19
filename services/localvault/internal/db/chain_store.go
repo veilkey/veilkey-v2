@@ -43,6 +43,9 @@ func (a *ChainStoreAdapter) UpsertAgent(_, _, _, _, _ string, _, _, _, _, _ int)
 // DeleteAgent is a no-op on localvault.
 func (a *ChainStoreAdapter) DeleteAgent(_ string) error { return nil }
 
+// UpdateAgentState is a no-op on localvault.
+func (a *ChainStoreAdapter) UpdateAgentState(_ string, _ *chain.AgentStateUpdate) error { return nil }
+
 // RegisterChild is a no-op on localvault (identity-only record, no DEK).
 func (a *ChainStoreAdapter) RegisterChild(_ *chain.ChildRecord) error {
 	return nil

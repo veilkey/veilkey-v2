@@ -2,17 +2,13 @@ package hkm
 
 import (
 	"net/http"
+
 	"veilkey-vaultcenter/internal/httputil"
-	"time"
 )
 
 func (h *Handler) handleAgentRotateAll(w http.ResponseWriter, r *http.Request) {
 	reason := "planned_rotation"
-	_, err := h.deps.DB().AdvancePendingRotations(time.Now().UTC())
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to advance pending rotations: "+err.Error())
-		return
-	}
+	h.advancePendingRotationsViaChain(r)
 	agents, err := h.deps.DB().ScheduleAllAgentRotations(reason)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to schedule agent rotation: "+err.Error())

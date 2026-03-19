@@ -34,6 +34,22 @@ func (a *ChainStoreAdapter) UpsertAgent(nodeID, label, vaultHash, vaultName, ip 
 	return a.DB.UpsertAgent(nodeID, label, vaultHash, vaultName, ip, port, secretsCount, configsCount, version, keyVersion)
 }
 
+func (a *ChainStoreAdapter) UpdateAgentState(nodeID string, updates *chain.AgentStateUpdate) error {
+	return a.DB.UpdateAgentStatePartial(nodeID, &AgentStatePartialUpdate{
+		RotationRequired: updates.RotationRequired,
+		RotationReason:   updates.RotationReason,
+		RebindRequired:   updates.RebindRequired,
+		RebindReason:     updates.RebindReason,
+		RetryStage:       updates.RetryStage,
+		NextRetryAt:      updates.NextRetryAt,
+		SetNextRetryAt:   updates.SetNextRetryAt,
+		BlockedAt:        updates.BlockedAt,
+		SetBlockedAt:     updates.SetBlockedAt,
+		BlockReason:      updates.BlockReason,
+		KeyVersion:       updates.KeyVersion,
+	})
+}
+
 func (a *ChainStoreAdapter) DeleteAgent(nodeID string) error {
 	return a.DB.DeleteAgentByNodeID(nodeID)
 }

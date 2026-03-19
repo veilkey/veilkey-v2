@@ -102,9 +102,12 @@ func (h *Handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	agent, err := h.deps.DB().GetAgentByNodeID(nodeID)
 	if err == nil {
 		if agent.BlockedAt != nil && agent.BlockReason == "key_version_mismatch" && agent.KeyVersion == req.KeyVersion {
-			agent, err = h.deps.DB().ClearAgentRebind(nodeID)
-			if err != nil {
+			if _, err := h.deps.SubmitTx(r.Context(), chain.TxUpdateAgentState, clearRebindPayload(nodeID)); err != nil {
 				respondError(w, http.StatusInternalServerError, "failed to clear blocked rebind state: "+err.Error())
+				return
+			}
+			if agent, err = h.deps.DB().GetAgentByNodeID(nodeID); err != nil {
+				respondError(w, http.StatusInternalServerError, "failed to reload agent: "+err.Error())
 				return
 			}
 		}
@@ -114,9 +117,12 @@ func (h *Handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 		if agent.RotationRequired {
 			if agent.KeyVersion == req.KeyVersion {
-				agent, err = h.deps.DB().ClearAgentRotation(nodeID)
-				if err != nil {
+				if _, err := h.deps.SubmitTx(r.Context(), chain.TxUpdateAgentState, clearRotationPayload(nodeID)); err != nil {
 					respondError(w, http.StatusInternalServerError, "failed to clear rotation state: "+err.Error())
+					return
+				}
+				if agent, err = h.deps.DB().GetAgentByNodeID(nodeID); err != nil {
+					respondError(w, http.StatusInternalServerError, "failed to reload agent: "+err.Error())
 					return
 				}
 			} else {
@@ -128,16 +134,22 @@ func (h *Handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if agent.RebindRequired && agent.RebindReason == "key_version_mismatch" && agent.KeyVersion == req.KeyVersion {
-			agent, err = h.deps.DB().ClearAgentRebind(nodeID)
-			if err != nil {
+			if _, err := h.deps.SubmitTx(r.Context(), chain.TxUpdateAgentState, clearRebindPayload(nodeID)); err != nil {
 				respondError(w, http.StatusInternalServerError, "failed to clear rebind state: "+err.Error())
+				return
+			}
+			if agent, err = h.deps.DB().GetAgentByNodeID(nodeID); err != nil {
+				respondError(w, http.StatusInternalServerError, "failed to reload agent: "+err.Error())
 				return
 			}
 		}
 		if agent.RebindRequired {
-			agent, err = h.deps.DB().AdvanceAgentRebind(nodeID, agent.RebindReason, time.Now().UTC())
-			if err != nil {
+			if _, err := h.deps.SubmitTx(r.Context(), chain.TxUpdateAgentState, advanceRebindPayload(nodeID, agent.RebindReason, agent.RetryStage, time.Now().UTC())); err != nil {
 				respondError(w, http.StatusInternalServerError, "failed to update rebind state: "+err.Error())
+				return
+			}
+			if agent, err = h.deps.DB().GetAgentByNodeID(nodeID); err != nil {
+				respondError(w, http.StatusInternalServerError, "failed to reload agent: "+err.Error())
 				return
 			}
 			if agent.BlockedAt != nil {
@@ -148,9 +160,12 @@ func (h *Handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if agent.AgentHash != "" && agent.KeyVersion != 0 && agent.KeyVersion != req.KeyVersion {
-			agent, err = h.deps.DB().AdvanceAgentRebind(nodeID, "key_version_mismatch", time.Now().UTC())
-			if err != nil {
+			if _, err := h.deps.SubmitTx(r.Context(), chain.TxUpdateAgentState, advanceRebindPayload(nodeID, "key_version_mismatch", agent.RetryStage, time.Now().UTC())); err != nil {
 				respondError(w, http.StatusInternalServerError, "failed to update rebind state: "+err.Error())
+				return
+			}
+			if agent, err = h.deps.DB().GetAgentByNodeID(nodeID); err != nil {
+				respondError(w, http.StatusInternalServerError, "failed to reload agent: "+err.Error())
 				return
 			}
 			if agent.BlockedAt != nil {

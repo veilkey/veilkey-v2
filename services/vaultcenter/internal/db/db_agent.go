@@ -14,7 +14,8 @@ import (
 	"gorm.io/gorm"
 )
 
-var agentRetrySchedule = []time.Duration{
+// AgentRetrySchedule defines backoff intervals for rebind/rotation retries.
+var AgentRetrySchedule = []time.Duration{
 	time.Minute,
 	3 * time.Minute,
 	10 * time.Minute,
@@ -371,12 +372,12 @@ func (d *DB) AdvanceAgentRebind(nodeID, reason string, now time.Time) (*Agent, e
 		"rebind_reason":   reason,
 	}
 
-	if agent.RetryStage >= len(agentRetrySchedule) {
+	if agent.RetryStage >= len(AgentRetrySchedule) {
 		updates["blocked_at"] = now
 		updates["block_reason"] = reason
 		updates["next_retry_at"] = nil
 	} else {
-		nextRetryAt := now.Add(agentRetrySchedule[agent.RetryStage])
+		nextRetryAt := now.Add(AgentRetrySchedule[agent.RetryStage])
 		updates["retry_stage"] = agent.RetryStage + 1
 		updates["next_retry_at"] = &nextRetryAt
 	}
@@ -456,6 +457,66 @@ func (d *DB) ClearAgentRotation(nodeID string) (*Agent, error) {
 	return d.GetAgentByNodeID(nodeID)
 }
 
+// AgentStatePartialUpdate holds partial agent state fields for GORM updates.
+// Pointer fields: nil = no change, non-nil = set to value.
+type AgentStatePartialUpdate struct {
+	RotationRequired *bool
+	RotationReason   *string
+	RebindRequired   *bool
+	RebindReason     *string
+	RetryStage       *int
+	NextRetryAt      *time.Time
+	SetNextRetryAt   bool // if true, apply NextRetryAt (nil = clear)
+	BlockedAt        *time.Time
+	SetBlockedAt     bool // if true, apply BlockedAt (nil = clear)
+	BlockReason      *string
+	KeyVersion       *int
+}
+
+// UpdateAgentStatePartial applies partial state updates using map-based GORM updates
+// to correctly handle zeroing/nil-clearing of fields.
+func (d *DB) UpdateAgentStatePartial(nodeID string, u *AgentStatePartialUpdate) error {
+	m := map[string]interface{}{}
+	if u.RotationRequired != nil {
+		m["rotation_required"] = *u.RotationRequired
+	}
+	if u.RotationReason != nil {
+		m["rotation_reason"] = *u.RotationReason
+	}
+	if u.RebindRequired != nil {
+		m["rebind_required"] = *u.RebindRequired
+	}
+	if u.RebindReason != nil {
+		m["rebind_reason"] = *u.RebindReason
+	}
+	if u.RetryStage != nil {
+		m["retry_stage"] = *u.RetryStage
+	}
+	if u.SetNextRetryAt {
+		m["next_retry_at"] = u.NextRetryAt // nil clears the column
+	}
+	if u.SetBlockedAt {
+		m["blocked_at"] = u.BlockedAt // nil clears the column
+	}
+	if u.BlockReason != nil {
+		m["block_reason"] = *u.BlockReason
+	}
+	if u.KeyVersion != nil {
+		m["key_version"] = *u.KeyVersion
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	result := d.conn.Model(&Agent{}).Where("node_id = ?", nodeID).Updates(m)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("agent %s not found", nodeID)
+	}
+	return nil
+}
+
 func (d *DB) UpdateAgentRotationState(nodeID string, retryStage int, nextRetryAt *time.Time, rotationRequired bool, rotationReason string, blockedAt *time.Time, blockReason string) error {
 	result := d.conn.Model(&Agent{}).Where("node_id = ?", nodeID).
 		Select("RetryStage", "NextRetryAt", "RotationRequired", "RotationReason", "BlockedAt", "BlockReason").
@@ -512,14 +573,14 @@ func (d *DB) AdvancePendingRotations(now time.Time) ([]Agent, error) {
 			continue
 		}
 		updates := map[string]interface{}{}
-		if agent.RetryStage >= len(agentRetrySchedule) {
+		if agent.RetryStage >= len(AgentRetrySchedule) {
 			updates["blocked_at"] = now
 			updates["block_reason"] = "rotation_timeout"
 			updates["next_retry_at"] = nil
 			updates["rotation_required"] = false
 			updates["rotation_reason"] = ""
 		} else {
-			nextRetryAt := now.Add(agentRetrySchedule[agent.RetryStage])
+			nextRetryAt := now.Add(AgentRetrySchedule[agent.RetryStage])
 			updates["retry_stage"] = agent.RetryStage + 1
 			updates["next_retry_at"] = &nextRetryAt
 		}
