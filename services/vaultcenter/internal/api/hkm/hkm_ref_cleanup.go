@@ -112,7 +112,7 @@ func (h *Handler) handleTrackedRefCleanup(w http.ResponseWriter, r *http.Request
 			continue
 		}
 		for _, ref := range action.Delete {
-			if err := h.deleteTrackedRef(ref); err == nil {
+			if err := h.deleteTrackedRef(r.Context(), ref); err == nil {
 				resp.Counts["deleted"]++
 			}
 		}

@@ -80,7 +80,7 @@ func (h *Handler) handleAgentSaveSecret(w http.ResponseWriter, r *http.Request) 
 			data["token"] = canonical
 			data["scope"] = string(normScope)
 			data["status"] = string(normStatus)
-			_ = h.upsertTrackedRefNamed(canonical, agent.KeyVersion, normStatus, agent.AgentHash, req.Name)
+			_ = h.upsertTrackedRefNamed(r.Context(), canonical, agent.KeyVersion, normStatus, agent.AgentHash, req.Name)
 			h.deps.SaveAuditEvent(
 				"secret",
 				canonical,

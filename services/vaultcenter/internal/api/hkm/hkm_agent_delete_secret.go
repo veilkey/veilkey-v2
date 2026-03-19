@@ -34,9 +34,9 @@ func (h *Handler) handleAgentDeleteSecret(w http.ResponseWriter, r *http.Request
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode == http.StatusOK && trackedRef != "" {
-		_ = h.deleteTrackedRef(trackedRef)
+		_ = h.deleteTrackedRef(r.Context(), trackedRef)
 		if metaRefParts := strings.Split(trackedRef, ":"); len(metaRefParts) == 3 {
-			_ = h.deleteTrackedRef(makeRef(refFamilyVK, refScopeTemp, metaRefParts[2]))
+			_ = h.deleteTrackedRef(r.Context(), makeRef(refFamilyVK, refScopeTemp, metaRefParts[2]))
 		}
 		h.deps.SaveAuditEvent(
 			"secret",

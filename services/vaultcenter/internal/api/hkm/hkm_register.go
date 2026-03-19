@@ -3,11 +3,11 @@ package hkm
 import (
 	"log"
 	"net/http"
+	"veilkey-vaultcenter/internal/chain"
 	"veilkey-vaultcenter/internal/httputil"
 	"net/url"
 	"strings"
 	"github.com/veilkey/veilkey-go-package/crypto"
-	"veilkey-vaultcenter/internal/db"
 )
 
 // handleRegister registers a new child node and issues a DEK
@@ -64,15 +64,14 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	child := &db.Child{
+	if _, err := h.deps.SubmitTx(r.Context(), chain.TxRegisterChild, chain.RegisterChildPayload{
 		NodeID:       nodeID,
 		Label:        req.Label,
 		URL:          req.URL,
 		EncryptedDEK: encryptedChildDEK,
 		Nonce:        childNonce,
 		Version:      1,
-	}
-	if err := h.deps.DB().RegisterChild(child); err != nil {
+	}); err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to register child: "+err.Error())
 		return
 	}

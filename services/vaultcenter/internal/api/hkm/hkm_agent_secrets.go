@@ -66,7 +66,7 @@ func (h *Handler) handleAgentSecrets(w http.ResponseWriter, r *http.Request) {
 						sec["token"] = makeRef(refFamilyVK, normScope, canonicalRef)
 						sec["scope"] = string(normScope)
 						sec["status"] = string(normStatus)
-						_ = h.upsertTrackedRef(makeRef(refFamilyVK, normScope, canonicalRef), agent.KeyVersion, normStatus, agent.AgentHash)
+						_ = h.upsertTrackedRef(r.Context(), makeRef(refFamilyVK, normScope, canonicalRef), agent.KeyVersion, normStatus, agent.AgentHash)
 					}
 				}
 			}

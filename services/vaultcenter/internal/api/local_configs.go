@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -46,7 +47,7 @@ func (s *Server) handleListConfigs(w http.ResponseWriter, r *http.Request) {
 			Scope:  string(normScope),
 			Status: string(normStatus),
 		})
-		_ = s.upsertTrackedRef(ref, 1, normStatus, "")
+		_ = s.upsertTrackedRef(r.Context(), ref, 1, normStatus, "")
 	}
 
 	s.respondJSON(w, http.StatusOK, map[string]any{
@@ -74,7 +75,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ref := db.MakeRef(db.RefFamilyVE, normScope, config.Key)
-	_ = s.upsertTrackedRef(ref, 1, normStatus, "")
+	_ = s.upsertTrackedRef(r.Context(), ref, 1, normStatus, "")
 
 	s.respondJSON(w, http.StatusOK, map[string]any{
 		"key":    config.Key,
@@ -123,7 +124,7 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ref := db.MakeRef(db.RefFamilyVE, db.RefScopeLocal, req.Key)
-	_ = s.upsertTrackedRef(ref, 1, db.RefStatusActive, "")
+	_ = s.upsertTrackedRef(r.Context(), ref, 1, db.RefStatusActive, "")
 	s.saveAuditEvent(
 		"config",
 		ref,
@@ -178,7 +179,7 @@ func (s *Server) handleSaveConfigsBulk(w http.ResponseWriter, r *http.Request) {
 
 	for key, value := range req.Configs {
 		ref := db.MakeRef(db.RefFamilyVE, db.RefScopeLocal, key)
-		_ = s.upsertTrackedRef(ref, 1, db.RefStatusActive, "")
+		_ = s.upsertTrackedRef(r.Context(), ref, 1, db.RefStatusActive, "")
 		s.saveAuditEvent(
 			"config",
 			ref,
@@ -226,7 +227,7 @@ func (s *Server) handleDeleteConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ref := db.MakeRef(db.RefFamilyVE, db.RefScopeLocal, key)
-	_ = s.deleteTrackedRef(ref)
+	_ = s.deleteTrackedRef(r.Context(), ref)
 	s.saveAuditEvent(
 		"config",
 		ref,
@@ -253,9 +254,9 @@ func normalizeScopeStatus(family string, scope db.RefScope, status db.RefStatus,
 }
 
 // upsertTrackedRef upserts a tracked ref directly via the DB.
-func (s *Server) upsertTrackedRef(ref string, version int, status db.RefStatus, agentHash string) error {
+func (s *Server) upsertTrackedRef(ctx context.Context, ref string, version int, status db.RefStatus, agentHash string) error {
 	if s.hkmHandler != nil {
-		return s.hkmHandler.UpsertTrackedRef(ref, version, status, agentHash)
+		return s.hkmHandler.UpsertTrackedRef(ctx, ref, version, status, agentHash)
 	}
 	// Minimal inline fallback for non-HKM nodes.
 	parts, err := db.ParseCanonicalRef(ref)
@@ -272,9 +273,9 @@ func (s *Server) upsertTrackedRef(ref string, version int, status db.RefStatus, 
 }
 
 // deleteTrackedRef removes a tracked ref directly via the DB.
-func (s *Server) deleteTrackedRef(ref string) error {
+func (s *Server) deleteTrackedRef(ctx context.Context, ref string) error {
 	if s.hkmHandler != nil {
-		return s.hkmHandler.DeleteTrackedRef(ref)
+		return s.hkmHandler.DeleteTrackedRef(ctx, ref)
 	}
 	if _, err := s.db.GetRef(ref); err != nil {
 		return err

@@ -49,7 +49,7 @@ func (h *Handler) handleAgentDeleteConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if resp.StatusCode == http.StatusOK && trackedRef != "" {
-		_ = h.deleteTrackedRef(trackedRef)
+		_ = h.deleteTrackedRef(r.Context(), trackedRef)
 		h.deps.SaveAuditEvent(
 			"config",
 			trackedRef,

@@ -2,6 +2,7 @@ package hkm
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -392,7 +393,7 @@ func (h *Handler) handleVaultKeyMeta(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadGateway, "agent returned unsupported secret scope: "+err.Error())
 		return
 	}
-	_ = h.upsertTrackedRef(meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
+	_ = h.upsertTrackedRef(r.Context(), meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
 
 	resp := map[string]any{
 		"name":               name,
@@ -437,7 +438,7 @@ func (h *Handler) handleVaultKeyUsage(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadGateway, "agent returned unsupported secret scope: "+err.Error())
 		return
 	}
-	_ = h.upsertTrackedRef(meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
+	_ = h.upsertTrackedRef(r.Context(), meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
 
 	limit, offset, errMsg := httputil.ParseListWindow(r)
 	if errMsg != "" {
@@ -493,7 +494,7 @@ func (h *Handler) handleVaultKeyBindings(w http.ResponseWriter, r *http.Request)
 		respondError(w, http.StatusBadGateway, "agent returned unsupported secret scope: "+err.Error())
 		return
 	}
-	_ = h.upsertTrackedRef(meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
+	_ = h.upsertTrackedRef(r.Context(), meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
 
 	limit, offset, errMsg := httputil.ParseListWindow(r)
 	if errMsg != "" {
@@ -548,7 +549,7 @@ func (h *Handler) handleVaultKeyBindingSave(w http.ResponseWriter, r *http.Reque
 		respondError(w, http.StatusBadGateway, "agent returned unsupported secret scope: "+err.Error())
 		return
 	}
-	_ = h.upsertTrackedRef(meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
+	_ = h.upsertTrackedRef(r.Context(), meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
 
 	var raw map[string]json.RawMessage
 	if err := httputil.DecodeJSON(r, &raw); err != nil {
@@ -624,7 +625,7 @@ func (h *Handler) handleVaultKeyBindingSave(w http.ResponseWriter, r *http.Reque
 func (h *Handler) handleVaultKeyBindingsReplace(w http.ResponseWriter, r *http.Request) {
 	hashOrLabel := r.PathValue("vault")
 	name := r.PathValue("name")
-	agent, meta, ok := h.lookupVaultKeyForBindingWrite(w, hashOrLabel, name)
+	agent, meta, ok := h.lookupVaultKeyForBindingWrite(r.Context(), w, hashOrLabel, name)
 	if !ok {
 		return
 	}
@@ -703,7 +704,7 @@ func (h *Handler) handleVaultKeyBindingsReplace(w http.ResponseWriter, r *http.R
 func (h *Handler) handleVaultKeyBindingsDeleteAll(w http.ResponseWriter, r *http.Request) {
 	hashOrLabel := r.PathValue("vault")
 	name := r.PathValue("name")
-	agent, meta, ok := h.lookupVaultKeyForBindingWrite(w, hashOrLabel, name)
+	agent, meta, ok := h.lookupVaultKeyForBindingWrite(r.Context(), w, hashOrLabel, name)
 	if !ok {
 		return
 	}
@@ -755,7 +756,7 @@ func (h *Handler) handleVaultKeyAudit(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadGateway, "agent returned unsupported secret scope: "+err.Error())
 		return
 	}
-	_ = h.upsertTrackedRef(meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
+	_ = h.upsertTrackedRef(r.Context(), meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
 
 	limit, offset, errMsg := httputil.ParseListWindow(r)
 	if errMsg != "" {
@@ -837,7 +838,7 @@ func (h *Handler) handleVaultKeyBindingDelete(w http.ResponseWriter, r *http.Req
 	})
 }
 
-func (h *Handler) lookupVaultKeyForBindingWrite(w http.ResponseWriter, hashOrLabel, name string) (*agentInfo, *agentSecretMeta, bool) {
+func (h *Handler) lookupVaultKeyForBindingWrite(ctx context.Context, w http.ResponseWriter, hashOrLabel, name string) (*agentInfo, *agentSecretMeta, bool) {
 	agent, err := h.findAgent(hashOrLabel)
 	if err != nil {
 		h.respondAgentLookupError(w, err)
@@ -862,7 +863,7 @@ func (h *Handler) lookupVaultKeyForBindingWrite(w http.ResponseWriter, hashOrLab
 		respondError(w, http.StatusBadGateway, "agent returned unsupported secret scope: "+err.Error())
 		return nil, nil, false
 	}
-	_ = h.upsertTrackedRef(meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
+	_ = h.upsertTrackedRef(ctx, meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
 	return agent, meta, true
 }
 
@@ -895,7 +896,7 @@ func (h *Handler) handleVaultPatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleVaultKeyMetaPatch(w http.ResponseWriter, r *http.Request) {
-	_, meta, ok := h.lookupVaultKeyForBindingWrite(w, r.PathValue("vault"), r.PathValue("name"))
+	_, meta, ok := h.lookupVaultKeyForBindingWrite(r.Context(), w, r.PathValue("vault"), r.PathValue("name"))
 	if !ok {
 		return
 	}
@@ -931,7 +932,7 @@ func (h *Handler) handleVaultKeyMetaPatch(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handler) handleVaultKeySummary(w http.ResponseWriter, r *http.Request) {
-	agent, meta, ok := h.lookupVaultKeyForBindingWrite(w, r.PathValue("vault"), r.PathValue("name"))
+	agent, meta, ok := h.lookupVaultKeyForBindingWrite(r.Context(), w, r.PathValue("vault"), r.PathValue("name"))
 	if !ok {
 		return
 	}
@@ -1053,7 +1054,7 @@ func (h *Handler) handleVaultKeyFields(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadGateway, "agent returned unsupported secret scope: "+err.Error())
 		return
 	}
-	_ = h.upsertTrackedRef(meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
+	_ = h.upsertTrackedRef(r.Context(), meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
 
 	respondJSON(w, http.StatusOK, map[string]any{
 		"name":               name,

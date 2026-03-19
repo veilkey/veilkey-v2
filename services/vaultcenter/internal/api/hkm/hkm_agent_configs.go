@@ -44,7 +44,7 @@ func (h *Handler) handleAgentConfigs(w http.ResponseWriter, r *http.Request) {
 						cfg["ref"] = makeRef(refFamilyVE, normScope, key)
 						cfg["scope"] = string(normScope)
 						cfg["status"] = string(normStatus)
-						_ = h.upsertTrackedRef(makeRef(refFamilyVE, normScope, key), agent.KeyVersion, normStatus, agent.AgentHash)
+						_ = h.upsertTrackedRef(r.Context(), makeRef(refFamilyVE, normScope, key), agent.KeyVersion, normStatus, agent.AgentHash)
 					}
 				}
 			}

@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"veilkey-vaultcenter/internal/chain"
 	"veilkey-vaultcenter/internal/httputil"
 	"strings"
 	"time"
@@ -183,7 +184,18 @@ func (h *Handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.deps.DB().UpsertAgent(nodeID, req.Label, req.VaultHash, req.VaultName, req.IP, req.Port, req.SecretsCount, req.ConfigsCount, req.Version, req.KeyVersion); err != nil {
+	if err := h.deps.SubmitTxAsync(r.Context(), chain.TxUpsertAgent, chain.UpsertAgentPayload{
+		NodeID:       nodeID,
+		Label:        req.Label,
+		VaultHash:    req.VaultHash,
+		VaultName:    req.VaultName,
+		IP:           req.IP,
+		Port:         req.Port,
+		SecretsCount: req.SecretsCount,
+		ConfigsCount: req.ConfigsCount,
+		Version:      req.Version,
+		KeyVersion:   req.KeyVersion,
+	}); err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to upsert agent: "+err.Error())
 		return
 	}

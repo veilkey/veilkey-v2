@@ -41,7 +41,7 @@ func (h *Handler) handleAgentGetSecret(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadGateway, "agent returned unsupported secret scope: "+err.Error())
 		return
 	}
-	_ = h.upsertTrackedRef(meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
+	_ = h.upsertTrackedRef(r.Context(), meta.Token, agent.KeyVersion, refStatus(meta.Status), agent.AgentHash)
 
 	plaintextValue := ""
 	cipher, err := h.fetchAgentCiphertext(agentURL, meta.Ref)
