@@ -38,7 +38,7 @@ func (s *Server) handleListConfigs(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
-		ref := fmt.Sprintf("VE:%s:%s", normScope, c.Key)
+		ref := db.MakeRef(db.RefFamilyVE, normScope, c.Key)
 		result = append(result, configResp{
 			Key:    c.Key,
 			Value:  c.Value,
@@ -73,7 +73,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		s.respondError(w, http.StatusInternalServerError, "invalid config state")
 		return
 	}
-	ref := fmt.Sprintf("VE:%s:%s", normScope, config.Key)
+	ref := db.MakeRef(db.RefFamilyVE, normScope, config.Key)
 	_ = s.upsertTrackedRef(ref, 1, normStatus, "")
 
 	s.respondJSON(w, http.StatusOK, map[string]any{

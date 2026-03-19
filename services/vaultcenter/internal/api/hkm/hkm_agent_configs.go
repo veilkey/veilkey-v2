@@ -41,7 +41,7 @@ func (h *Handler) handleAgentConfigs(w http.ResponseWriter, r *http.Request) {
 							respondError(w, http.StatusBadGateway, "agent returned unsupported config scope: "+normalizeErr.Error())
 							return
 						}
-						cfg["ref"] = "VE:" + string(normScope) + ":" + key
+						cfg["ref"] = makeRef(refFamilyVE, normScope, key)
 						cfg["scope"] = string(normScope)
 						cfg["status"] = string(normStatus)
 						_ = h.upsertTrackedRef(makeRef(refFamilyVE, normScope, key), agent.KeyVersion, normStatus, agent.AgentHash)

@@ -39,7 +39,7 @@ func (h *Handler) handleAgentGetConfig(w http.ResponseWriter, r *http.Request) {
 				respondError(w, http.StatusBadGateway, "agent returned unsupported config scope: "+normalizeErr.Error())
 				return
 			}
-			data["ref"] = "VE:" + string(normScope) + ":" + key
+			data["ref"] = makeRef(refFamilyVE, normScope, key)
 			data["scope"] = string(normScope)
 			data["status"] = string(normStatus)
 			data["vault"] = agent.Label

@@ -68,7 +68,7 @@ func (h *Handler) handleAgentSaveConfigsBulk(w http.ResponseWriter, r *http.Requ
 				nil,
 				map[string]any{
 					"key":                key,
-					"ref":                "VE:" + string(normScope) + ":" + key,
+					"ref":                makeRef(refFamilyVE, normScope, key),
 					"vault_runtime_hash": agent.AgentHash,
 					"status":             string(normStatus),
 				},

@@ -3,7 +3,6 @@ package hkm
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"veilkey-vaultcenter/internal/httputil"
@@ -177,7 +176,7 @@ func (h *Handler) handleAgentGetSecretField(w http.ResponseWriter, r *http.Reque
 		"type":               cipher.FieldType,
 		"value":              string(plaintext),
 		"ref":                meta.Ref,
-		"token":              fmt.Sprintf("VK:%s:%s", meta.Scope, meta.Ref),
+		"token":              makeRef(refFamilyVK, refScope(meta.Scope), meta.Ref),
 		"scope":              meta.Scope,
 		"status":             meta.Status,
 		"vault":              agent.Label,

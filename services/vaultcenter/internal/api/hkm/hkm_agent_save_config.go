@@ -64,7 +64,7 @@ func (h *Handler) handleAgentSaveConfig(w http.ResponseWriter, r *http.Request) 
 				respondError(w, http.StatusBadGateway, "agent returned unsupported config scope: "+normalizeErr.Error())
 				return
 			}
-			respData["ref"] = "VE:" + string(normScope) + ":" + key
+			respData["ref"] = makeRef(refFamilyVE, normScope, key)
 			respData["scope"] = string(normScope)
 			respData["status"] = string(normStatus)
 			respData["vault"] = agent.Label
@@ -81,7 +81,7 @@ func (h *Handler) handleAgentSaveConfig(w http.ResponseWriter, r *http.Request) 
 				nil,
 				map[string]any{
 					"key":                key,
-					"ref":                "VE:" + string(normScope) + ":" + key,
+					"ref":                makeRef(refFamilyVE, normScope, key),
 					"vault_runtime_hash": agent.AgentHash,
 					"status":             string(normStatus),
 				},

@@ -305,7 +305,7 @@ func normalizeMeta(meta *agentSecretMeta) error {
 	}
 	meta.Scope = string(normScope)
 	meta.Status = string(normStatus)
-	meta.Token = "VK:" + meta.Scope + ":" + meta.Ref
+	meta.Token = makeRef(refFamilyVK, refScope(meta.Scope), meta.Ref)
 	return nil
 }
 

@@ -76,7 +76,7 @@ func (h *Handler) handleAgentSaveSecret(w http.ResponseWriter, r *http.Request) 
 				respondError(w, http.StatusBadGateway, "agent returned unsupported secret scope: "+normalizeErr.Error())
 				return
 			}
-			canonical := "VK:" + string(normScope) + ":" + ref
+			canonical := makeRef(refFamilyVK, normScope, ref)
 			data["token"] = canonical
 			data["scope"] = string(normScope)
 			data["status"] = string(normStatus)
