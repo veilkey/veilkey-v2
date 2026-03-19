@@ -60,6 +60,7 @@ type Server struct {
 	unlockLimiter  *ratelimit.UnlockRateLimiter
 	httpClient     *http.Client
 	chainClient    *chain.Client
+	chainStore     chain.Store
 	bulkApplyDir   string
 	updateMu       sync.RWMutex
 	updateState    systemUpdateState
@@ -142,7 +143,7 @@ func (s *Server) SubmitTx(ctx context.Context, txType chain.TxType, payload any)
 	if err != nil {
 		return "", err
 	}
-	code, resultLog := chain.Execute(s.db, env)
+	code, resultLog := chain.Execute(s.chainStore, env)
 	if code != 0 {
 		return "", fmt.Errorf(resultLog)
 	}
@@ -168,7 +169,7 @@ func (s *Server) SubmitTxAsync(ctx context.Context, txType chain.TxType, payload
 	if err != nil {
 		return err
 	}
-	code, resultLog := chain.Execute(s.db, env)
+	code, resultLog := chain.Execute(s.chainStore, env)
 	if code != 0 {
 		return fmt.Errorf(resultLog)
 	}
@@ -346,6 +347,7 @@ func NewServer(database *db.DB, kek []byte, trustedIPs []string) *Server {
 		timeouts:      DefaultTimeouts(),
 		unlockLimiter: ratelimit.New(),
 		httpClient:    tlsutil.InitHTTPClientFromEnv(),
+		chainStore:    &db.ChainStoreAdapter{DB: database},
 		bulkApplyDir:  strings.TrimSpace(os.Getenv("VEILKEY_BULK_APPLY_DIR")),
 	}
 	if database.HasNodeInfo() {

@@ -7,7 +7,6 @@ import (
 
 	"github.com/veilkey/veilkey-go-package/crypto"
 	"github.com/veilkey/veilkey-go-package/refs"
-	"veilkey-vaultcenter/internal/db"
 )
 
 // Execute applies a decoded TxEnvelope to the database.
@@ -16,12 +15,12 @@ import (
 //
 // IMPORTANT: This function must be deterministic for chain replay.
 // Never use time.Now() — all time references must come from env.Timestamp.
-func Execute(d *db.DB, env *TxEnvelope) (uint32, string) {
+func Execute(d Store, env *TxEnvelope) (uint32, string) {
 	code, resultLog, entityType, entityID := executeTx(d, env)
 
 	// Auto-generate audit row on successful TX execution
 	if code == 0 && env.ActorType != "" {
-		auditErr := d.SaveAuditEvent(&db.AuditEvent{
+		auditErr := d.SaveAuditEvent(&AuditRecord{
 			EventID:    crypto.GenerateUUID(),
 			EntityType: entityType,
 			EntityID:   entityID,
@@ -40,7 +39,7 @@ func Execute(d *db.DB, env *TxEnvelope) (uint32, string) {
 
 // executeTx dispatches the TX to the appropriate db method.
 // Returns (code, log, entityType, entityID) for audit generation.
-func executeTx(d *db.DB, env *TxEnvelope) (uint32, string, string, string) {
+func executeTx(d Store, env *TxEnvelope) (uint32, string, string, string) {
 	switch env.Type {
 
 	// ── TokenRef operations ─────────────────────────────────────────────
@@ -58,14 +57,14 @@ func executeTx(d *db.DB, env *TxEnvelope) (uint32, string, string, string) {
 			return 4, fmt.Sprintf("validate SaveTokenRef: %v", normErr), "", ""
 		}
 
-		parts := db.RefParts{Family: p.RefFamily, Scope: db.RefScope(normScope), ID: p.RefID}
+		parts := RefParts{Family: p.RefFamily, Scope: normScope, ID: p.RefID}
 		expiresAt := env.Timestamp.Add(4 * time.Hour) // deterministic — based on TX timestamp
 		if p.ExpiresAt != nil {
 			expiresAt = *p.ExpiresAt
 		}
 		if err := d.SaveRefWithExpiryAndHash(
 			parts, p.Ciphertext, p.Version,
-			db.RefStatus(normStatus), expiresAt,
+			normStatus, expiresAt,
 			p.SecretName, p.PlaintextHash,
 		); err != nil {
 			return 3, fmt.Sprintf("db SaveTokenRef: %v", err), "", ""
@@ -83,7 +82,7 @@ func executeTx(d *db.DB, env *TxEnvelope) (uint32, string, string, string) {
 		}
 		if err := d.UpdateRefWithName(
 			p.RefCanonical, p.Ciphertext, p.Version,
-			db.RefStatus(p.Status), "",
+			p.Status, "",
 		); err != nil {
 			return 3, fmt.Sprintf("db UpdateTokenRef: %v", err), "", ""
 		}
@@ -136,7 +135,7 @@ func executeTx(d *db.DB, env *TxEnvelope) (uint32, string, string, string) {
 		if err != nil {
 			return 2, fmt.Sprintf("decode RegisterChild: %v", err), "", ""
 		}
-		child := &db.Child{
+		child := &ChildRecord{
 			NodeID:       p.NodeID,
 			Label:        p.Label,
 			URL:          p.URL,
@@ -191,7 +190,7 @@ func executeTx(d *db.DB, env *TxEnvelope) (uint32, string, string, string) {
 		if err != nil {
 			return 2, fmt.Sprintf("decode RecordAuditEvent: %v", err), "", ""
 		}
-		auditErr := d.SaveAuditEvent(&db.AuditEvent{
+		auditErr := d.SaveAuditEvent(&AuditRecord{
 			EventID:             p.EventID,
 			EntityType:          p.EntityType,
 			EntityID:            p.EntityID,

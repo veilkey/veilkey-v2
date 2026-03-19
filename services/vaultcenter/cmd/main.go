@@ -110,7 +110,8 @@ func runServer() {
 
 	// CometBFT chain node (optional — set VEILKEY_CHAIN_HOME to enable)
 	if chainHome := os.Getenv("VEILKEY_CHAIN_HOME"); chainHome != "" {
-		cometNode, chainErr := chain.StartNode(database, chainHome)
+		adapter := &db.ChainStoreAdapter{DB: database}
+		cometNode, chainErr := chain.StartNode(adapter, adapter, chainHome)
 		if chainErr != nil {
 			log.Fatalf("Failed to start chain node: %v", chainErr)
 		}

@@ -14,41 +14,40 @@ import (
 	"github.com/cometbft/cometbft/privval"
 	"github.com/cometbft/cometbft/proxy"
 
-	"veilkey-vaultcenter/internal/db"
 )
 
 // StartNode creates and starts a CometBFT node embedded in-process.
 // chainHome is the directory for CometBFT config/data (e.g. $dataDir/chain).
-func StartNode(database *db.DB, chainHome string) (*nm.Node, error) {
+func StartNode(store Store, cfgReader ConfigReader, chainHome string) (*nm.Node, error) {
 	if err := ensureChainHome(chainHome); err != nil {
 		return nil, fmt.Errorf("chain: ensure home: %w", err)
 	}
 
-	config := defaultCometConfig(chainHome)
+	cometCfg := defaultCometConfig(chainHome)
 
 	pv := privval.LoadFilePV(
-		config.PrivValidatorKeyFile(),
-		config.PrivValidatorStateFile(),
+		cometCfg.PrivValidatorKeyFile(),
+		cometCfg.PrivValidatorStateFile(),
 	)
 
-	nodeKey, err := p2p.LoadNodeKey(config.NodeKeyFile())
+	nodeKey, err := p2p.LoadNodeKey(cometCfg.NodeKeyFile())
 	if err != nil {
 		return nil, fmt.Errorf("chain: load node key: %w", err)
 	}
 
 	logger := cmtlog.NewTMLogger(cmtlog.NewSyncWriter(os.Stdout))
-	logger, _ = cmtflags.ParseLogLevel(config.LogLevel, logger, cfg.DefaultLogLevel)
+	logger, _ = cmtflags.ParseLogLevel(cometCfg.LogLevel, logger, cfg.DefaultLogLevel)
 
-	app := NewApplication(database)
+	app := NewApplication(store, cfgReader)
 
 	node, err := nm.NewNode(
-		config,
+		cometCfg,
 		pv,
 		nodeKey,
 		proxy.NewLocalClientCreator(app),
-		nm.DefaultGenesisDocProviderFunc(config),
+		nm.DefaultGenesisDocProviderFunc(cometCfg),
 		cfg.DefaultDBProvider,
-		nm.DefaultMetricsProvider(config.Instrumentation),
+		nm.DefaultMetricsProvider(cometCfg.Instrumentation),
 		logger,
 	)
 	if err != nil {

@@ -9,35 +9,34 @@ import (
 	"strconv"
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
-	"veilkey-vaultcenter/internal/db"
 )
 
 // Application implements the CometBFT ABCI v0.38 interface.
-// It uses the existing GORM-backed *db.DB for state persistence.
+// It uses Store for TX execution and ConfigReader for chain state recovery.
 type Application struct {
-	db        *db.DB
+	store     Store
+	config    ConfigReader
 	appHeight int64
 	appHash   []byte
 }
 
 var _ abcitypes.Application = (*Application)(nil)
 
-// NewApplication creates an ABCI application backed by the given database.
-// It recovers the last committed height/hash from DB config rows.
-func NewApplication(database *db.DB) *Application {
-	app := &Application{db: database}
+// NewApplication creates an ABCI application backed by the given store.
+func NewApplication(store Store, config ConfigReader) *Application {
+	app := &Application{store: store, config: config}
 	app.recoverState()
 	return app
 }
 
 func (app *Application) recoverState() {
-	if cfg, err := app.db.GetConfig(ConfigKeyChainHeight); err == nil {
-		if h, err := strconv.ParseInt(cfg.Value, 10, 64); err == nil {
+	if val, err := app.config.GetConfigValue(ConfigKeyChainHeight); err == nil {
+		if h, err := strconv.ParseInt(val, 10, 64); err == nil {
 			app.appHeight = h
 		}
 	}
-	if cfg, err := app.db.GetConfig(ConfigKeyChainHash); err == nil {
-		if decoded, err := hex.DecodeString(cfg.Value); err == nil {
+	if val, err := app.config.GetConfigValue(ConfigKeyChainHash); err == nil {
+		if decoded, err := hex.DecodeString(val); err == nil {
 			app.appHash = decoded
 		}
 	}
@@ -73,7 +72,7 @@ func (app *Application) FinalizeBlock(_ context.Context, req *abcitypes.RequestF
 			txResults[i] = &abcitypes.ExecTxResult{Code: 2, Log: err.Error()}
 			continue
 		}
-		code, log := Execute(app.db, env)
+		code, log := Execute(app.store, env)
 		txResults[i] = &abcitypes.ExecTxResult{Code: code, Log: log}
 	}
 
@@ -87,8 +86,8 @@ func (app *Application) FinalizeBlock(_ context.Context, req *abcitypes.RequestF
 }
 
 func (app *Application) Commit(_ context.Context, _ *abcitypes.RequestCommit) (*abcitypes.ResponseCommit, error) {
-	_ = app.db.SaveConfig(ConfigKeyChainHeight, fmt.Sprintf("%d", app.appHeight))
-	_ = app.db.SaveConfig(ConfigKeyChainHash, hex.EncodeToString(app.appHash))
+	_ = app.config.SaveConfig(ConfigKeyChainHeight, fmt.Sprintf("%d", app.appHeight))
+	_ = app.config.SaveConfig(ConfigKeyChainHash, hex.EncodeToString(app.appHash))
 	return &abcitypes.ResponseCommit{}, nil
 }
 
