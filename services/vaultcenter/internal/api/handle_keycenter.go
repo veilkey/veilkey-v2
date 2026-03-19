@@ -26,10 +26,33 @@ func (s *Server) handleKeycenterTempRefs(w http.ResponseWriter, r *http.Request)
 			RefCanonical: ref.RefCanonical,
 			SecretName:   ref.SecretName,
 			AgentHash:    ref.AgentHash,
-			Status:       ref.Status,
+			Status:       string(ref.Status),
 			ExpiresAt:    ref.ExpiresAt,
 			CreatedAt:    ref.CreatedAt,
 		})
 	}
 	s.respondJSON(w, http.StatusOK, map[string]any{"refs": items})
+}
+
+func (s *Server) handleKeycenterRevealRef(w http.ResponseWriter, r *http.Request) {
+	canonical := r.PathValue("ref")
+	if canonical == "" {
+		s.respondError(w, http.StatusBadRequest, "ref is required")
+		return
+	}
+	tracked, err := s.db.GetRef(canonical)
+	if err != nil {
+		s.respondError(w, http.StatusNotFound, "ref not found")
+		return
+	}
+	if tracked.RefScope != "TEMP" {
+		s.respondError(w, http.StatusForbidden, "only TEMP refs can be revealed here")
+		return
+	}
+	plaintext, err := s.resolveTempRef(tracked)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, "failed to decrypt ref")
+		return
+	}
+	s.respondJSON(w, http.StatusOK, map[string]any{"value": plaintext})
 }

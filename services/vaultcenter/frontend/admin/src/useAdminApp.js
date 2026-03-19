@@ -81,7 +81,8 @@ const state = reactive({
     adminAuditRows: [],
     keycenterTempRefs: [],
     selectedTempRef: null,
-    revealedTempRef: false,
+    revealedValues: {},
+    routeSelectedRefCanonical: null,
     busy: {},
     ui: {
         sidebarHTML: '',
@@ -197,6 +198,10 @@ function routePath(page, tab) {
         const vaultHash = state.auditVault;
         return vaultHash ? `/audit/${encodeURIComponent(vaultHash)}` : '/audit';
     }
+    if (page === 'keycenter') {
+        const canonical = state.selectedTempRef?.ref_canonical;
+        return canonical ? `/keycenter/${encodeURIComponent(canonical)}` : '/keycenter';
+    }
     const entry = routeEntries.find((item) => item.page === page && item.tab === tab);
     return entry ? entry.path : '/';
 }
@@ -219,6 +224,13 @@ function applyRoute(pathname, search = window.location.search) {
         if (auditMatch[1]) {
             state.auditVault = decodeURIComponent(auditMatch[1]);
         }
+        return;
+    }
+    const keycenterMatch = normalized.match(/^\/keycenter(?:\/(.+))?$/);
+    if (keycenterMatch) {
+        state.activePage = 'keycenter';
+        state.activeTabByPage.keycenter = 'TEMP_REFS';
+        state.routeSelectedRefCanonical = keycenterMatch[1] ? decodeURIComponent(keycenterMatch[1]) : null;
         return;
     }
     const matched = normalized === '/' ? { page: 'vaults', tab: 'ALL_VAULTS' } : routeByPath[normalized];
@@ -1532,7 +1544,6 @@ function renderKeycenterPage() {
 
     const refs = state.keycenterTempRefs;
     const selected = state.selectedTempRef;
-    const revealed = state.revealedTempRef;
 
     const fmtAbs = (iso) => {
         if (!iso) return '-';
@@ -1548,11 +1559,6 @@ function renderKeycenterPage() {
         const rem = mins % 60;
         return rem > 0 ? `${hrs}${t('keycenter_hr')} ${rem}${t('keycenter_min_left')}` : `${hrs}${t('keycenter_hr_left')}`;
     };
-    const maskRef = (ref) => {
-        const parts = ref.split(':');
-        if (parts.length === 3) return `${parts[0]}:${parts[1]}:${'•'.repeat(parts[2].length)}`;
-        return '•'.repeat(ref.length);
-    };
 
     // Center: list
     state.ui.centerHTML = `
@@ -1565,17 +1571,27 @@ function renderKeycenterPage() {
                 <table>
                     <thead><tr>
                         <th>${escapeHTML(t('keycenter_secret_name'))}</th>
-                        <th>${escapeHTML(t('keycenter_ref'))}</th>
+                        <th>Value</th>
                         <th>${escapeHTML(t('keycenter_expires_at'))}</th>
                     </tr></thead>
                     <tbody>
                         ${refs.length ? refs.map((ref, i) => {
                             const remaining = fmtRemaining(ref.expires_at);
+                            const rv = state.revealedValues[ref.ref_canonical];
+                            const isRev = rv !== undefined;
                             return `
                             <tr class="is-clickable${selected && selected.ref_canonical === ref.ref_canonical ? ' is-selected' : ''}"
                                 data-action="select-temp-ref" data-index="${i}">
                                 <td><strong>${escapeHTML(ref.secret_name || '-')}</strong></td>
-                                <td><code style="font-size:0.8rem">${escapeHTML(maskRef(ref.ref_canonical))}</code></td>
+                                <td style="white-space:nowrap">
+                                    <code style="font-size:0.8rem;color:#c8f0a0">${isRev ? escapeHTML(rv) : '••••••••'}</code>
+                                    <button class="action-btn" style="font-size:0.75rem;padding:1px 6px;margin-left:4px"
+                                        data-action="toggle-reveal-temp-ref"
+                                        data-canonical="${escapeHTML(ref.ref_canonical)}"
+                                        onclick="event.stopPropagation()">
+                                        ${isRev ? '🙈' : '👁'}
+                                    </button>
+                                </td>
                                 <td>
                                     ${remaining ? `<span style="color:#e0a040;font-weight:500">${escapeHTML(remaining)}</span>` : '-'}
                                 </td>
@@ -1619,7 +1635,9 @@ function renderKeycenterPage() {
             ? state.vaults.find(v => v.vault_runtime_hash === selected.agent_hash)
             : null;
         const remaining = fmtRemaining(selected.expires_at);
-        const displayRef = revealed ? selected.ref_canonical : maskRef(selected.ref_canonical);
+        const revealedValue = state.revealedValues[selected.ref_canonical];
+        const isRevealed = revealedValue !== undefined;
+        const displayValue = isRevealed ? revealedValue : '••••••••';
 
         state.ui.rightHTML = `
             <div class="pane-header">
@@ -1628,10 +1646,14 @@ function renderKeycenterPage() {
             <div class="pane-content">
                 <div class="card">
                     <div class="card-title">Ref</div>
+                    <div style="margin-bottom:12px">
+                        <code style="font-size:0.82rem;word-break:break-all;color:#a8d0ff">${escapeHTML(selected.ref_canonical)}</code>
+                    </div>
+                    <div class="card-title">Value</div>
                     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-                        <code style="font-size:0.82rem;word-break:break-all;flex:1;color:#a8d0ff">${escapeHTML(displayRef)}</code>
+                        <code style="font-size:0.82rem;word-break:break-all;flex:1;color:#c8f0a0">${isRevealed ? escapeHTML(displayValue) : '••••••••'}</code>
                         <button class="action-btn" data-action="toggle-reveal-temp-ref" style="white-space:nowrap">
-                            ${revealed ? t('hide') : t('reveal')}
+                            ${isRevealed ? t('hide') : t('reveal')}
                         </button>
                     </div>
                     <div class="inline-grid">
@@ -1673,6 +1695,12 @@ async function loadKeycenterTempRefs() {
     try {
         const data = await request('/api/keycenter/temp-refs');
         state.keycenterTempRefs = data.refs || [];
+        // Auto-select ref from URL if set
+        if (state.routeSelectedRefCanonical) {
+            const found = state.keycenterTempRefs.find(r => r.ref_canonical === state.routeSelectedRefCanonical);
+            if (found) state.selectedTempRef = found;
+            state.routeSelectedRefCanonical = null;
+        }
     } catch (err) {
         state.keycenterTempRefs = [];
     }
@@ -2707,12 +2735,28 @@ async function handleAction(action, dataset) {
         if (action === 'select-temp-ref') {
             const idx = parseInt(dataset.index, 10);
             state.selectedTempRef = state.keycenterTempRefs[idx] || null;
-            state.revealedTempRef = false;
+            syncRoute(false);
             render();
             return;
         }
         if (action === 'toggle-reveal-temp-ref') {
-            state.revealedTempRef = !state.revealedTempRef;
+            const canonical = dataset.canonical || state.selectedTempRef?.ref_canonical;
+            if (!canonical) return;
+            if (state.revealedValues[canonical] !== undefined) {
+                // already fetched — toggle off
+                const next = { ...state.revealedValues };
+                delete next[canonical];
+                state.revealedValues = next;
+                render();
+                return;
+            }
+            try {
+                const encodedRef = encodeURIComponent(canonical);
+                const data = await request(`/api/keycenter/temp-refs/${encodedRef}/value`);
+                state.revealedValues = { ...state.revealedValues, [canonical]: data.value };
+            } catch {
+                setMessage('warn', '값을 복호화할 수 없습니다.');
+            }
             render();
             return;
         }
