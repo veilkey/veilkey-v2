@@ -50,22 +50,6 @@ func (h *Handler) handleAgentDeleteConfig(w http.ResponseWriter, r *http.Request
 	}
 	if resp.StatusCode == http.StatusOK && trackedRef != "" {
 		_ = h.deleteTrackedRef(r.Context(), trackedRef)
-		h.deps.SaveAuditEvent(
-			"config",
-			trackedRef,
-			"delete",
-			"agent",
-			agent.AgentHash,
-			"",
-			"agent_delete_config",
-			map[string]any{
-				"key": key,
-				"ref": trackedRef,
-			},
-			map[string]any{
-				"key": key,
-			},
-		)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)

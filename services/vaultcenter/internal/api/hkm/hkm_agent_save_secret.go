@@ -81,22 +81,6 @@ func (h *Handler) handleAgentSaveSecret(w http.ResponseWriter, r *http.Request) 
 			data["scope"] = string(normScope)
 			data["status"] = string(normStatus)
 			_ = h.upsertTrackedRefNamed(r.Context(), canonical, agent.KeyVersion, normStatus, agent.AgentHash, req.Name)
-			h.deps.SaveAuditEvent(
-				"secret",
-				canonical,
-				"save",
-				"agent",
-				agent.AgentHash,
-				"",
-				"agent_save_secret",
-				nil,
-				map[string]any{
-					"name":               req.Name,
-					"ref":                canonical,
-					"vault_runtime_hash": agent.AgentHash,
-					"status":             string(normStatus),
-				},
-			)
 		}
 		data["vault"] = agent.Label
 		setRuntimeHashAliases(data, agent.AgentHash)

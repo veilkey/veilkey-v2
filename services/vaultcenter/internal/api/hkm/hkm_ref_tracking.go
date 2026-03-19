@@ -77,24 +77,6 @@ func (h *Handler) syncTrackedRef(ctx context.Context, ref string, previousRef st
 			return err
 		}
 	}
-	h.deps.SaveAuditEvent(
-		"tracked_ref",
-		ref,
-		"sync",
-		"agent",
-		agentHash,
-		"",
-		"tracked_refs_sync",
-		map[string]any{
-			"previous_ref": previousRef,
-		},
-		map[string]any{
-			"ref":        ref,
-			"version":    resolvedVersion,
-			"status":     status,
-			"agent_hash": agentHash,
-		},
-	)
 	if previousRef != "" && previousRef != ref {
 		previous, err := h.deps.DB().GetRef(previousRef)
 		if err == nil && previous.AgentHash != "" && agentHash != "" && previous.AgentHash != agentHash {
@@ -103,21 +85,6 @@ func (h *Handler) syncTrackedRef(ctx context.Context, ref string, previousRef st
 		if err := h.deleteTrackedRef(ctx, previousRef); err != nil {
 			return err
 		}
-		h.deps.SaveAuditEvent(
-			"tracked_ref",
-			previousRef,
-			"delete",
-			"agent",
-			agentHash,
-			"replaced_by_new_ref",
-			"tracked_refs_sync",
-			map[string]any{
-				"ref": previousRef,
-			},
-			map[string]any{
-				"replaced_by": ref,
-			},
-		)
 	}
 	return nil
 }

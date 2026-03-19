@@ -110,16 +110,6 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	before := map[string]any{}
-	if existing, err := s.db.GetConfig(req.Key); err == nil && existing != nil {
-		before = map[string]any{
-			"key":    existing.Key,
-			"value":  existing.Value,
-			"scope":  existing.Scope,
-			"status": existing.Status,
-		}
-	}
-
 	if _, err := s.SubmitTx(r.Context(), chain.TxSetConfig, chain.SetConfigPayload{Key: req.Key, Value: *req.Value}); err != nil {
 		s.respondError(w, http.StatusInternalServerError, "failed to save config: "+err.Error())
 		return
@@ -127,24 +117,6 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 
 	ref := db.MakeRef(db.RefFamilyVE, db.RefScopeLocal, req.Key)
 	_ = s.upsertTrackedRef(r.Context(), ref, 1, db.RefStatusActive, "")
-	s.saveAuditEvent(
-		"config",
-		ref,
-		"save",
-		"api",
-		actorIDForRequest(r),
-		"",
-		"local_config_save",
-		before,
-		map[string]any{
-			"key":    req.Key,
-			"value":  *req.Value,
-			"ref":    ref,
-			"scope":  "LOCAL",
-			"status": "active",
-		},
-	)
-
 	s.respondJSON(w, http.StatusOK, map[string]any{
 		"key":    req.Key,
 		"value":  *req.Value,
@@ -181,26 +153,9 @@ func (s *Server) handleSaveConfigsBulk(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	for key, value := range req.Configs {
+	for key := range req.Configs {
 		ref := db.MakeRef(db.RefFamilyVE, db.RefScopeLocal, key)
 		_ = s.upsertTrackedRef(r.Context(), ref, 1, db.RefStatusActive, "")
-		s.saveAuditEvent(
-			"config",
-			ref,
-			"save",
-			"api",
-			actorIDForRequest(r),
-			"",
-			"local_config_bulk_save",
-			nil,
-			map[string]any{
-				"key":    key,
-				"value":  value,
-				"ref":    ref,
-				"scope":  "LOCAL",
-				"status": "active",
-			},
-		)
 	}
 
 	s.respondJSON(w, http.StatusOK, map[string]any{
@@ -215,16 +170,6 @@ func (s *Server) handleDeleteConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	before := map[string]any{}
-	if existing, err := s.db.GetConfig(key); err == nil && existing != nil {
-		before = map[string]any{
-			"key":    existing.Key,
-			"value":  existing.Value,
-			"scope":  existing.Scope,
-			"status": existing.Status,
-		}
-	}
-
 	if err := s.db.DeleteConfig(key); err != nil {
 		s.respondError(w, http.StatusNotFound, err.Error())
 		return
@@ -232,21 +177,6 @@ func (s *Server) handleDeleteConfig(w http.ResponseWriter, r *http.Request) {
 
 	ref := db.MakeRef(db.RefFamilyVE, db.RefScopeLocal, key)
 	_ = s.deleteTrackedRef(r.Context(), ref)
-	s.saveAuditEvent(
-		"config",
-		ref,
-		"delete",
-		"api",
-		actorIDForRequest(r),
-		"",
-		"local_config_delete",
-		before,
-		map[string]any{
-			"deleted": key,
-			"ref":     ref,
-		},
-	)
-
 	s.respondJSON(w, http.StatusOK, map[string]any{
 		"deleted": key,
 	})
