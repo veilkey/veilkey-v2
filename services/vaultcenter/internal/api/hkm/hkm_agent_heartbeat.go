@@ -241,11 +241,15 @@ func (h *Handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if agent.AgentHash == "" {
-		agentHash, err := generateAgentHash()
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to generate agent hash")
-			return
+	if agent.AgentHash == "" || (len(agent.DEK) == 0 && len(agent.DEKNonce) == 0) {
+		agentHash := agent.AgentHash
+		if agentHash == "" {
+			var err error
+			agentHash, err = generateAgentHash()
+			if err != nil {
+				respondError(w, http.StatusInternalServerError, "failed to generate agent hash")
+				return
+			}
 		}
 
 		agentDEK, err := crypto.GenerateKey()
