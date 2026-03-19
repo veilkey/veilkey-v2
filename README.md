@@ -1,350 +1,165 @@
 <div align="center">
   <h1>VeilKey Self-Hosted</h1>
-  <p><strong>Self-hosted secret lifecycle control and node-local execution boundary for operator-managed AI infrastructure.</strong></p>
+  <p><strong>AI가 절대 볼 수 없는 시크릿 관리. PTY 레벨 양방향 마스킹 + 블록체인 감사.</strong></p>
   <p>
     <a href="https://github.com/veilkey/veilkey-selfhosted/actions/workflows/ci.yml"><img src="https://github.com/veilkey/veilkey-selfhosted/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
     <a href="https://github.com/veilkey/veilkey-selfhosted/releases"><img src="https://img.shields.io/github/v/release/veilkey/veilkey-selfhosted?display_name=tag" alt="GitHub release"></a>
-    <a href="https://veil-key.com"><img src="https://img.shields.io/badge/home-veil--key.com-0f766e?logo=googlechrome&logoColor=white" alt="Website"></a>
     <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-2563eb.svg" alt="AGPL-3.0"></a>
   </p>
 </div>
 
-`veilkey-selfhosted` is the self-hosted VeilKey product tree for secret lifecycle control, node-local runtime enforcement, and operator-managed infrastructure.
+## What is VeilKey?
 
-It packages the runtime services, installer, and operator CLI needed to run VeilKey on your own infrastructure instead of relying on a hosted control plane.
+VeilKey is a self-hosted secret manager where **AI coding tools never see your passwords**.
 
-Korean summary: [`README.ko.md`](./README.ko.md)
+```bash
+# veil 셸 안에서
+$ cat .env
+DB_PASSWORD=VK:LOCAL:ea2bfd16    ← AI가 보는 값
 
-Canonical domain: `https://veil-key.com`
-
-## What VeilKey Is
-
-VeilKey is a self-hosted secret and execution-boundary system for local AI and operator workflows.
-
-The active runtime model is:
-
-- `services/vaultcenter`
-  - central control plane
-- `services/localvault`
-  - node-local runtime
-- `client/cli`
-  - operator entrypoint
-- `services/proxy`
-  - outbound enforcement layer
-- `installer`
-  - installation and verification layer
-
-For operator entrypoints, the current split is:
-
-- `veil`
-  - protected session entrypoint
-- `veilkey`
-  - state, crypto, and policy control surface inside or alongside that session
-- `veilkey-cli`
-  - lower-level implementation binary used by wrappers and install/runtime scripts
-
-## Core Logic
-
-The shortest mental model is:
-
-1. `VaultCenter` owns central policy and catalog decisions.
-2. multiple `LocalVault` nodes run close to workloads, often inside separate hosts or containers.
-3. operators use the CLI and install flows to register, inspect, and update those nodes.
-4. runtime changes are pushed outward by policy, heartbeat, tracked-ref sync, and bulk-apply flows.
-
-In practice, the shape looks like this:
-
-```text
-operator / cli
-      |
-      v
-  VaultCenter
-      |
-      +---- LocalVault (container A)
-      +---- LocalVault (container B)
-      +---- LocalVault (host node)
+# 실제 앱은 진짜 비밀번호를 받음
+$ npm start                       ← DB_PASSWORD=actual-secret
 ```
 
-The important split is:
+PTY 출력에서 비밀번호가 나오면 자동으로 VK ref로 치환. Claude Code, Cursor, Copilot 등 어떤 AI 도구를 써도 평문을 볼 수 없습니다.
 
-- `VaultCenter`
-  - central control plane
-  - global catalog and policy decisions
-  - central view of nodes, bindings, audit, and bulk operations
-- `LocalVault`
-  - node-local runtime
-  - ciphertext and config storage
-  - heartbeat and runtime identity
-  - local execution under VaultCenter policy
+## Architecture
 
-## Central Management Model
+```
+VaultCenter (열쇠 관리자)          LocalVault (금고)
+┌──────────────────────┐          ┌──────────────────┐
+│ agentDEK (암호화 키)  │          │ ciphertext (암호문) │
+│ KEK → DEK 보호       │          │ 저장만, 복호화 불가  │
+│ 블록체인 감사 로그     │          │                    │
+└──────────────────────┘          └──────────────────┘
+         │                                  │
+         └──── 둘 다 있어야 복호화 가능 ────────┘
 
-VeilKey is designed so that keys and runtime state can be managed centrally while execution still happens at the node edge.
+veil CLI (PTY 마스킹)
+┌──────────────────────────────────────────┐
+│ 환경변수: VK:LOCAL:xxx → 실제 값 (프로세스) │
+│ 출력: 실제 값 → VK:LOCAL:xxx (화면/AI)     │
+└──────────────────────────────────────────┘
+```
 
-That includes:
-
-- central registration of LocalVault nodes into VaultCenter
-- central visibility into vault identity and runtime binding
-- bulk-apply and workflow-style changes pushed from VaultCenter toward multiple LocalVault nodes
-- planned rotation and rebind flows instead of ad-hoc per-node drift
-
-This is the reason the repository contains both central and node-local components in one self-hosted tree.
-
-## Key Version And Rotation Model
-
-The key-management story is not just “store a secret once”.
-
-The important runtime concepts are:
-
-- `key_version`
-  - the current cryptographic/runtime version tracked by the node
-- `vault_hash`
-  - stable vault identifier
-- `vault_runtime_hash`
-  - current VaultCenter runtime binding hash
-- `managed_paths`
-  - reported runtime ownership context, not the identity itself
-
-Operationally, the flow is:
-
-1. a LocalVault node registers and heartbeats to VaultCenter
-2. VaultCenter can require rotation or rebind
-3. LocalVault applies the new `key_version`
-4. LocalVault retries heartbeat and reports the updated runtime binding
-
-So the model is:
-
-- central control over version and policy
-- local execution and state ownership at each LocalVault node
-- explicit rebind and rotation instead of silent key drift
-
-## Why Self-Hosted
-
-VeilKey is self-hosted because the main value is control over:
-
-- where ciphertext and runtime state live
-- how node identity and policy are enforced
-- how containers are provisioned and managed
-- how secrets are handled inside your own trust boundary
-
-If you need a hosted SaaS secret manager, this repository is not that.
-If you need VeilKey to live on your own host and network boundary, this repository is the right surface.
+**둘 다 탈취해야 시크릿 접근 가능:**
+- VaultCenter만 탈취 → agentDEK 있지만 ciphertext 없음
+- LocalVault만 탈취 → ciphertext 있지만 agentDEK 없음
 
 ## Quick Start
 
-The fastest operator path is the installer.
-
 ```bash
 git clone https://github.com/veilkey/veilkey-selfhosted.git
-cd veilkey-selfhosted/installer
-./install.sh validate
+cd veilkey-selfhosted
+docker compose up -d
 ```
 
-Then run the installer for your target:
+1. **VaultCenter 셋업**: `https://localhost:11181` → 마스터 + 관리자 비밀번호 설정
+2. **LocalVault 연결**: keycenter에서 등록 토큰 발급 → LV init
+3. **시크릿 저장**: keycenter에서 임시키 생성 → 볼트에 격상
+4. **veil 셸**: `docker compose exec -it veil veilkey-cli wrap-pty bash`
+
+### LocalVault 등록 (1줄)
 
 ```bash
-./install.sh install-profile linux-host /
+docker compose exec localvault sh -c \
+  "echo 'password' | veilkey-localvault init --root --token vk_reg_xxx --center https://vaultcenter:10181"
+docker compose restart localvault
 ```
 
-The minimum success check should look like this:
+## Key Features
 
+### PTY 양방향 마스킹
 ```bash
-curl http://127.0.0.1:10181/health
-curl http://127.0.0.1:10180/health
+# veil 셸 안에서 — AI가 이 출력을 봐도 안전
+$ echo $DB_PASSWORD
+VK:LOCAL:ea2bfd16              ← 마스킹됨 (실제 값: actual-password)
+
+$ cat config.env
+DB_PASSWORD=VK:LOCAL:ea2bfd16  ← 파일 읽기도 마스킹
+API_KEY=VK:LOCAL:ea2bfd16      ← 등록된 값만 치환
+
+# 실제 프로세스는 진짜 값을 받음
+$ node app.js                  ← process.env.DB_PASSWORD = "actual-password"
 ```
 
-Expected result:
+### CometBFT 블록체인 감사
+- 모든 키 생성/회전/삭제가 불변 체인에 기록
+- LocalVault가 full node로 블록 검증 → VaultCenter 단독 조작 불가
+- DB 해킹해도 블록 해시 체인이 깨져서 위변조 탐지
 
-- VaultCenter health responds
-- LocalVault health responds
-- the node can heartbeat and appear in the central view after registration
+### 분리 보관
+- VaultCenter: agentDEK (암호화 키) 보관
+- LocalVault: ciphertext (암호문) 저장만, 복호화 불가
+- 한쪽만 탈취해도 시크릿 접근 불가
 
-### What Success Looks Like
+### 관리자 웹 UI
+- keycenter: 임시키 CRUD, 볼트 격상, 등록 토큰 발급
+- 볼트 관리: 시크릿 조회, 함수 바인딩, 설정
+- 감사 로그: 전체 키 운영 이력
 
-VaultCenter starts in a locked state and becomes usable after unlock:
+## Repository Structure
 
-```json
-GET /health
-{"status":"locked"}
+```
+services/
+  vaultcenter/     ← 중앙 관리 서버 (Go)
+  localvault/      ← 로컬 금고 (Go)
+  veil-cli/        ← veil 진입점 (Rust)
+  veilkey-cli/     ← CLI 도구 — scan, filter, exec, resolve (Rust)
+docker-compose.yml ← 전체 스택 (VC + LV + veil)
 ```
 
-```json
-POST /api/unlock
-{"status":"unlocked"}
-```
+## CLI Tools
 
-```json
-GET /health
-{"status":"ok"}
-```
+| 명령 | 용도 |
+|------|------|
+| `veilkey-cli resolve VK:LOCAL:xxx` | ref → 실제 값 |
+| `veilkey-cli exec echo VK:LOCAL:xxx` | 인자 치환 후 실행 |
+| `veilkey-cli wrap-pty bash` | PTY 마스킹 셸 진입 |
+| `veilkey-cli scan file.env` | 시크릿 감지 (222 패턴) |
+| `veilkey-cli filter file.env` | 시크릿 → VK ref 치환 |
+| `veilkey-cli status` | 연결 상태 확인 |
 
-For LocalVault, the operational path should produce explicit lifecycle output:
+## Comparison
 
-```text
-heartbeat sent
-rotation applied and heartbeat sent
-rebind prepared with key_version=9
-```
+| 기능 | 1Password CLI | Doppler | HashiCorp Vault | **VeilKey** |
+|------|---------------|---------|-----------------|-------------|
+| 시크릿 저장 | ✅ | ✅ | ✅ | ✅ |
+| 참조 시스템 | ✅ `op://` | ❌ | ❌ | ✅ `VK:LOCAL:` |
+| 환경변수 주입 | ✅ | ✅ | ✅ | ✅ |
+| **PTY 출력 마스킹** | ❌ | ❌ | ❌ | **✅** |
+| **양방향 치환** | ❌ | ❌ | ❌ | **✅** |
+| **파일 읽기 마스킹** | ❌ | ❌ | ❌ | **✅** |
+| 블록체인 감사 | ❌ | ❌ | ❌ | **✅** |
+| 분리 보관 (VC/LV) | ❌ | ❌ | ❌ | **✅** |
+| 셀프호스팅 | ❌ | ❌ | ✅ | **✅** |
 
-The full operator guide lives in [`installer/INSTALL.md`](./installer/INSTALL.md).
+## Environment Variables
 
-## Operator Path
+설정 가능한 값들은 `.env.example` 참조:
+- `services/vaultcenter/.env.example`
+- `services/localvault/.env.example`
 
-The operator path is easiest to understand as one control path and one execution path.
-
-```text
-operator / CLI
-      |
-      v
-  VaultCenter API
-      |
-      +---- policy / catalog / bulk apply
-      |
-      +---- LocalVault node A
-      |         |
-      |         +---- ciphertext + runtime context
-      |         +---- heartbeat / rebind / rotation
-      |         +---- wrapped execution boundary
-      |
-      +---- LocalVault node B
-                |
-                +---- same node-local model
-```
-
-The outbound enforcement edge is where `services/proxy` belongs. The intended split is:
-
-- `VaultCenter`
-  - central policy, registration, audit, bulk operations
-- `LocalVault`
-  - node-local runtime, ciphertext/context, execution boundary
-
-## Veil Session UX
-
-The intended CLI UX is:
-
-```bash
-veil
-claude
-codex
-```
-
-With management commands handled by `veilkey`:
-
-```bash
-veilkey status
-veilkey paste-mode on
-veilkey resolve VK:LOCAL:example
-```
-
-This keeps `veil` focused on entering the protected environment and `veilkey` focused on crypto and policy actions.
-- `proxy`
-  - outbound enforcement surface when runtime traffic must be mediated
-
-Additional operating notes live in [`docs/OPERATING-MODEL.md`](./docs/OPERATING-MODEL.md).
-
-## Main Use Cases
-
-- run VaultCenter and LocalVault inside your own Proxmox environment
-- keep node-local runtime state under your own control
-- use LocalVault as the node-local runtime paired with a central VaultCenter
-- stage boundary and bootstrap assets for host companion setups
-
-## How To Read This Repository
-
-- `installer/`
-  - install profiles, wrappers, health checks, and packaging
-- `services/vaultcenter/`
-  - central control plane
-- `services/localvault/`
-  - node-local runtime
-- `services/proxy/`
-  - outbound enforcement layer
-- `client/cli/`
-  - operator-facing CLI
-
-## Why It Exists As One Repo
-
-This repository keeps the self-hosted VeilKey surface in one place without flattening component responsibilities.
-
-That means:
-
-- install flow changes can ship with runtime changes
-- operator docs can stay next to the code they describe
-- CI can validate the self-hosted product as one surface
-
-## Comparison Frame
-
-VeilKey is not trying to be a generic password manager or a hosted secret vault.
-
-The practical difference is:
-
-- stronger emphasis on self-hosted runtime identity and node registration
-- explicit Docker container install paths
-- local runtime components such as LocalVault instead of a cloud-only model
-- tighter install-to-runtime contract inside one source tree
-- central VaultCenter + multiple LocalVault runtime topology instead of a single hosted vault model
-
-### What It Is Not
-
-- not a hosted SaaS secret manager
-- not a generic password vault for personal use
-- not a single-binary local secret toy
-- not a cloud-only control plane detached from node runtime
-
-### Tradeoffs
-
-- higher operational complexity than a hosted secret service
-- stronger dependency on your own host and network setup
-- installer and runtime verification matter more because the value is in the full self-hosted path
-
-### Rough Comparison
-
-| Tool shape | Main model | VeilKey difference |
-|---|---|---|
-| hosted secret SaaS | central hosted control plane | VeilKey keeps runtime and state under your infrastructure |
-| generic password manager | store/retrieve secrets | VeilKey focuses on node registration, runtime identity, and policy-driven execution |
-| file-encryption workflow | encrypt files in repos | VeilKey adds VaultCenter + LocalVault runtime topology and heartbeat/rebind flows |
-
-### Current Gaps
-
-Compared with more productized operator stacks such as OpenClaw, the current weak points are still visible.
-
-- there is no single unified gateway surface in front of all operator and agent traffic
-- session-level context compaction is not a first-class runtime feature yet
-- health exposure is clearer than before, but not fully standardized across every service
-- the proxy role exists, but its boundary is still less immediately legible than the VaultCenter and LocalVault split
-
-That means the runtime model is strong, but the product shell is still catching up.
-
-### Near-Term Priorities
-
-1. add one shared gateway layer in front of operator and agent-facing entrypoints
-2. standardize `/healthz` and deployment healthcheck contracts across services
-3. promote context compaction and session reset policy to a first-class runtime feature
-4. make the proxy boundary and operator path more explicit in docs and runbooks
+주요 설정:
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `VEILKEY_TEMP_REF_TTL` | `1h` | 임시키 만료 시간 |
+| `VEILKEY_ADMIN_SESSION_TTL` | `2h` | 관리자 세션 유지 |
+| `VEILKEY_CHAIN_HOME` | `/data/chain` | CometBFT 데이터 경로 |
+| `VEILKEY_TLS_INSECURE` | `0` | 자체서명 인증서 허용 |
 
 ## Contributing
 
-Start with [`CONTRIBUTING.md`](./CONTRIBUTING.md).
-
-Short version:
-
-- behavior changes need focused regression tests
-- user-facing behavior changes need docs updates in the same change
-- installer, runtime, and deploy changes should prove one real operator path
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ## License
 
-This repository is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
-
-See [`LICENSE`](./LICENSE).
+GNU Affero General Public License v3.0 (AGPL-3.0). See [`LICENSE`](./LICENSE).
 
 ## Security Disclaimer
 
 VeilKey is a security-sensitive tool that handles secrets and cryptographic material.
 This software is provided WITHOUT WARRANTY. Before using VeilKey in production,
-conduct your own security audit and review. The contributors do not guarantee
-the absence of vulnerabilities. Use at your own risk.
+conduct your own security audit and review.
 
-If you discover a security issue, please report it privately via GitHub Security Advisories
-instead of opening a public issue.
+If you discover a security issue, please report it privately via GitHub Security Advisories.
