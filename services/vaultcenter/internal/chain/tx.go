@@ -26,7 +26,17 @@ type TxEnvelope struct {
 	Type      TxType          `json:"type"`
 	Nonce     string          `json:"nonce"`
 	Timestamp time.Time       `json:"timestamp"`
+	ActorType string          `json:"actor_type,omitempty"`
+	ActorID   string          `json:"actor_id,omitempty"`
+	Source    string          `json:"source,omitempty"`
 	Payload   json.RawMessage `json:"payload"`
+}
+
+// TxActor carries actor context extracted from HTTP requests.
+type TxActor struct {
+	ActorType string // "agent", "operator", "system"
+	ActorID   string // remote IP or agent hash
+	Source    string // "heartbeat", "api_save_secret", etc.
 }
 
 // SaveTokenRefPayload carries the data for a SaveTokenRef transaction.

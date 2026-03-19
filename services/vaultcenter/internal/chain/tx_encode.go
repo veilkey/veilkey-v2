@@ -22,8 +22,9 @@ var validTxTypes = map[TxType]bool{
 	TxRecordAuditEvent:    true,
 }
 
-// EncodeTx creates a TxEnvelope, marshals the payload, and returns the full JSON bytes.
-func EncodeTx(txType TxType, payload any) ([]byte, error) {
+// BuildEnvelope creates a TxEnvelope without marshaling to bytes.
+// Used by SubmitTx to stamp actor info before encoding.
+func BuildEnvelope(txType TxType, payload any, actor TxActor) (*TxEnvelope, error) {
 	if !validTxTypes[txType] {
 		return nil, fmt.Errorf("chain: unknown tx type %q", txType)
 	}
@@ -33,18 +34,34 @@ func EncodeTx(txType TxType, payload any) ([]byte, error) {
 		return nil, fmt.Errorf("chain: marshal payload: %w", err)
 	}
 
-	env := TxEnvelope{
+	return &TxEnvelope{
 		Type:      txType,
 		Nonce:     crypto.GenerateUUID(),
 		Timestamp: time.Now().UTC(),
+		ActorType: actor.ActorType,
+		ActorID:   actor.ActorID,
+		Source:    actor.Source,
 		Payload:   raw,
-	}
+	}, nil
+}
 
+// MarshalEnvelope encodes a TxEnvelope to JSON bytes.
+func MarshalEnvelope(env *TxEnvelope) ([]byte, error) {
 	out, err := json.Marshal(env)
 	if err != nil {
 		return nil, fmt.Errorf("chain: marshal envelope: %w", err)
 	}
 	return out, nil
+}
+
+// EncodeTx creates a TxEnvelope and marshals it to bytes in one step.
+// Convenience for broadcast paths that don't need to inspect the envelope.
+func EncodeTx(txType TxType, payload any) ([]byte, error) {
+	env, err := BuildEnvelope(txType, payload, TxActor{})
+	if err != nil {
+		return nil, err
+	}
+	return MarshalEnvelope(env)
 }
 
 // DecodeTx unmarshals raw bytes into a TxEnvelope. Returns an error if the type is unknown.

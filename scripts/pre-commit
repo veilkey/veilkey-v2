@@ -39,7 +39,15 @@ if [[ -n "$ref_hardcoded" ]]; then
   found=1
 fi
 
-# 3. 매직 스트링 차단 — constants.go에 정의된 값이 다른 Go 파일에서 리터럴로 중복 사용
+# 3. executor 결정론 차단 — chain/executor.go에서 time.Now 호출 금지
+executor_time=$(grep -rn 'time\.Now' services/vaultcenter/internal/chain/executor.go 2>/dev/null | grep -v '// ' || true)
+if [[ -n "$executor_time" ]]; then
+  echo "❌ executor 결정론 위반: chain/executor.go에서 time.Now() 금지 — env.Timestamp를 사용하세요"
+  echo "$executor_time"
+  found=1
+fi
+
+# 4. 매직 스트링 차단 — constants.go에 정의된 값이 다른 Go 파일에서 리터럴로 중복 사용
 magic_found=""
 for cfile in $(find $GO_SERVICES -name "constants.go" -o -name "const.go" 2>/dev/null); do
   pkg_dir=$(dirname "$cfile")
