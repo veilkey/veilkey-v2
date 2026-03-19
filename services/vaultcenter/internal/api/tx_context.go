@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"veilkey-vaultcenter/internal/chain"
+	chain "github.com/veilkey/veilkey-chain"
 )
 
 type txActorCtxKey struct{}

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"veilkey-vaultcenter/internal/api"
-	"veilkey-vaultcenter/internal/chain"
+	chain "github.com/veilkey/veilkey-chain"
 	"veilkey-vaultcenter/internal/commands"
 	"github.com/veilkey/veilkey-go-package/cmdutil"
 	"github.com/veilkey/veilkey-go-package/crypto"

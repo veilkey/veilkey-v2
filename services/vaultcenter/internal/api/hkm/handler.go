@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"veilkey-vaultcenter/internal/chain"
+	chain "github.com/veilkey/veilkey-chain"
 	"veilkey-vaultcenter/internal/db"
 )
 

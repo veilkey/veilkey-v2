@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/veilkey/veilkey-go-package/refs"
-	"veilkey-vaultcenter/internal/chain"
+	chain "github.com/veilkey/veilkey-chain"
 )
 
 // ChainStoreAdapter wraps *DB to implement chain.Store and chain.ChainMeta.

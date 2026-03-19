@@ -3,7 +3,7 @@ package hkm
 import (
 	"log"
 	"net/http"
-	"veilkey-vaultcenter/internal/chain"
+	chain "github.com/veilkey/veilkey-chain"
 	"veilkey-vaultcenter/internal/httputil"
 	"net/url"
 	"strings"

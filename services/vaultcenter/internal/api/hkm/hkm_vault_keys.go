@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/veilkey/veilkey-go-package/crypto"
-	"veilkey-vaultcenter/internal/chain"
+	chain "github.com/veilkey/veilkey-chain"
 	"veilkey-vaultcenter/internal/db"
 )
 

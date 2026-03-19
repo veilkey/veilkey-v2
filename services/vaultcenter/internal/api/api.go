@@ -15,7 +15,7 @@ import (
 	"veilkey-vaultcenter/internal/api/approval"
 	"veilkey-vaultcenter/internal/api/bulk"
 	"veilkey-vaultcenter/internal/api/hkm"
-	"veilkey-vaultcenter/internal/chain"
+	chain "github.com/veilkey/veilkey-chain"
 	"github.com/veilkey/veilkey-go-package/agentapi"
 	"github.com/veilkey/veilkey-go-package/crypto"
 	"github.com/veilkey/veilkey-go-package/ratelimit"

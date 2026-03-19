@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/veilkey/veilkey-go-package/refs"
-	"veilkey-vaultcenter/internal/chain"
+	chain "github.com/veilkey/veilkey-chain"
 	"veilkey-vaultcenter/internal/db"
 )
 
