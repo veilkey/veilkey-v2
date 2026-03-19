@@ -39,7 +39,37 @@ if [[ -n "$ref_hardcoded" ]]; then
   found=1
 fi
 
-# 3. sh 파일에서 VEILKEY_* fallback 차단 (${VAR:-} 빈값 제외, 예외 목록 제외)
+# 3. 매직 스트링 차단 — constants.go에 정의된 값이 다른 Go 파일에서 리터럴로 중복 사용
+magic_found=""
+for cfile in $(find $GO_SERVICES -name "constants.go" -o -name "const.go" 2>/dev/null); do
+  pkg_dir=$(dirname "$cfile")
+  # constants.go에서 "문자열" 리터럴 추출 (= "..." 패턴)
+  consts=$(grep -oP '=\s*"[^"]*"' "$cfile" 2>/dev/null | sed 's/.*"\(.*\)"/\1/' | grep -v '^$' || true)
+  for val in $consts; do
+    # 같은 패키지 내 다른 .go 파일에서 이 리터럴이 직접 사용되면 위반
+    dupes=$(grep -rn --include="*.go" "\"${val}\"" "$pkg_dir" 2>/dev/null | grep -v "constants.go\|const.go" || true)
+    if [[ -n "$dupes" ]]; then
+      magic_found="${magic_found}\n${dupes}"
+    fi
+  done
+done
+if [[ -n "$magic_found" ]]; then
+  echo "❌ 매직 스트링 금지: constants.go에 정의된 값을 상수로 참조하세요"
+  echo -e "$magic_found"
+  found=1
+fi
+
+# 3b. 내부 config key 하드코딩 차단 — "_" 프리픽스 config key는 상수로 정의하세요
+internal_keys=$(grep -rn --include="*.go" \
+  -E '"_[a-z_]+"' $GO_SERVICES 2>/dev/null | \
+  grep -v 'constants.go\|const.go\|_test.go\|// ' || true)
+if [[ -n "$internal_keys" ]]; then
+  echo "❌ 내부 config key 하드코딩 금지: constants.go에 상수로 정의하세요"
+  echo "$internal_keys"
+  found=1
+fi
+
+# 4. sh 파일에서 VEILKEY_* fallback 차단 (${VAR:-} 빈값 제외, 예외 목록 제외)
 # *.sh 파일 + 서비스 내 scripts/ 하위의 확장자 없는 스크립트도 포함
 _sh_files=$(find $ALL_SERVICES -name "*.sh" -o \( -path "*/scripts/*" -type f ! -name "*.*" \) 2>/dev/null | sort)
 sh_fallbacks=$(echo "$_sh_files" | xargs grep -n 'VEILKEY_[A-Z_]*:-[^}]' 2>/dev/null | \

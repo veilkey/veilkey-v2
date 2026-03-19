@@ -83,13 +83,13 @@ func defaultCometConfig(chainHome string) *cfg.Config {
 	config.Consensus.CreateEmptyBlocks = false
 
 	// RPC on localhost only
-	config.RPC.ListenAddress = "tcp://127.0.0.1:26657"
+	config.RPC.ListenAddress = DefaultRPCListen
 
 	// P2P: allow external connections for future multi-node
-	config.P2P.ListenAddress = "tcp://0.0.0.0:26656"
+	config.P2P.ListenAddress = DefaultP2PListen
 
 	// Minimal logging
-	config.LogLevel = "error"
+	config.LogLevel = DefaultLogLevel
 
 	return config
 }
@@ -137,7 +137,7 @@ func generateGenesis(pvKeyFile, genesisFile string) error {
 
 	genDoc := `{
   "genesis_time": "2026-01-01T00:00:00.000000000Z",
-  "chain_id": "veilkey-chain-1",
+  "chain_id": "%s",
   "initial_height": "1",
   "consensus_params": {
     "block": { "max_bytes": "22020096", "max_gas": "-1" },
@@ -151,7 +151,7 @@ func generateGenesis(pvKeyFile, genesisFile string) error {
       "address": "%s",
       "pub_key": { "type": "tendermint/PubKeyEd25519", "value": "%s" },
       "power": "10",
-      "name": "vaultcenter"
+      "name": "%s"
     }
   ],
   "app_hash": ""
@@ -163,6 +163,6 @@ func generateGenesis(pvKeyFile, genesisFile string) error {
 	pubKeyB64 := base64.StdEncoding.EncodeToString(pubKey.Bytes())
 	addrHex := fmt.Sprintf("%X", addr)
 
-	content := fmt.Sprintf(genDoc, addrHex, pubKeyB64)
+	content := fmt.Sprintf(genDoc, DefaultChainID, addrHex, pubKeyB64, DefaultValidatorName)
 	return os.WriteFile(genesisFile, []byte(content), 0600)
 }

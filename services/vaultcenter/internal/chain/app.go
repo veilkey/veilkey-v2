@@ -31,12 +31,12 @@ func NewApplication(database *db.DB) *Application {
 }
 
 func (app *Application) recoverState() {
-	if cfg, err := app.db.GetConfig("_chain_height"); err == nil {
+	if cfg, err := app.db.GetConfig(ConfigKeyChainHeight); err == nil {
 		if h, err := strconv.ParseInt(cfg.Value, 10, 64); err == nil {
 			app.appHeight = h
 		}
 	}
-	if cfg, err := app.db.GetConfig("_chain_hash"); err == nil {
+	if cfg, err := app.db.GetConfig(ConfigKeyChainHash); err == nil {
 		if decoded, err := hex.DecodeString(cfg.Value); err == nil {
 			app.appHash = decoded
 		}
@@ -45,8 +45,8 @@ func (app *Application) recoverState() {
 
 func (app *Application) Info(_ context.Context, req *abcitypes.RequestInfo) (*abcitypes.ResponseInfo, error) {
 	return &abcitypes.ResponseInfo{
-		Data:             "veilkey-vaultcenter",
-		Version:          "0.1.0",
+		Data:             AppName,
+		Version:          AppVersion,
 		LastBlockHeight:  app.appHeight,
 		LastBlockAppHash: app.appHash,
 	}, nil
@@ -87,8 +87,8 @@ func (app *Application) FinalizeBlock(_ context.Context, req *abcitypes.RequestF
 }
 
 func (app *Application) Commit(_ context.Context, _ *abcitypes.RequestCommit) (*abcitypes.ResponseCommit, error) {
-	_ = app.db.SaveConfig("_chain_height", fmt.Sprintf("%d", app.appHeight))
-	_ = app.db.SaveConfig("_chain_hash", hex.EncodeToString(app.appHash))
+	_ = app.db.SaveConfig(ConfigKeyChainHeight, fmt.Sprintf("%d", app.appHeight))
+	_ = app.db.SaveConfig(ConfigKeyChainHash, hex.EncodeToString(app.appHash))
 	return &abcitypes.ResponseCommit{}, nil
 }
 
