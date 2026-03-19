@@ -13,12 +13,11 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/term"
-
 	"veilkey-localvault/internal/api"
+	"github.com/veilkey/veilkey-go-package/cmdutil"
 	"github.com/veilkey/veilkey-go-package/crypto"
-	"veilkey-localvault/internal/db"
 	"github.com/veilkey/veilkey-go-package/httputil"
+	"veilkey-localvault/internal/db"
 )
 
 func main() {
@@ -536,49 +535,10 @@ func runInit() {
 	fmt.Println("  IMPORTANT: Remember your password. Lost password = unrecoverable data.")
 }
 
-// readPasswordFromFileEnv reads the password from the file path specified in VEILKEY_PASSWORD_FILE.
-// Returns empty string if the env var is not set.
 func readPasswordFromFileEnv() string {
-	path := os.Getenv("VEILKEY_PASSWORD_FILE")
-	if path == "" {
-		return ""
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		log.Fatalf("Failed to read VEILKEY_PASSWORD_FILE (%s): %v", path, err)
-	}
-	pw := strings.TrimSpace(string(data))
-	if pw == "" {
-		log.Fatalf("VEILKEY_PASSWORD_FILE (%s) is empty", path)
-	}
-	return pw
+	return cmdutil.ReadPasswordFromFileEnv()
 }
 
 func readPassword(prompt string) string {
-	// If stdin is piped, read directly from it (no echo to suppress).
-	stat, _ := os.Stdin.Stat()
-	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		var line string
-		fmt.Fscan(os.Stdin, &line)
-		return strings.TrimSpace(line)
-	}
-
-	// Interactive TTY: open /dev/tty and use term.ReadPassword to suppress echo.
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
-	if err != nil {
-		// Fallback: read from stdin without echo suppression.
-		fmt.Fprint(os.Stderr, prompt)
-		var line string
-		fmt.Fscan(os.Stdin, &line)
-		return strings.TrimSpace(line)
-	}
-	defer tty.Close()
-
-	fmt.Fprint(tty, prompt)
-	data, err := term.ReadPassword(int(tty.Fd()))
-	fmt.Fprintln(tty)
-	if err != nil {
-		log.Fatalf("Failed to read password: %v", err)
-	}
-	return strings.TrimSpace(string(data))
+	return cmdutil.ReadPassword(prompt)
 }

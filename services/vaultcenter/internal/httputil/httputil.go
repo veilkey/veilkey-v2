@@ -3,13 +3,13 @@ package httputil
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"strings"
 
 	agentapi "github.com/veilkey/veilkey-go-package/agentapi"
 	sharedhttp "github.com/veilkey/veilkey-go-package/httputil"
+	"github.com/veilkey/veilkey-go-package/netutil"
 )
 
 // Re-exports from shared package — use via this package to avoid double-import churn.
@@ -80,7 +80,7 @@ func ActorIDForRequest(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
-	return normalizeRemoteAddr(r.RemoteAddr)
+	return netutil.NormalizeRemoteAddr(r.RemoteAddr)
 }
 
 // ParseListWindow parses limit/offset query params. Returns errMsg if invalid.
@@ -119,28 +119,5 @@ func parsePositiveInt(s string) (int, error) {
 
 // FormatVaultID returns "name:hash8" identifying a vault.
 func FormatVaultID(name, hash string) string {
-	h := strings.TrimSpace(hash)
-	if len(h) > 8 {
-		h = h[:8]
-	}
-	n := strings.TrimSpace(name)
-	if n == "" {
-		return h
-	}
-	if h == "" {
-		return n
-	}
-	return n + ":" + h
-}
-
-func normalizeRemoteAddr(remote string) string {
-	raw := strings.TrimSpace(remote)
-	if raw == "" {
-		return ""
-	}
-	host, _, err := net.SplitHostPort(raw)
-	if err == nil && host != "" {
-		return host
-	}
-	return raw
+	return netutil.FormatVaultID(name, hash)
 }

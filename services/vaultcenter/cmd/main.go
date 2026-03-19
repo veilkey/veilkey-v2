@@ -1,9 +1,7 @@
 package main
 
 import (
-	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
@@ -13,9 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/term"
-
 	"veilkey-vaultcenter/internal/api"
+	"github.com/veilkey/veilkey-go-package/cmdutil"
 	"github.com/veilkey/veilkey-go-package/crypto"
 	"veilkey-vaultcenter/internal/db"
 )
@@ -86,7 +83,7 @@ func runServer() {
 		log.Fatal("node info not found. Legacy centralized mode is no longer supported; initialize HKM root with 'init --root'.")
 	}
 
-	if pw := readPasswordFromFileEnv(); pw != "" {
+	if pw := cmdutil.ReadPasswordFromFileEnv(); pw != "" {
 		kek := crypto.DeriveKEK(pw, salt)
 		if err := server.Unlock(kek); err != nil {
 			log.Fatalf("Failed to unlock with VEILKEY_PASSWORD_FILE: %v", err)
@@ -100,7 +97,7 @@ func runServer() {
 
 	gcStop := make(chan struct{})
 	defer close(gcStop)
-	go api.StartTempRefGC(database, parseDurationEnv("VEILKEY_GC_INTERVAL", 5*time.Minute), gcStop)
+	go api.StartTempRefGC(database, cmdutil.ParseDurationEnv("VEILKEY_GC_INTERVAL", 5*time.Minute), gcStop)
 	log.Println("Temp ref GC started")
 
 	handler := server.SetupRoutes()
@@ -156,11 +153,11 @@ func runHKMInit() {
 	}
 
 	if password == "" {
-		password = readPassword("Enter KEK password: ")
+		password = cmdutil.ReadPassword("Enter KEK password: ")
 		stat, _ := os.Stdin.Stat()
 		isPiped := (stat.Mode() & os.ModeCharDevice) == 0
 		if !isPiped {
-			password2 := readPassword("Confirm KEK password: ")
+			password2 := cmdutil.ReadPassword("Confirm KEK password: ")
 			if password != password2 {
 				log.Fatal("Passwords do not match.")
 			}
@@ -210,7 +207,7 @@ func runHKMInit() {
 	pwCiphertext, pwNonce, pwErr := crypto.Encrypt(dek, []byte(password))
 	tempRef := ""
 	if pwErr == nil {
-		pwRefID, refErr := generateInitRef(16)
+		pwRefID, refErr := cmdutil.GenerateHexRef(16)
 		if refErr == nil {
 			parts := db.RefParts{Family: db.RefFamilyVK, Scope: db.RefScopeTemp, ID: pwRefID}
 			encoded := base64Encode(pwCiphertext) + ":" + base64Encode(pwNonce)
@@ -241,63 +238,6 @@ func runHKMInit() {
 	fmt.Println("  Full responsibility for password custody lies with the operator.")
 }
 
-// readPasswordFromFileEnv reads the password from the file path specified in VEILKEY_PASSWORD_FILE.
-// Returns empty string if the env var is not set.
-func readPasswordFromFileEnv() string {
-	path := os.Getenv("VEILKEY_PASSWORD_FILE")
-	if path == "" {
-		return ""
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		log.Fatalf("Failed to read VEILKEY_PASSWORD_FILE (%s): %v", path, err)
-	}
-	pw := strings.TrimSpace(string(data))
-	if pw == "" {
-		log.Fatalf("VEILKEY_PASSWORD_FILE (%s) is empty", path)
-	}
-	return pw
-}
-
-func readPassword(prompt string) string {
-	// If stdin is piped, read directly from it (no echo to suppress).
-	stat, _ := os.Stdin.Stat()
-	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		var line string
-		fmt.Fscan(os.Stdin, &line)
-		return strings.TrimSpace(line)
-	}
-
-	// Interactive TTY: use term.ReadPassword to suppress echo.
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
-	if err != nil {
-		fmt.Fprint(os.Stderr, prompt)
-		var line string
-		fmt.Fscan(os.Stdin, &line)
-		return strings.TrimSpace(line)
-	}
-	defer tty.Close()
-
-	fmt.Fprint(tty, prompt)
-	data, err := term.ReadPassword(int(tty.Fd()))
-	fmt.Fprintln(tty)
-	if err != nil {
-		log.Fatalf("Failed to read password: %v", err)
-	}
-	return strings.TrimSpace(string(data))
-}
-
-// parseDurationEnv reads a duration from env var (e.g. "30s", "5m"), falls back to default
-func parseDurationEnv(key string, defaultVal time.Duration) time.Duration {
-	if v := os.Getenv(key); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			return d
-		}
-		log.Printf("warning: invalid duration %s=%q, using default %s", key, v, defaultVal)
-	}
-	return defaultVal
-}
-
 // detectExternalIP returns the first non-loopback IPv4 address
 func detectExternalIP() string {
 	addrs, err := net.InterfaceAddrs()
@@ -310,14 +250,6 @@ func detectExternalIP() string {
 		}
 	}
 	return ""
-}
-
-func generateInitRef(length int) (string, error) {
-	b := make([]byte, length)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
 }
 
 func base64Encode(data []byte) string {

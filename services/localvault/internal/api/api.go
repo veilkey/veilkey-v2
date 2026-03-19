@@ -15,8 +15,10 @@ import (
 	"veilkey-localvault/internal/api/functions"
 	"veilkey-localvault/internal/api/secrets"
 	"github.com/veilkey/veilkey-go-package/crypto"
-	"veilkey-localvault/internal/db"
 	"github.com/veilkey/veilkey-go-package/httputil"
+	"github.com/veilkey/veilkey-go-package/ratelimit"
+	"github.com/veilkey/veilkey-go-package/tlsutil"
+	"veilkey-localvault/internal/db"
 )
 
 type NodeIdentity struct {
@@ -35,7 +37,7 @@ type Server struct {
 	trustedIPs    map[string]bool
 	trustedCIDRs  []*net.IPNet
 	identity      *NodeIdentity
-	unlockLimiter *UnlockRateLimiter
+	unlockLimiter *ratelimit.UnlockRateLimiter
 	httpClient    *http.Client
 
 	secretsHandler   *secrets.Handler
@@ -70,8 +72,8 @@ func NewServer(database *db.DB, kek []byte, trustedIPs []string) *Server {
 		locked:        kek == nil,
 		trustedIPs:    ipMap,
 		trustedCIDRs:  cidrs,
-		unlockLimiter: NewUnlockRateLimiter(),
-		httpClient:    InitHTTPClientFromEnv(),
+		unlockLimiter: ratelimit.New(),
+		httpClient:    tlsutil.InitHTTPClientFromEnv(),
 	}
 	s.secretsHandler = secrets.NewHandler(s)
 	s.configsHandler = configs.NewHandler(s)
