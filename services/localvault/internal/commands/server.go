@@ -292,7 +292,7 @@ func mustLoadServer() (*api.Server, string, int) {
 		}
 		server.Unlock(kek)
 		log.Println("Server unlocked via VEILKEY_PASSWORD_FILE")
-	} else if pw := readDataDirPassword(dataDir); pw != "" {
+	} else if pw := cmdutil.ReadPasswordFromDataDir(dataDir); pw != "" {
 		kek := crypto.DeriveKEK(pw, salt)
 		if _, err := crypto.Decrypt(kek, info.DEK, info.DEKNonce); err != nil {
 			log.Fatalf("Failed to unlock with data dir password file: invalid password")

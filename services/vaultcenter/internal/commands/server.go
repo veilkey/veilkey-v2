@@ -81,7 +81,7 @@ func RunServer() {
 			log.Fatalf("Failed to unlock with VEILKEY_PASSWORD_FILE: %v", err)
 		}
 		log.Println("Server unlocked via VEILKEY_PASSWORD_FILE")
-	} else if pw := readDataDirPassword(dataDir); pw != "" {
+	} else if pw := cmdutil.ReadPasswordFromDataDir(dataDir); pw != "" {
 		kek := crypto.DeriveKEK(pw, salt)
 		if err := server.Unlock(kek); err != nil {
 			log.Fatalf("Failed to unlock with data dir password file: %v", err)

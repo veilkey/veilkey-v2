@@ -2,20 +2,10 @@ package commands
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 
 	"veilkey-localvault/internal/db"
 )
-
-func readDataDirPassword(dataDir string) string {
-	path := filepath.Join(dataDir, "password")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(data))
-}
 
 func ensureVaultIdentity(database *db.DB, nodeID string) (string, string, error) {
 	vaultHash := ""
