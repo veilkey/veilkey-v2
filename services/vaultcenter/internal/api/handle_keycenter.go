@@ -1,9 +1,15 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"net/http"
+	"strings"
 	"time"
 
+	"veilkey-vaultcenter/internal/api/hkm"
+	"github.com/veilkey/veilkey-go-package/crypto"
 	"veilkey-vaultcenter/internal/db"
 )
 
@@ -34,6 +40,75 @@ func (s *Server) handleKeycenterTempRefs(w http.ResponseWriter, r *http.Request)
 		})
 	}
 	s.respondJSON(w, http.StatusOK, map[string]any{"refs": items})
+}
+
+func (s *Server) handleKeycenterCreateTempRef(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name  string `json:"name"`
+		Value string `json:"value"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		s.respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.Value = strings.TrimSpace(req.Value)
+	if req.Value == "" {
+		s.respondError(w, http.StatusBadRequest, "value is required")
+		return
+	}
+
+	// Dedup: check for existing active temp ref with same plaintext
+	hash := sha256.Sum256([]byte(req.Value))
+	plaintextHash := hex.EncodeToString(hash[:])
+	if existing, err := s.db.FindActiveTempRefByHash(plaintextHash); err == nil && existing != nil {
+		s.respondJSON(w, http.StatusOK, map[string]any{
+			"ref":        existing.RefCanonical,
+			"name":       existing.SecretName,
+			"expires_at": existing.ExpiresAt,
+			"deduplicated": true,
+		})
+		return
+	}
+
+	dek, err := s.GetLocalDEK()
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, "failed to get encryption key")
+		return
+	}
+	ciphertext, nonce, err := crypto.Encrypt(dek, []byte(req.Value))
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, "encryption failed")
+		return
+	}
+
+	refID, err := hkm.GenerateSecretRef(16)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, "failed to generate ref")
+		return
+	}
+
+	parts := db.RefParts{Family: db.RefFamilyVK, Scope: db.RefScopeTemp, ID: refID}
+	encoded := base64.StdEncoding.EncodeToString(ciphertext) + ":" + base64.StdEncoding.EncodeToString(nonce)
+	expiresAt := time.Now().UTC().Add(1 * time.Hour)
+
+	nodeInfo, err := s.db.GetNodeInfo()
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, "node info not available")
+		return
+	}
+
+	if err := s.db.SaveRefWithExpiryAndHash(parts, encoded, nodeInfo.Version, db.RefStatusTemp, expiresAt, req.Name, plaintextHash); err != nil {
+		s.respondError(w, http.StatusInternalServerError, "failed to save temp ref")
+		return
+	}
+
+	canonical := parts.Canonical()
+	s.respondJSON(w, http.StatusOK, map[string]any{
+		"ref":        canonical,
+		"name":       req.Name,
+		"expires_at": expiresAt,
+	})
 }
 
 func (s *Server) handleKeycenterRevealRef(w http.ResponseWriter, r *http.Request) {

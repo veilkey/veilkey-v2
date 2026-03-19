@@ -17,6 +17,7 @@ services:
       VEILKEY_FUNCTION_DIR: /data/functions
       VEILKEY_AGENT_SCHEME: "${VEILKEY_AGENT_SCHEME}"
       VEILKEY_TRUSTED_IPS: "${VEILKEY_TRUSTED_IPS}"
+      VEILKEY_TLS_INSECURE: "1"
     volumes:
       - ${VAULTCENTER_DATA_DIR:-./data/vaultcenter}:/data
     healthcheck:

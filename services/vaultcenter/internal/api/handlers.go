@@ -57,6 +57,7 @@ func (s *Server) SetupAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/lookup/exact", s.requireTrustedIP(s.requireReadyForOps(s.handleExactLookup)))
 	mux.HandleFunc("GET /api/status", s.handleStatus)
 	mux.HandleFunc("GET /api/keycenter/temp-refs", s.requireUnlocked(s.requireAdminAuth(s.handleKeycenterTempRefs)))
+	mux.HandleFunc("POST /api/keycenter/temp-refs", s.requireUnlocked(s.requireAdminAuth(s.handleKeycenterCreateTempRef)))
 	mux.HandleFunc("GET /api/keycenter/temp-refs/{ref}/value", s.requireUnlocked(s.requireAdminAuth(s.handleKeycenterRevealRef)))
 	mux.HandleFunc("POST /api/admin/login", s.handleAdminLogin)
 	mux.HandleFunc("POST /api/admin/logout", s.handleAdminLogout)

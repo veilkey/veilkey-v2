@@ -86,6 +86,7 @@ const state = reactive({
     regTokens: [],
     createdRegToken: null,
     showRegTokenForm: false,
+    showTempRefForm: false,
     busy: {},
     ui: {
         sidebarHTML: '',
@@ -1569,6 +1570,7 @@ function renderKeycenterPage() {
             <div class="pane-title"><strong>${escapeHTML(t('keycenter_temp_refs_title'))}</strong></div>
             <div class="toolbar">
                 <span class="pill">${refs.length}</span>
+                <button class="btn btn-soft" data-action="show-create-temp-ref" style="margin-left:8px;font-size:0.8rem">+ 임시키</button>
                 <button class="btn btn-soft" data-action="show-create-reg-token" style="margin-left:8px;font-size:0.8rem">+ 등록 토큰</button>
             </div>
         </div>
@@ -1632,6 +1634,22 @@ function renderKeycenterPage() {
                         </tbody>
                     </table>
                 </div>
+            </div>` : ''}
+
+            ${state.showTempRefForm ? `
+            <div style="margin-top:20px;padding:12px;border:1px solid #444;border-radius:6px">
+                <div class="pane-title" style="margin-bottom:8px"><strong>임시키 등록</strong></div>
+                <form data-action="create-temp-ref-form">
+                    <div style="margin-bottom:8px">
+                        <label style="font-size:0.8rem;color:#999">키 이름</label>
+                        <input class="form-input" type="text" name="name" placeholder="MY_SECRET_KEY" style="width:100%" required/>
+                    </div>
+                    <div style="margin-bottom:8px">
+                        <label style="font-size:0.8rem;color:#999">값</label>
+                        <input class="form-input" type="password" name="value" placeholder="비밀번호 또는 키 값" style="width:100%" required/>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width:100%">등록 (1시간 후 만료)</button>
+                </form>
             </div>` : ''}
 
             ${state.showRegTokenForm ? `
@@ -2851,6 +2869,11 @@ async function handleAction(action, dataset) {
             render();
             return;
         }
+        if (action === 'show-create-temp-ref') {
+            state.showTempRefForm = !state.showTempRefForm;
+            render();
+            return;
+        }
         if (action === 'show-create-reg-token') {
             state.showRegTokenForm = !state.showRegTokenForm;
             state.createdRegToken = null;
@@ -2879,6 +2902,24 @@ async function handleAction(action, dataset) {
 
   function onSubmit(event) {
     const form = event.target.closest('form[data-action]');
+    if (form && form.dataset.action === 'create-temp-ref-form') {
+        event.preventDefault();
+        const name = form.querySelector('[name=name]')?.value || '';
+        const value = form.querySelector('[name=value]')?.value || '';
+        if (!value) return;
+        request('/api/keycenter/temp-refs', {
+            method: 'POST',
+            body: JSON.stringify({ name, value })
+        }).then(() => {
+            state.showTempRefForm = false;
+            setMessage('ok', '임시키가 등록되었습니다.');
+            loadKeycenterTempRefs().then(() => render());
+        }).catch(err => {
+            setMessage('error', err.message);
+            render();
+        });
+        return;
+    }
     if (form && form.dataset.action === 'create-reg-token-form') {
         event.preventDefault();
         const label = form.querySelector('[name=label]')?.value || '';
