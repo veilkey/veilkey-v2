@@ -46,26 +46,35 @@ veil CLI (PTY 마스킹)
 - VaultCenter만 탈취 → agentDEK 있지만 ciphertext 없음
 - LocalVault만 탈취 → ciphertext 있지만 agentDEK 없음
 
-## Quick Start
+## Quick Start (macOS)
 
 ```bash
 git clone https://github.com/veilkey/veilkey-selfhosted.git
 cd veilkey-selfhosted
+
+# 1. 서버 시작
 docker compose up -d
-```
 
-1. **VaultCenter 셋업**: `https://localhost:11181` → 마스터 + 관리자 비밀번호 설정
-2. **LocalVault 연결**: keycenter에서 등록 토큰 발급 → LV init
-3. **시크릿 저장**: keycenter에서 임시키 생성 → 볼트에 격상
-4. **veil 셸**: `docker compose exec -it veil veilkey-cli wrap-pty bash`
+# 2. veil CLI 설치 (빌드 + 서명 + 셸 설정)
+bash scripts/install-veil-mac.sh
 
-### LocalVault 등록 (1줄)
+# 3. VaultCenter 셋업
+open https://localhost:11181    # 마스터 + 관리자 비밀번호 설정
 
-```bash
+# 4. LocalVault 등록
+#    keycenter에서 등록 토큰 발급 후:
 docker compose exec localvault sh -c \
   "echo 'password' | veilkey-localvault init --root --token vk_reg_xxx --center https://vaultcenter:10181"
 docker compose restart localvault
+
+# 5. 시크릿 저장
+#    keycenter에서 임시키 생성 → 볼트에 격상
+
+# 6. veil 셸 진입
+veil
 ```
+
+`veil` 안에서는 모든 등록된 시크릿이 자동 마스킹됩니다. AI가 출력을 봐도 `VK:LOCAL:xxx`만 보임.
 
 ## Key Features
 
