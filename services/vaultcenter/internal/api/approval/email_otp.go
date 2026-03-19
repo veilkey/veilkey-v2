@@ -1,12 +1,13 @@
 package approval
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"log"
-	"math/rand/v2"
+	"math/big"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -49,7 +50,8 @@ func (h *Handler) handleCreateEmailOTPChallenge(w http.ResponseWriter, r *http.R
 		Status: "pending",
 	}
 	if err := h.db.SaveEmailOTPChallenge(challenge); err != nil {
-		respondErr(w, http.StatusBadRequest, err.Error())
+		log.Printf("email-otp: failed to save challenge: %v", err)
+		respondErr(w, http.StatusBadRequest, "failed to create challenge")
 		return
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
@@ -71,7 +73,8 @@ func (h *Handler) handleCreateEmailOTPChallenge(w http.ResponseWriter, r *http.R
 		"4. Re-run the original VeilKey command",
 	}, "\n")
 	if err := mailer.Send(challenge.Email, "VeilKey verification code", body); err != nil {
-		respondErr(w, http.StatusBadGateway, err.Error())
+		log.Printf("email-otp: failed to send email: %v", err)
+		respondErr(w, http.StatusBadGateway, "failed to send email")
 		return
 	}
 	respond(w, http.StatusCreated, map[string]any{
@@ -88,7 +91,7 @@ func (h *Handler) handleEmailOTPState(w http.ResponseWriter, r *http.Request) {
 	}
 	challenge, err := h.db.GetEmailOTPChallenge(token)
 	if err != nil {
-		respondErr(w, http.StatusNotFound, err.Error())
+		respondErr(w, http.StatusNotFound, "challenge not found")
 		return
 	}
 	respond(w, http.StatusOK, map[string]any{
@@ -107,7 +110,7 @@ func (h *Handler) handleEmailOTPPage(w http.ResponseWriter, r *http.Request) {
 	}
 	challenge, err := h.db.GetEmailOTPChallenge(token)
 	if err != nil {
-		respondErr(w, http.StatusNotFound, err.Error())
+		respondErr(w, http.StatusNotFound, "challenge not found")
 		return
 	}
 	if challenge.Status == "verified" {
@@ -120,6 +123,7 @@ func (h *Handler) handleEmailOTPPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleSubmitEmailOTP(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<16) // 64KB
 	if err := r.ParseForm(); err != nil {
 		respondErr(w, http.StatusBadRequest, "invalid form body")
 		return
@@ -132,12 +136,12 @@ func (h *Handler) handleSubmitEmailOTP(w http.ResponseWriter, r *http.Request) {
 	}
 	challenge, err := h.db.GetEmailOTPChallenge(token)
 	if err != nil {
-		respondErr(w, http.StatusNotFound, err.Error())
+		respondErr(w, http.StatusNotFound, "challenge not found")
 		return
 	}
 	switch action {
 	case "send-code":
-		code := fmt.Sprintf("%06d", rand.IntN(1000000))
+		code := fmt.Sprintf("%06d", secureRandInt(1000000))
 		otpExpiry := cmdutil.ParseDurationEnv("VEILKEY_EMAIL_OTP_EXPIRY", 5*time.Minute)
 		expiresAt := time.Now().UTC().Add(otpExpiry)
 		if _, err := h.db.UpdateEmailOTPCode(token, hashEmailOTPCode(code), expiresAt); err != nil {
@@ -147,7 +151,8 @@ func (h *Handler) handleSubmitEmailOTP(w http.ResponseWriter, r *http.Request) {
 		}
 		body := fmt.Sprintf("VeilKey one-time code\n\nCode: %s\nExpires in: %d seconds\n", code, int(otpExpiry.Seconds()))
 		if err := mailer.Send(challenge.Email, "VeilKey one-time code", body); err != nil {
-			respondErr(w, http.StatusBadGateway, err.Error())
+			log.Printf("email-otp: failed to send code email: %v", err)
+			respondErr(w, http.StatusBadGateway, "failed to send code")
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -180,6 +185,12 @@ func validateEmailOTPChallenge(challenge *db.EmailOTPChallenge, code string) boo
 func hashEmailOTPCode(code string) string {
 	sum := sha256.Sum256([]byte(code))
 	return hex.EncodeToString(sum[:])
+}
+
+// secureRandInt returns a cryptographically random int in [0, max) with no modular bias.
+func secureRandInt(max int) int {
+	n, _ := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	return int(n.Int64())
 }
 
 func defaultEmailOTPReason(reason string) string {

@@ -54,7 +54,7 @@ func (h *Handler) handleCreateSecretInputChallenge(w http.ResponseWriter, r *htt
 		Status:     "pending",
 	}
 	if err := h.db.SaveSecretInputChallenge(challenge); err != nil {
-		respondErr(w, http.StatusBadRequest, err.Error())
+		respondErr(w, http.StatusBadRequest, "failed to create challenge")
 		return
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
@@ -75,7 +75,7 @@ func (h *Handler) handleSecretInputPage(w http.ResponseWriter, r *http.Request) 
 	}
 	challenge, err := h.db.GetSecretInputChallenge(token)
 	if err != nil {
-		respondErr(w, http.StatusNotFound, err.Error())
+		respondErr(w, http.StatusNotFound, "challenge not found")
 		return
 	}
 	if challenge.Status == "submitted" {
@@ -98,6 +98,7 @@ func (h *Handler) handleSubmitSecretInput(w http.ResponseWriter, r *http.Request
 			return
 		}
 	} else {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<16) // 64KB
 		if err := r.ParseForm(); err != nil {
 			respondErr(w, http.StatusBadRequest, "invalid form body")
 			return
@@ -116,7 +117,7 @@ func (h *Handler) handleSubmitSecretInput(w http.ResponseWriter, r *http.Request
 	}
 	challenge, err := h.db.GetSecretInputChallenge(strings.TrimSpace(req.Token))
 	if err != nil {
-		respondErr(w, http.StatusNotFound, err.Error())
+		respondErr(w, http.StatusNotFound, "challenge not found")
 		return
 	}
 	if challenge.Status == "submitted" {
@@ -124,7 +125,7 @@ func (h *Handler) handleSubmitSecretInput(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := h.storeSecretViaAgentEndpoint(challenge.Endpoint, challenge.SecretName, req.Value); err != nil {
-		respondErr(w, http.StatusBadGateway, err.Error())
+		respondErr(w, http.StatusBadGateway, "failed to store secret")
 		return
 	}
 	if _, err := h.db.CompleteSecretInputChallenge(challenge.Token); err != nil {
