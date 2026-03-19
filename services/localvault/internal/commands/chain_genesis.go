@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -28,16 +29,22 @@ func fetchChainGenesis(vaultcenterURL, chainHome string) {
 	}
 
 	var data struct {
-		Genesis         json.RawMessage `json:"genesis"`
-		PersistentPeers string          `json:"persistent_peers"`
+		Genesis         string `json:"genesis"`          // base64-encoded (Go []byte → JSON)
+		PersistentPeers string `json:"persistent_peers"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		log.Printf("Chain: failed to decode chain info: %v", err)
 		return
 	}
 
-	if len(data.Genesis) == 0 {
+	if data.Genesis == "" {
 		log.Println("Chain: empty genesis from vaultcenter")
+		return
+	}
+
+	genesisBytes, err := base64.StdEncoding.DecodeString(data.Genesis)
+	if err != nil {
+		log.Printf("Chain: failed to base64-decode genesis: %v", err)
 		return
 	}
 
@@ -48,7 +55,7 @@ func fetchChainGenesis(vaultcenterURL, chainHome string) {
 		return
 	}
 	genesisFile := filepath.Join(configDir, "genesis.json")
-	if err := os.WriteFile(genesisFile, data.Genesis, 0600); err != nil {
+	if err := os.WriteFile(genesisFile, genesisBytes, 0600); err != nil {
 		log.Printf("Chain: failed to write genesis: %v", err)
 		return
 	}

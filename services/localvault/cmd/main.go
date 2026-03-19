@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"veilkey-localvault/internal/api"
+	chain "github.com/veilkey/veilkey-chain"
 	"github.com/veilkey/veilkey-go-package/cmdutil"
 	"github.com/veilkey/veilkey-go-package/crypto"
 	"github.com/veilkey/veilkey-go-package/httputil"
@@ -60,8 +61,22 @@ func runServer() {
 	// Normal mode: salt exists, load full server
 	server, addr, listenPort := mustLoadServer()
 
-	// Heartbeat to vaultcenter using the same effective target as tracked-ref sync.
+	// Resolve vaultcenter URL before chain init (needed for genesis fetch)
 	hubURL := server.LogResolvedVaultcenterURL("startup")
+
+	// CometBFT chain full node (optional)
+	if chainHome := os.Getenv("VEILKEY_CHAIN_HOME"); chainHome != "" {
+		adapter := &db.ChainStoreAdapter{DB: server.DB()}
+		cometNode, chainErr := chain.StartNode(adapter, adapter, chainHome)
+		if chainErr != nil {
+			log.Printf("Failed to start chain node: %v (continuing without chain)", chainErr)
+		} else {
+			defer chain.StopNode(cometNode)
+			log.Printf("CometBFT full node started (home=%s)", chainHome)
+		}
+	}
+
+	// Heartbeat to vaultcenter
 	hostname, _ := os.Hostname()
 	server.StartHeartbeat(hubURL, hostname, listenPort, 5*time.Minute)
 
