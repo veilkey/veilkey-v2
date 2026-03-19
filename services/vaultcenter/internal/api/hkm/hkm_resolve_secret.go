@@ -2,12 +2,15 @@ package hkm
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	chain "github.com/veilkey/veilkey-chain"
 	"github.com/veilkey/veilkey-go-package/crypto"
 	"veilkey-vaultcenter/internal/db"
 )
@@ -196,21 +199,21 @@ func (h *Handler) resolveTrackedRef(w http.ResponseWriter, ref string, tracked *
 		})
 		now := time.Now().UTC()
 		_ = h.deps.DB().MarkSecretCatalogRevealed(ref, now)
-		h.deps.SaveAuditEvent(
-			"secret",
-			ref,
-			"resolve",
-			"api",
-			agentHash,
-			"",
-			"resolve",
-			nil,
-			map[string]any{
-				"ref":                ref,
-				"vault_runtime_hash": agentHash,
-				"resolved_at":        now.Format(time.RFC3339),
-			},
-		)
+		afterJSON, _ := json.Marshal(map[string]any{
+			"ref":                ref,
+			"vault_runtime_hash": agentHash,
+			"resolved_at":        now.Format(time.RFC3339),
+		})
+		_ = h.deps.SubmitTxAsync(context.Background(), chain.TxRecordAuditEvent, chain.RecordAuditEventPayload{
+			EventID:    crypto.GenerateUUID(),
+			EntityType: "secret",
+			EntityID:   ref,
+			Action:     "resolve",
+			ActorType:  "api",
+			ActorID:    agentHash,
+			Source:     "resolve",
+			AfterJSON:  string(afterJSON),
+		})
 		return true
 	}
 
@@ -240,21 +243,20 @@ func (h *Handler) resolveTrackedRef(w http.ResponseWriter, ref string, tracked *
 			"agent_hash":         "",
 		})
 		_ = h.deps.DB().MarkSecretCatalogRevealed(ref, now)
-		h.deps.SaveAuditEvent(
-			"secret",
-			ref,
-			"resolve",
-			"api",
-			"",
-			"",
-			"resolve",
-			nil,
-			map[string]any{
-				"ref":                ref,
-				"vault_runtime_hash": "host",
-				"resolved_at":        now.Format(time.RFC3339),
-			},
-		)
+		afterJSON2, _ := json.Marshal(map[string]any{
+			"ref":                ref,
+			"vault_runtime_hash": "host",
+			"resolved_at":        now.Format(time.RFC3339),
+		})
+		_ = h.deps.SubmitTxAsync(context.Background(), chain.TxRecordAuditEvent, chain.RecordAuditEventPayload{
+			EventID:    crypto.GenerateUUID(),
+			EntityType: "secret",
+			EntityID:   ref,
+			Action:     "resolve",
+			ActorType:  "api",
+			Source:     "resolve",
+			AfterJSON:  string(afterJSON2),
+		})
 		return true
 	}
 

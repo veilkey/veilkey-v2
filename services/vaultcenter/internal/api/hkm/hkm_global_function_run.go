@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	chain "github.com/veilkey/veilkey-chain"
+	"github.com/veilkey/veilkey-go-package/crypto"
 	"veilkey-vaultcenter/internal/db"
 )
 
@@ -254,24 +256,24 @@ func (h *Handler) handleGlobalFunctionRun(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	h.deps.SaveAuditEvent(
-		"function",
-		name,
-		"run",
-		"system",
-		httputil.ActorIDForRequest(r),
-		"",
-		"global_function_run",
-		nil,
-		map[string]any{
-			"name":            name,
-			"exit_code":       exitCode,
-			"timed_out":       timedOut,
-			"input_bytes":     len(stdin),
-			"timeout_seconds": int(timeout / time.Second),
-			"env_keys":        appliedEnvKeys,
-		},
-	)
+	afterJSON, _ := json.Marshal(map[string]any{
+		"name":            name,
+		"exit_code":       exitCode,
+		"timed_out":       timedOut,
+		"input_bytes":     len(stdin),
+		"timeout_seconds": int(timeout / time.Second),
+		"env_keys":        appliedEnvKeys,
+	})
+	_ = h.deps.SubmitTxAsync(r.Context(), chain.TxRecordAuditEvent, chain.RecordAuditEventPayload{
+		EventID:    crypto.GenerateUUID(),
+		EntityType: "function",
+		EntityID:   name,
+		Action:     "run",
+		ActorType:  "system",
+		ActorID:    httputil.ActorIDForRequest(r),
+		Source:     "global_function_run",
+		AfterJSON:  string(afterJSON),
+	})
 
 	status := http.StatusOK
 	if err != nil {
