@@ -191,7 +191,7 @@ func validateTokenRemote(vcURL, tokenID string) error {
 	if err != nil {
 		return fmt.Errorf("cannot reach VaultCenter: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("token rejected by VaultCenter (HTTP %d)", resp.StatusCode)
 	}

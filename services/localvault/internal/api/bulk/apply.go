@@ -56,8 +56,8 @@ func writeAtomically(path string, content []byte) error {
 	dir := filepath.Dir(path)
 	var (
 		mode     os.FileMode = 0644
-		uid      int         = -1
-		gid      int         = -1
+		uid              = -1
+		gid              = -1
 		haveStat bool
 	)
 	if info, err := os.Stat(path); err == nil {
