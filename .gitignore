@@ -44,3 +44,5 @@ node_modules/
 /veil-cli
 /veil
 /veilkey
+# Go build output inside service directories
+services/*/main
