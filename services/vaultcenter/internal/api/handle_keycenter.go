@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"time"
+
+	"veilkey-vaultcenter/internal/db"
 )
 
 type tempRefItem struct {
@@ -45,7 +47,7 @@ func (s *Server) handleKeycenterRevealRef(w http.ResponseWriter, r *http.Request
 		s.respondError(w, http.StatusNotFound, "ref not found")
 		return
 	}
-	if tracked.RefScope != "TEMP" {
+	if tracked.RefScope != db.RefScopeTemp {
 		s.respondError(w, http.StatusForbidden, "only TEMP refs can be revealed here")
 		return
 	}
