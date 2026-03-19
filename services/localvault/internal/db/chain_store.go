@@ -40,16 +40,34 @@ func (a *ChainStoreAdapter) UpsertAgent(_, _, _, _, _ string, _, _, _, _, _ int)
 	return nil
 }
 
+// DeleteAgent is a no-op on localvault.
+func (a *ChainStoreAdapter) DeleteAgent(_ string) error { return nil }
+
 // RegisterChild is a no-op on localvault (identity-only record, no DEK).
 func (a *ChainStoreAdapter) RegisterChild(_ *chain.ChildRecord) error {
 	return nil
 }
+
+// DeleteChild is a no-op on localvault.
+func (a *ChainStoreAdapter) DeleteChild(_ string) error { return nil }
+
+// UpdateChildURL is a no-op on localvault.
+func (a *ChainStoreAdapter) UpdateChildURL(_, _ string) error { return nil }
 
 // SaveBinding is a no-op on localvault (vaultcenter manages bindings).
 func (a *ChainStoreAdapter) SaveBinding(_ *chain.BindingRecord) error { return nil }
 
 // DeleteBinding is a no-op on localvault.
 func (a *ChainStoreAdapter) DeleteBinding(_ string) error { return nil }
+
+// DeleteBindingsByTarget is a no-op on localvault.
+func (a *ChainStoreAdapter) DeleteBindingsByTarget(_, _ string) error { return nil }
+
+// SaveGlobalFunction is a no-op on localvault.
+func (a *ChainStoreAdapter) SaveGlobalFunction(_ *chain.GlobalFunctionRecord) error { return nil }
+
+// DeleteGlobalFunction is a no-op on localvault.
+func (a *ChainStoreAdapter) DeleteGlobalFunction(_ string) error { return nil }
 
 // SaveConfig applies config changes from chain blocks.
 func (a *ChainStoreAdapter) SaveConfig(key, value string) error {
