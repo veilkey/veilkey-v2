@@ -54,7 +54,7 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           working-directory: services/vaultcenter
-          version: "v2.1.6"
+          version: "v2.4.0"
       - name: Build
         run: CGO_ENABLED=1 go build -o veilkey-vaultcenter ./cmd
       - name: Upload artifact
@@ -81,7 +81,7 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           working-directory: services/localvault
-          version: "v2.1.6"
+          version: "v2.4.0"
       - name: Build
         run: CGO_ENABLED=1 go build -o veilkey-localvault ./cmd
       - name: Upload artifact

@@ -21,7 +21,7 @@ func fetchChainGenesis(vaultcenterURL, chainHome string) {
 		log.Printf("Chain: failed to fetch genesis: %v (will generate local genesis)", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		log.Printf("Chain: vaultcenter returned %d for chain info (chain may not be enabled on vaultcenter)", resp.StatusCode)

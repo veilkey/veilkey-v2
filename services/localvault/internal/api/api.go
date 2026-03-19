@@ -47,7 +47,7 @@ type Server struct {
 	functionsHandler *functions.Handler
 }
 
-func (s *Server) Close() { s.db.Close() }
+func (s *Server) Close() { _ = s.db.Close() }
 
 func (s *Server) SetIdentity(identity *NodeIdentity) {
 	s.identity = identity

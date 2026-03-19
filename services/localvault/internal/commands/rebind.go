@@ -37,7 +37,7 @@ func RunRebind() {
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	if err := database.UpdateNodeVersion(keyVersion); err != nil {
 		log.Fatalf("Failed to update node version: %v", err)

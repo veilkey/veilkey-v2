@@ -60,7 +60,7 @@ func RunServer() {
 		if chainErr != nil {
 			log.Printf("Failed to start chain node: %v (continuing without chain)", chainErr)
 		} else {
-			defer chain.StopNode(cometNode)
+			defer func() { _ = chain.StopNode(cometNode) }()
 			log.Printf("CometBFT full node started (home=%s)", chainHome)
 		}
 	} else {

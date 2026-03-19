@@ -52,7 +52,7 @@ func (s *Server) syncTrackedRefWithVaultcenter(ref string, previousRef string, v
 		result.Error = err.Error()
 		return result
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		payload, err := io.ReadAll(resp.Body)
 		result.Status = "degraded"

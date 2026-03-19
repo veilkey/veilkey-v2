@@ -56,8 +56,8 @@ func writeAtomically(path string, content []byte) error {
 	dir := filepath.Dir(path)
 	var (
 		mode     os.FileMode = 0644
-		uid      int         = -1
-		gid      int         = -1
+		uid              = -1
+		gid              = -1
 		haveStat bool
 	)
 	if info, err := os.Stat(path); err == nil {
@@ -73,7 +73,7 @@ func writeAtomically(path string, content []byte) error {
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer func() { _ = os.Remove(tmpName) }()
 	if _, err := tmp.Write(content); err != nil {
 		if closeErr := tmp.Close(); closeErr != nil {
 			return fmt.Errorf("write failed: %w; close also failed: %v", err, closeErr)

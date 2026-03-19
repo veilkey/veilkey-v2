@@ -98,7 +98,7 @@ func (s *Server) SendHeartbeatOnce(endpoint, label string, port int) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {

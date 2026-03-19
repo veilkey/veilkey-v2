@@ -52,7 +52,7 @@ func (s *Server) HandleInstallStatus(w http.ResponseWriter, r *http.Request) {
 			status.Error = err.Error()
 			status.VaultcenterError = err.Error()
 		} else {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			status.Connected = resp.StatusCode == http.StatusOK
 			status.VaultcenterConnected = status.Connected
 			if !status.Connected {
