@@ -122,7 +122,7 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ref := "VE:LOCAL:" + req.Key
+	ref := db.MakeRef(db.RefFamilyVE, db.RefScopeLocal, req.Key)
 	_ = s.upsertTrackedRef(ref, 1, db.RefStatusActive, "")
 	s.saveAuditEvent(
 		"config",
@@ -177,7 +177,7 @@ func (s *Server) handleSaveConfigsBulk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for key, value := range req.Configs {
-		ref := "VE:LOCAL:" + key
+		ref := db.MakeRef(db.RefFamilyVE, db.RefScopeLocal, key)
 		_ = s.upsertTrackedRef(ref, 1, db.RefStatusActive, "")
 		s.saveAuditEvent(
 			"config",
@@ -225,7 +225,7 @@ func (s *Server) handleDeleteConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ref := "VE:LOCAL:" + key
+	ref := db.MakeRef(db.RefFamilyVE, db.RefScopeLocal, key)
 	_ = s.deleteTrackedRef(ref)
 	s.saveAuditEvent(
 		"config",

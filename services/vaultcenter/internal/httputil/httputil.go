@@ -13,14 +13,17 @@ import (
 )
 
 // Re-exports from shared package — use via this package to avoid double-import churn.
-var (
-	JoinPath            = sharedhttp.JoinPath
-	IsValidResourceName = sharedhttp.IsValidResourceName
-	RespondJSON         = sharedhttp.RespondJSON
-	RespondError        = sharedhttp.RespondError
-	DecodeJSON          = sharedhttp.DecodeJSON
-	PathVal             = sharedhttp.PathVal
-)
+
+func JoinPath(base string, elem ...string) string { return sharedhttp.JoinPath(base, elem...) }
+func IsValidResourceName(name string) bool         { return sharedhttp.IsValidResourceName(name) }
+func RespondJSON(w http.ResponseWriter, status int, data any) {
+	sharedhttp.RespondJSON(w, status, data)
+}
+func RespondError(w http.ResponseWriter, status int, message string) {
+	sharedhttp.RespondError(w, status, message)
+}
+func DecodeJSON(r *http.Request, dst any) error    { return sharedhttp.DecodeJSON(r, dst) }
+func PathVal(r *http.Request, key string) string   { return sharedhttp.PathVal(r, key) }
 
 const MaxBulkItems = sharedhttp.MaxBulkItems
 

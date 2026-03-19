@@ -50,7 +50,7 @@ func (d *DB) DeleteSecret(name string) error {
 	return nil
 }
 
-func (d *DB) UpdateSecretStatus(refHash, status string) error {
+func (d *DB) UpdateSecretStatus(refHash string, status RefStatus) error {
 	result := d.conn.Model(&Secret{}).Where("ref = ?", refHash).
 		Update("status", status)
 	if result.Error != nil {

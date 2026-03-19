@@ -2,8 +2,6 @@ package db
 
 import (
 	"time"
-
-	"github.com/veilkey/veilkey-go-package/agentapi"
 )
 
 type EncryptionKey struct {
@@ -159,9 +157,6 @@ type KeyRegistryEntry struct {
 }
 
 func (KeyRegistryEntry) TableName() string { return "key_registry" }
-
-// DefaultAgentPort re-exports agentapi.DefaultPort for backward compatibility.
-const DefaultAgentPort = agentapi.DefaultPort
 
 type Agent struct {
 	NodeID           string     `gorm:"primaryKey;column:node_id" json:"node_id"`
