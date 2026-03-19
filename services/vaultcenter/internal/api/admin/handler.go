@@ -24,7 +24,7 @@ type Deps interface {
 	// FetchAgentCiphertext retrieves the named secret ciphertext from the agent.
 	FetchAgentCiphertext(agentURL, ref string) (name string, ciphertext []byte, nonce []byte, err error)
 
-	// AgentURL builds the HTTP base URL for an agent (e.g. "http://1.2.3.4:10180").
+	// AgentURL builds the HTTP base URL for an agent.
 	AgentURL(ip string, port int) string
 
 	// SaveAuditEvent records an audit event.
