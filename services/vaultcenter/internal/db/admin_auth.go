@@ -103,3 +103,36 @@ func (d *DB) RevokeAdminSession(sessionID string, revokedAt time.Time) error {
 		Where("session_id = ? AND revoked_at IS NULL", sessionID).
 		Update("revoked_at", revokedAt.UTC()).Error
 }
+
+func (d *DB) ListAdminPasskeys() ([]AdminPasskey, error) {
+	var passkeys []AdminPasskey
+	if err := d.conn.Order("created_at ASC").Find(&passkeys).Error; err != nil {
+		return nil, err
+	}
+	return passkeys, nil
+}
+
+func (d *DB) SaveAdminPasskey(pk *AdminPasskey) error {
+	if pk == nil {
+		return fmt.Errorf("admin passkey is required")
+	}
+	return d.conn.Create(pk).Error
+}
+
+func (d *DB) GetAdminPasskeyByID(credID string) (*AdminPasskey, error) {
+	var pk AdminPasskey
+	if err := d.conn.First(&pk, "credential_id = ?", credID).Error; err != nil {
+		return nil, fmt.Errorf("admin passkey not found")
+	}
+	return &pk, nil
+}
+
+func (d *DB) DeleteAdminPasskey(credID string) error {
+	return d.conn.Delete(&AdminPasskey{}, "credential_id = ?", credID).Error
+}
+
+func (d *DB) UpdatePasskeySignCount(credID string, signCount uint32) error {
+	return d.conn.Model(&AdminPasskey{}).
+		Where("credential_id = ?", credID).
+		Update("sign_count", signCount).Error
+}

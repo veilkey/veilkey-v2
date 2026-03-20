@@ -93,6 +93,8 @@ const state = reactive({
     createdRegToken: null,
     showRegTokenForm: false,
     showTempRefForm: false,
+    passkeys: [],
+    passkeyRegistering: false,
     busy: {},
     ui: {
         sidebarHTML: '',
@@ -1921,6 +1923,136 @@ function finishTOTPEnroll() {
     render();
 }
 
+// --- Passkey functions ---
+
+function base64urlToBuffer(base64url) {
+    const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = base64.length % 4 === 0 ? '' : '='.repeat(4 - base64.length % 4);
+    const binary = atob(base64 + pad);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+}
+
+function bufferToBase64url(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+async function loadPasskeys() {
+    try {
+        const data = await request('/api/admin/auth/passkeys');
+        state.passkeys = data.passkeys || [];
+    } catch (err) { /* ignore */ }
+}
+
+async function registerPasskey() {
+    state.passkeyRegistering = true;
+    render();
+    try {
+        const options = await request('/api/admin/auth/passkey/register/begin', { method: 'POST' });
+        const publicKey = {
+            ...options.publicKey,
+            challenge: base64urlToBuffer(options.publicKey.challenge),
+            user: {
+                ...options.publicKey.user,
+                id: base64urlToBuffer(options.publicKey.user.id)
+            },
+            excludeCredentials: (options.publicKey.excludeCredentials || []).map(c => ({
+                ...c,
+                id: base64urlToBuffer(c.id)
+            }))
+        };
+        const credential = await navigator.credentials.create({ publicKey });
+        const body = {
+            id: credential.id,
+            rawId: bufferToBase64url(credential.rawId),
+            type: credential.type,
+            response: {
+                clientDataJSON: bufferToBase64url(credential.response.clientDataJSON),
+                attestationObject: bufferToBase64url(credential.response.attestationObject)
+            },
+            name: 'Passkey ' + new Date().toLocaleDateString()
+        };
+        await request('/api/admin/auth/passkey/register/finish', {
+            method: 'POST',
+            body: JSON.stringify(body)
+        });
+        await loadPasskeys();
+        await loadAuthSettings();
+        setMessage('ok', t('security_passkey_register_success'));
+    } catch (err) {
+        if (err.name !== 'NotAllowedError') {
+            setMessage('error', err.message);
+        }
+    } finally {
+        state.passkeyRegistering = false;
+        render();
+    }
+}
+
+async function deletePasskey(credentialId) {
+    try {
+        await request('/api/admin/auth/passkeys/' + encodeURIComponent(credentialId), { method: 'DELETE' });
+        await loadPasskeys();
+        await loadAuthSettings();
+        setMessage('ok', t('security_passkey_deleted'));
+    } catch (err) {
+        setMessage('error', err.message);
+    }
+}
+
+async function loginWithPasskey() {
+    try {
+        const options = await request('/api/admin/auth/passkey/login/begin', { method: 'POST' });
+        const publicKey = {
+            ...options.publicKey,
+            challenge: base64urlToBuffer(options.publicKey.challenge),
+            allowCredentials: (options.publicKey.allowCredentials || []).map(c => ({
+                ...c,
+                id: base64urlToBuffer(c.id)
+            }))
+        };
+        const credential = await navigator.credentials.get({ publicKey });
+        const body = {
+            session_key: options.session_key,
+            id: credential.id,
+            rawId: bufferToBase64url(credential.rawId),
+            type: credential.type,
+            response: {
+                clientDataJSON: bufferToBase64url(credential.response.clientDataJSON),
+                authenticatorData: bufferToBase64url(credential.response.authenticatorData),
+                signature: bufferToBase64url(credential.response.signature)
+            }
+        };
+        await request('/api/admin/auth/passkey/login/finish', {
+            method: 'POST',
+            body: JSON.stringify(body)
+        });
+        state.ui.adminRequired = false;
+        state.ui.adminLoginError = '';
+        await loadStatus();
+        if (state.status?.locked) {
+            state.ui.locked = true;
+            return;
+        }
+        await loadUIConfig();
+        await loadVaults();
+        await loadConfigsSummary();
+        await loadFunctions();
+        await loadTrackedRefAudit();
+        await loadKeycenterTempRefs();
+        await syncPageData();
+        render();
+    } catch (err) {
+        if (err.name !== 'NotAllowedError') {
+            state.ui.adminLoginError = err.message || 'Passkey login failed.';
+        }
+    }
+}
+
 async function loadVaults() {
     try {
         const data = await request('/api/vaults?limit=200');
@@ -2448,6 +2580,7 @@ async function syncPageData() {
             await loadUIConfig();
             await loadSystemUpdate();
             await loadAuthSettings();
+            await loadPasskeys();
         }
         setMessage(null, null);
     } catch (err) {
@@ -2780,6 +2913,12 @@ async function handleAction(action, dataset) {
         }
         if (action === 'print-recovery-codes') {
             return printRecoveryCodes();
+        }
+        if (action === 'register-passkey') {
+            return registerPasskey();
+        }
+        if (action === 'delete-passkey') {
+            return deletePasskey(dataset.id);
         }
         if (action === 'run-system-update') {
             await request('/api/system/update', {
@@ -3225,6 +3364,7 @@ return {
                 state,
                 adminSetup,
                 adminLogin,
+                loginWithPasskey,
                 adminLogout,
                 unlock,
                 onGlobalSearchInput,

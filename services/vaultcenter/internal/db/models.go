@@ -356,3 +356,15 @@ type RegistrationToken struct {
 }
 
 func (RegistrationToken) TableName() string { return "registration_tokens" }
+
+type AdminPasskey struct {
+	CredentialID string    `gorm:"primaryKey;column:credential_id" json:"credential_id"`
+	Name         string    `gorm:"column:name;not null" json:"name"`
+	PublicKey    []byte    `gorm:"column:public_key;not null" json:"-"`
+	AAGUID       string    `gorm:"column:aaguid;not null;default:''" json:"aaguid"`
+	SignCount    uint32    `gorm:"column:sign_count;not null;default:0" json:"sign_count"`
+	Transports   string    `gorm:"column:transports;not null;default:''" json:"transports"`
+	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+}
+
+func (AdminPasskey) TableName() string { return "admin_passkeys" }

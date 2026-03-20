@@ -7,6 +7,7 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
@@ -22,7 +23,7 @@ import (
 )
 
 const (
-	adminSessionCookieName         = "veilkey_admin_session"
+	adminSessionCookieName         = "vk_session"
 	adminSessionTTLDefault         = 2 * time.Hour
 	adminSessionIdleTimeoutDefault = 30 * time.Minute
 	adminRevealWindow              = 5 * time.Minute
@@ -58,6 +59,7 @@ type adminAuthSettingsResponse struct {
 	SessionTTLSeconds   int64 `json:"session_ttl_seconds"`
 	IdleTTLSeconds      int64 `json:"idle_timeout_seconds"`
 	RevealWindowSeconds int64 `json:"reveal_window_seconds"`
+	PasskeyCount        int   `json:"passkey_count"`
 }
 
 func (h *Handler) handleAdminCreateSecureInputChallenge(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +164,10 @@ func (h *Handler) handleAdminListApprovalChallenges(w http.ResponseWriter, r *ht
 
 func (h *Handler) handleAdminAuthSettings(w http.ResponseWriter, r *http.Request) {
 	cfg, _ := h.deps.DB().GetOrCreateAdminAuthConfig()
-	respondJSON(w, http.StatusOK, adminAuthSettingsPayload(cfg))
+	payload := adminAuthSettingsPayload(cfg)
+	passkeys, _ := h.deps.DB().ListAdminPasskeys()
+	payload.PasskeyCount = len(passkeys)
+	respondJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) handleAdminTOTPEnrollStart(w http.ResponseWriter, r *http.Request) {
@@ -763,7 +768,7 @@ func generateAdminSessionToken() (string, string) {
 
 func hashAdminSessionToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
+	return hex.EncodeToString(sum[:])
 }
 
 func (h *Handler) encryptAdminSecret(secret string) ([]byte, []byte, error) {

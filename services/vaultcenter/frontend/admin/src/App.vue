@@ -23,6 +23,7 @@
         <form class="unlock-form" @submit.prevent="(e) => adminLogin(e.target.password.value)">
             <input class="unlock-input" type="password" name="password" :placeholder="t('auth_admin_password')" autocomplete="current-password" autofocus required />
             <button class="unlock-btn" type="submit">{{ t('auth_login_submit') }}</button>
+            <button class="unlock-btn" type="button" style="margin-top:8px;background:#f3f4f6;color:#374151" @click="loginWithPasskey()">{{ t('auth_passkey_login') }}</button>
         </form>
     </div>
 </div>
@@ -833,6 +834,10 @@
                                                         <img :src="'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(state.totpOtpauthURI)" alt="QR Code" style="width:200px;height:200px">
                                                     </div>
                                                     <div class="value" style="font-family:monospace;word-break:break-all;font-size:0.85rem;background:#f3f4f6;padding:8px;border-radius:4px">{{ state.totpSecret }}</div>
+                                                    <div style="margin-top:4px">
+                                                        <button class="btn btn-soft" style="font-size:0.8rem" @click="navigator.clipboard.writeText(state.totpOtpauthURI)">{{ t('security_2fa_copy_uri') }}</button>
+                                                    </div>
+                                                    <div class="value" style="color:#b45309;font-size:0.82rem;background:#fffbeb;padding:8px;border-radius:4px;border:1px solid #fde68a">⚠ {{ t('security_2fa_sha256_note') }}</div>
                                                     <div class="value">{{ t('security_2fa_step2') }}</div>
                                                     <form data-form="verify-totp-enroll" class="inline-actions" style="gap:8px">
                                                         <input class="field" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="000000" autocomplete="off" style="max-width:140px;font-size:1.2rem;letter-spacing:0.3em;text-align:center">
@@ -868,8 +873,19 @@
                                                 <div class="card-title">{{ t('security_passkey_title') }}</div>
                                                 <div class="stack">
                                                     <div class="value">{{ t('security_passkey_desc') }}</div>
-                                                    <div class="value" style="color:#6b7280;font-style:italic">{{ t('security_passkey_none') }}</div>
-                                                    <button class="btn btn-soft" data-action="register-passkey" disabled style="opacity:0.5">{{ t('security_passkey_register') }} (coming soon)</button>
+                                                    <div v-if="state.passkeys && state.passkeys.length > 0">
+                                                        <div v-for="pk in state.passkeys" :key="pk.credential_id" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#f9fafb;border-radius:6px;margin-bottom:6px">
+                                                            <div>
+                                                                <div style="font-weight:600;font-size:0.9rem">{{ pk.name }}</div>
+                                                                <div style="font-size:0.78rem;color:#6b7280">{{ new Date(pk.created_at).toLocaleDateString() }}</div>
+                                                            </div>
+                                                            <button class="btn btn-soft" style="font-size:0.8rem;color:#dc2626" data-action="delete-passkey" :data-id="pk.credential_id">{{ t('security_passkey_delete') }}</button>
+                                                        </div>
+                                                    </div>
+                                                    <div v-else class="value" style="color:#6b7280;font-style:italic">{{ t('security_passkey_none') }}</div>
+                                                    <button class="btn btn-primary" data-action="register-passkey" :disabled="state.passkeyRegistering">
+                                                        {{ state.passkeyRegistering ? t('security_passkey_registering') : t('security_passkey_register') }}
+                                                    </button>
                                                 </div>
                                             </div>
                                         </template>
@@ -1093,6 +1109,7 @@ const {
   auditSelectedVault,
   adminSetup,
   adminLogin,
+  loginWithPasskey,
   adminLogout,
   unlock,
   encodeURIComponent

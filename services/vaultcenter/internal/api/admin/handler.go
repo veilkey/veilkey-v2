@@ -70,6 +70,12 @@ func (h *Handler) Register(
 	mux.HandleFunc("POST /api/admin/rotations/schedule-all", readyForOps(h.RequireAdminSession(h.handleAdminScheduleAllRotations)))
 	mux.HandleFunc("POST /api/admin/reveal-authorize", readyForOps(h.RequireAdminSession(h.handleAdminRevealAuthorize)))
 	mux.HandleFunc("POST /api/admin/reveal", readyForOps(h.RequireAdminSession(h.handleAdminReveal)))
+	mux.HandleFunc("POST /api/admin/auth/passkey/register/begin", trusted(readyForOps(h.RequireAdminSession(h.handlePasskeyRegisterBegin))))
+	mux.HandleFunc("POST /api/admin/auth/passkey/register/finish", trusted(readyForOps(h.RequireAdminSession(h.handlePasskeyRegisterFinish))))
+	mux.HandleFunc("POST /api/admin/auth/passkey/login/begin", readyForOps(h.handlePasskeyLoginBegin))
+	mux.HandleFunc("POST /api/admin/auth/passkey/login/finish", readyForOps(h.handlePasskeyLoginFinish))
+	mux.HandleFunc("GET /api/admin/auth/passkeys", readyForOps(h.RequireAdminSession(h.handleListPasskeys)))
+	mux.HandleFunc("DELETE /api/admin/auth/passkeys/{id}", trusted(readyForOps(h.RequireAdminSession(h.handleDeletePasskey))))
 }
 
 // RequireAdminSession returns middleware that enforces a valid admin session cookie.

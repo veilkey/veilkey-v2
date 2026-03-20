@@ -42,6 +42,7 @@ func (s *Server) SetupAPIRoutes(mux *http.ServeMux) {
 		"/functions/run",
 		"/audit",
 		"/settings/ui",
+		"/settings/security",
 		"/settings/admin",
 		"/keycenter",
 	} {
