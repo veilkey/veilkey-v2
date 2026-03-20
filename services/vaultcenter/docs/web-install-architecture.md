@@ -1,5 +1,7 @@
 # VeilKey Web Install Architecture
 
+> **Note:** This is a design proposal for future versions. Current implementation uses a simpler web UI setup flow at `https://localhost:11181`.
+
 This note defines the target architecture for VeilKey web-first installation and centralized runtime management.
 
 It replaces node-local hardcoded install values with VaultCenter-managed install policy and controlled server-side execution.

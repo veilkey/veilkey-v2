@@ -37,7 +37,7 @@ Central management server. Single instance per deployment.
 
 **Does NOT:**
 - Store ciphertext (only agentDEK)
-- Require manual unlock after setup (password file auto-unlock)
+- Auto-unlock by default (starts LOCKED; requires master password via web UI or optional `VEILKEY_PASSWORD_FILE`)
 
 **Port:** `:10181` (host: `11181`)
 

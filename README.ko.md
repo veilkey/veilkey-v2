@@ -53,7 +53,7 @@ docker compose up -d
 
 ## 라이선스
 
-GNU Affero General Public License v3.0 (MIT). [`LICENSE`](./LICENSE) 참조.
+MIT License. [`LICENSE`](./LICENSE) 참조.
 
 ## 보안 고지
 

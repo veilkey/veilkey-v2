@@ -6,17 +6,11 @@ It stores local ciphertext, configs, and runtime identity, and it executes node-
 
 ## Product Position
 
-VeilKey is split into:
+VeilKey self-hosted components:
 
-- `managed`
-  - `veilkey-docs`
-  - `veilkey-homepage`
-- `self-hosted`
-  - [`installer`](../../installer)
-  - [`vaultcenter`](../vaultcenter)
-  - `localvault` (this component)
-  - [`cli`](../../client/cli)
-  - [`proxy`](../proxy)
+- [`vaultcenter`](../vaultcenter) — central key management server
+- `localvault` (this component) — node-local vault runtime
+- [`veil-cli`](../veil-cli) — CLI tools (veil, veilkey-cli)
 
 ## Responsibilities
 
@@ -110,10 +104,10 @@ CGO_ENABLED=1 go build -ldflags="-s -w" -o veilkey-localvault .
 Initialization is performed automatically via the VaultCenter `init --child` command:
 
 ```bash
-veilkey-vaultcenter init --child \
-  --parent http://VAULTCENTER_IP:10180 \
---label my-service \
-  --install
+# Via registration token (issued from keycenter UI)
+echo 'password' | veilkey-localvault init --root \
+  --token vk_reg_xxx \
+  --center https://vaultcenter:10181
 ```
 
 Place a `.veilkey/context.json` at the project/service root. The cron heartbeat uses this context file.
