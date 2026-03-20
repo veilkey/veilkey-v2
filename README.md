@@ -209,6 +209,35 @@ See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 MIT License. See [`LICENSE`](./LICENSE).
 
+## How It Works (서버 재시작 시)
+
+VeilKey 서버가 재시작되면 **마스터 비밀번호를 다시 입력해야** 합니다.
+
+```
+서버 시작 → LOCKED 상태 (DEK 메모리에 없음)
+  → 웹 UI에서 마스터 비밀번호 입력
+  → KEK 유도 → DEK 복호화 → 메모리에 로드
+  → UNLOCKED (정상 동작)
+```
+
+**비밀번호는 어디에도 저장되지 않습니다.** KEK는 비밀번호 + salt로 매번 유도되고, DEK는 KEK로 암호화된 상태로만 DB에 존재. 서버가 꺼지면 KEK와 DEK 모두 메모리에서 사라집니다.
+
+`VEILKEY_PASSWORD_FILE` 환경변수로 자동 unlock을 설정할 수 있지만, 이 파일의 보안은 운영자 책임입니다.
+
+## Security
+
+**AI를 root 권한으로 절대 실행하지 마세요.**
+
+VeilKey는 AI가 시크릿에 접근하지 못하게 설계되었지만, root 권한이 있으면:
+- 프로세스 메모리 덤프 → DEK 추출 가능
+- `/data/` 디렉토리 직접 접근 → DB 파일 조작 가능
+- PTY 마스킹 우회 → `/proc/{pid}/fd/` 등으로 raw 출력 접근 가능
+
+**권장:**
+- AI 코딩 도구는 일반 사용자 권한으로 실행
+- `veil` 셸 안에서만 작업 → PTY 마스킹 보장
+- `sudo`가 필요한 작업은 veil 밖에서 직접 수행
+
 ## Security Disclaimer
 
 VeilKey is a security-sensitive tool that handles secrets and cryptographic material.

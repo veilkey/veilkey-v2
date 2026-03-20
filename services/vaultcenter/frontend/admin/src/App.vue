@@ -14,8 +14,13 @@
 <div v-else-if="state.ui.locked" class="unlock-shell">
     <div class="unlock-card">
         <div class="unlock-brand"><span class="brand-mark">VK</span><span class="brand-name">VeilKey</span></div>
-        <h1 class="unlock-heading">서버 잠금</h1>
-        <p class="unlock-desc">서버가 잠겨 있습니다. VEILKEY_PASSWORD_FILE 설정 후 서버를 재시작하세요.</p>
+        <h1 class="unlock-heading">잠금 해제</h1>
+        <p class="unlock-desc">마스터 비밀번호를 입력하세요.</p>
+        <form @submit.prevent="unlock(state.ui.unlockPassword)">
+            <input class="unlock-input" type="password" v-model="state.ui.unlockPassword" placeholder="마스터 비밀번호" autofocus>
+            <p v-if="state.ui.unlockError" class="unlock-error">{{ state.ui.unlockError }}</p>
+            <button class="unlock-btn" type="submit">잠금 해제</button>
+        </form>
     </div>
 </div>
 <div v-else class="app" data-app="vaultcenter-admin-shell">

@@ -102,7 +102,8 @@ const state = reactive({
         adminRequired: false,
         adminLoginError: '',
         locked: false,
-        unlockError: ''
+        unlockError: '',
+        unlockPassword: ''
     }
 });
 
