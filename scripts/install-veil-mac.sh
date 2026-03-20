@@ -79,7 +79,7 @@ cargo build --release --quiet 2>&1 | tail -5
 echo "  Built"
 
 # Install binaries
-echo "[4/6] Installing to $BIN_DIR (sudo required)..."
+echo "[4/6] Installing to $BIN_DIR..."
 RELEASE="$INSTALL_DIR/target/release"
 for bin in veil veilkey veilkey-cli veilkey-session-config; do
     if [ -f "$RELEASE/$bin" ]; then
@@ -89,19 +89,20 @@ for bin in veil veilkey veilkey-cli veilkey-session-config; do
     fi
 done
 
-# Create .veilkey/env
+# Create .veilkey/env (project-local config)
+VEILKEY_CFG_DIR="$INSTALL_DIR/.veilkey"
 echo "[5/6] Creating config..."
-mkdir -p "$INSTALL_DIR/.veilkey/config"
-cat > "$INSTALL_DIR/.veilkey/env" << EOF
+mkdir -p "$VEILKEY_CFG_DIR/config"
+cat > "$VEILKEY_CFG_DIR/env" << EOF
 #!/bin/sh
 export VEILKEY_LOCALVAULT_URL="$VEILKEY_URL"
 export VEILKEY_TLS_INSECURE=1
-export VEILKEY_CONFIG="$INSTALL_DIR/.veilkey/config/veilkey.yml"
+export VEILKEY_CONFIG="$VEILKEY_CFG_DIR/config/veilkey.yml"
 export VEILKEY_CLI_BIN=$BIN_DIR/veilkey-cli
 EOF
 
-if [ ! -f "$INSTALL_DIR/.veilkey/config/veilkey.yml" ]; then
-    echo "threshold: 0.7" > "$INSTALL_DIR/.veilkey/config/veilkey.yml"
+if [ ! -f "$VEILKEY_CFG_DIR/config/veilkey.yml" ]; then
+    echo "threshold: 0.7" > "$VEILKEY_CFG_DIR/config/veilkey.yml"
 fi
 
 # Docker
@@ -124,8 +125,7 @@ echo "   https://localhost:11181 접속 → 마스터/관리자 비밀번호 설
 echo ""
 echo "2. 사용:"
 echo "   cd $INSTALL_DIR"
-echo "   source .veilkey/env"
-echo "   veil"
+echo "   source .veilkey/env && veil"
 echo ""
 echo "3. 서버 재시작 후:"
 echo "   마스터 비밀번호 입력 필요 (https://localhost:11181)"
