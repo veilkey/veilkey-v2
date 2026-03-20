@@ -21,7 +21,8 @@ Open `https://localhost:11181` in your browser.
 
 - Enter master password (KEK derivation — remember this)
 - Enter admin password (web UI login)
-- Setup complete → auto-unlock on restart
+- Setup complete → server starts in LOCKED mode on restart (re-enter master password)
+- Optional: set `VEILKEY_PASSWORD_FILE` for auto-unlock (securing this file is your responsibility)
 
 ### 2. LocalVault Registration
 
