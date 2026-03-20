@@ -36,12 +36,16 @@ jobs:
         with:
           workspaces: services/veil-cli
 
-      - name: Start VeilKey services
+      - name: Build images
         run: |
           cp .env.example .env
           echo "VAULTCENTER_AUTO_COMPLETE_INSTALL_FLOW=1" >> .env
-          # Start vaultcenter first, wait for health, then start dependents
-          docker compose up -d --build --no-deps vaultcenter
+          docker compose build
+
+      - name: Start VeilKey services
+        run: |
+          # Start vaultcenter only, wait for health
+          docker compose up -d --no-deps vaultcenter
           echo "Waiting for VaultCenter..."
           for i in $(seq 1 90); do
             STATUS=$(curl -sk https://localhost:11181/health 2>/dev/null | grep -o '"status":"[^"]*"' || true)
@@ -51,8 +55,8 @@ jobs:
             fi
             sleep 3
           done
-          # Now start localvault and veil (depends_on satisfied)
-          docker compose up -d --build localvault veil
+          # Start dependents (images already built, healthcheck should pass now)
+          docker compose up -d
 
       - name: Unlock VaultCenter
         run: |
