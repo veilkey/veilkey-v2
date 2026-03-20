@@ -1,5 +1,20 @@
 <template>
-<div v-if="state.ui.adminRequired" class="unlock-shell">
+<div v-if="state.ui.adminSetupRequired" class="unlock-shell">
+    <div class="unlock-card">
+        <div class="unlock-brand"><span class="brand-mark">VK</span><span class="brand-name">VeilKey</span></div>
+        <h1 class="unlock-heading">관리자 초기 설정</h1>
+        <p class="unlock-desc">관리자 비밀번호를 처음 설정합니다.<br>본인 확인을 위해 소유자(마스터) 비밀번호를 먼저 입력하세요.</p>
+        <div v-if="state.ui.adminSetupError" class="unlock-error">{{ state.ui.adminSetupError }}</div>
+        <form class="unlock-form" @submit.prevent="(e) => adminSetup(e.target.owner_password.value, e.target.admin_password.value)">
+            <label class="unlock-label">소유자(마스터) 비밀번호</label>
+            <input class="unlock-input" type="password" name="owner_password" placeholder="서버 잠금 해제에 사용하는 비밀번호" autocomplete="off" autofocus required />
+            <label class="unlock-label" style="margin-top:12px">새 관리자 비밀번호 (8자 이상)</label>
+            <input class="unlock-input" type="password" name="admin_password" placeholder="관리자 로그인에 사용할 비밀번호" autocomplete="new-password" required minlength="8" />
+            <button class="unlock-btn" type="submit" style="margin-top:16px">관리자 비밀번호 설정</button>
+        </form>
+    </div>
+</div>
+<div v-else-if="state.ui.adminRequired" class="unlock-shell">
     <div class="unlock-card">
         <div class="unlock-brand"><span class="brand-mark">VK</span><span class="brand-name">VeilKey</span></div>
         <h1 class="unlock-heading">관리자 로그인</h1>
@@ -1076,6 +1091,7 @@ const {
   auditVaultCount,
   auditTotalCount,
   auditSelectedVault,
+  adminSetup,
   adminLogin,
   adminLogout,
   unlock,

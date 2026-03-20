@@ -106,6 +106,8 @@ const state = reactive({
         rightHTML: '',
         twoPane: false,
         adminRequired: false,
+        adminSetupRequired: false,
+        adminSetupError: '',
         adminLoginError: '',
         locked: false,
         unlockError: '',
@@ -3112,6 +3114,20 @@ async function handleAction(action, dataset) {
     syncPageData();
   }
 
+async function adminSetup(ownerPassword, adminPassword) {
+    state.ui.adminSetupError = '';
+    try {
+        await request('/api/admin/setup', {
+            method: 'POST',
+            body: JSON.stringify({ owner_password: ownerPassword, admin_password: adminPassword })
+        });
+        state.ui.adminSetupRequired = false;
+        state.ui.adminRequired = true; // Now show login screen
+    } catch (err) {
+        state.ui.adminSetupError = err.message || '설정에 실패했습니다.';
+    }
+}
+
 async function adminLogin(password) {
     state.ui.adminLoginError = '';
     try {
@@ -3163,7 +3179,7 @@ async function boot() {
     try {
         const check = await request('/api/admin/check');
         if (check && check.setup_required) {
-            state.ui.adminRequired = true;
+            state.ui.adminSetupRequired = true;
             return;
         }
     } catch (err) {
@@ -3207,6 +3223,7 @@ async function boot() {
 
 return {
                 state,
+                adminSetup,
                 adminLogin,
                 adminLogout,
                 unlock,
