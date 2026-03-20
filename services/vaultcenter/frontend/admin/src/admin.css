@@ -130,6 +130,15 @@
         .topbar-status {
             display: none;
         }
+        .unlock-info {
+            margin-top: 16px;
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.5);
+            line-height: 1.5;
+        }
+        .unlock-info p {
+            margin: 2px 0;
+        }
         .topbar-logout {
             background: none;
             border: 1px solid rgba(255,255,255,0.2);

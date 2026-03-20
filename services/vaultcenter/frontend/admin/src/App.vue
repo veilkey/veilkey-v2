@@ -21,6 +21,11 @@
             <p v-if="state.ui.unlockError" class="unlock-error">{{ state.ui.unlockError }}</p>
             <button class="unlock-btn" type="submit">잠금 해제</button>
         </form>
+        <div class="unlock-info">
+            <p>비밀번호는 어디에도 저장되지 않습니다.</p>
+            <p>메모리에서만 사용되며, 서버 재시작 시 다시 입력해야 합니다.</p>
+            <p style="margin-top:8px;color:#e05050">⚠ AI를 root 권한으로 실행하지 마세요.</p>
+        </div>
     </div>
 </div>
 <div v-else class="app" data-app="vaultcenter-admin-shell">
