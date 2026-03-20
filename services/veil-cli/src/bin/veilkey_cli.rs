@@ -574,6 +574,21 @@ mod pty_wrap {
         }
     }
 
+    const CYAN: &str = "\x1b[36m";
+    const RED: &str = "\x1b[31m";
+    const RESET: &str = "\x1b[0m";
+    const BOLD: &str = "\x1b[1m";
+
+    fn colorize_ref(vk_ref: &str) -> String {
+        if vk_ref.contains(":LOCAL:") {
+            format!("{}{}{}{}", BOLD, CYAN, vk_ref, RESET)
+        } else if vk_ref.contains(":TEMP:") {
+            format!("{}{}{}{}", BOLD, RED, vk_ref, RESET)
+        } else {
+            vk_ref.to_string()
+        }
+    }
+
     fn mask_output(data: &[u8], mask_map: &[(String, String)]) -> Vec<u8> {
         if mask_map.is_empty() {
             return data.to_vec();
@@ -581,7 +596,8 @@ mod pty_wrap {
         let mut s = String::from_utf8_lossy(data).to_string();
         for (plaintext, vk_ref) in mask_map {
             if !plaintext.is_empty() && s.contains(plaintext.as_str()) {
-                s = s.replace(plaintext.as_str(), vk_ref.as_str());
+                let colored = colorize_ref(vk_ref);
+                s = s.replace(plaintext.as_str(), &colored);
             }
         }
         s.into_bytes()
