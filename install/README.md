@@ -15,9 +15,10 @@ Troubleshooting: [vaultcenter/troubleshoot.md](./macos/vaultcenter/troubleshoot.
 
 ### Proxmox LXC (Debian)
 
-| Script | Guide |
-|--------|-------|
-| `proxmox-lxc-debian/install-veilkey.sh` | [install-veilkey.md](./proxmox-lxc-debian/install-veilkey.md) |
+| Component | Install | Uninstall | Guide |
+|-----------|---------|-----------|-------|
+| VeilKey (LXC) | `install-veilkey.sh` | - | [install-veilkey.md](./proxmox-lxc-debian/install-veilkey.md) |
+| veil-cli (host) | `install-veil-cli.sh` | `uninstall-veil-cli.sh` | [install-veil-cli.md](./proxmox-lxc-debian/install-veil-cli.md) |
 
 ### Common
 
