@@ -12,7 +12,14 @@
 
 ## What is VeilKey?
 
-VeilKey is a self-hosted secret manager where **AI coding tools never see your passwords**.
+<div align="center">
+  <img src=".github/concept.jpeg" alt="VeilKey concept — AI sees VK:AF1Y45, real key is PASS1234" width="640">
+  <p><em>AI sees <code>VK:AF1Y45</code> on screen. The real key <code>PASS1234</code> stays hidden.</em></p>
+</div>
+
+VeilKey was built for one reason: **AI should never see your secrets.**
+
+AI coding tools (Claude Code, Cursor, Copilot) read your terminal output, environment variables, and files. If a password appears anywhere, AI sees it. VeilKey wraps your terminal in a PTY filter that replaces real secrets with encrypted references in real time.
 
 ```bash
 # Inside a veil shell
@@ -23,7 +30,7 @@ DB_PASSWORD=VK:LOCAL:ea2bfd16    # What AI sees
 $ npm start                       # DB_PASSWORD=actual-secret
 ```
 
-When secrets appear in PTY output, they are automatically replaced with VK refs. Claude Code, Cursor, Copilot — no AI tool can see the plaintext.
+When secrets appear in PTY output, they are automatically replaced with VK refs. 222 built-in patterns detect API keys, tokens, and passwords on the fly — even ones you haven't registered yet.
 
 ## Architecture
 
