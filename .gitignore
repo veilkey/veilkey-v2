@@ -54,3 +54,4 @@ services/*/main
 .claude/
 packages/veil-cli/native/
 .localvault/
+tests/smoke/results/*.tap
