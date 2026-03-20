@@ -51,59 +51,51 @@ veil CLI (PTY 마스킹)
 ### macOS
 
 ```bash
-curl -sL https://gist.githubusercontent.com/dalsoop/990c3706a62834599b0d9f5316a314ad/raw/install-veilkey.sh | bash
-```
+# 방법 1: npm (권장)
+npm install -g veilkey-cli
+sudo codesign --force --sign - $(npm prefix -g)/lib/node_modules/veilkey-cli/native/*
 
-이 한 줄로:
-- repo 클론 (`~/.veilkey`)
-- Docker 서비스 시작 (VaultCenter + LocalVault + veil)
-- Rust CLI 빌드 + ad-hoc 코드 서명
-- 셸 환경변수 설정 (`~/.zshrc`)
+# 방법 2: 소스 빌드 + Docker
+git clone https://github.com/veilkey/veilkey-selfhosted.git
+cd veilkey-selfhosted
+bash scripts/install-veil-mac.sh
+```
 
 설치 후:
 1. `https://localhost:11181` → 마스터 + 관리자 비밀번호 설정
-2. 터미널 재시작
-3. `veil` 입력 → 보호 셸 진입
-
-삭제:
-```bash
-curl -sL https://gist.githubusercontent.com/dalsoop/990c3706a62834599b0d9f5316a314ad/raw/uninstall-veilkey.sh | bash
-```
+2. `cd veilkey-selfhosted && veil` → 보호 셸 진입
 
 ### Linux
 
 ```bash
 # 1. 의존성
-sudo apt install -y git docker.io docker-compose-plugin
+sudo apt install -y git docker.io docker-compose-plugin nodejs npm
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 
 # 2. 클론 + 서비스 시작
-git clone https://github.com/veilkey/veilkey-selfhosted.git ~/.veilkey
-cd ~/.veilkey
+git clone https://github.com/veilkey/veilkey-selfhosted.git
+cd veilkey-selfhosted
+cp .env.example .env
 docker compose up -d
 
-# 3. CLI 빌드 + 설치
-cargo build --release
-sudo cp target/release/{veil,veilkey,veilkey-cli,veilkey-session-config} /usr/local/bin/
+# 3. CLI 설치
+npm install -g veilkey-cli
+# 또는 소스 빌드:
+# cargo build --release
+# sudo cp target/release/{veil,veilkey,veilkey-cli,veilkey-session-config} /usr/local/bin/
 
-# 4. 셸 설정
-cat >> ~/.bashrc << 'EOF'
-# VeilKey
-export VEILKEY_LOCALVAULT_URL="https://localhost:11181"
-export VEILKEY_TLS_INSECURE=1
-export VEILKEY_CONFIG="$HOME/.veilkey.yml"
-export VEILKEY_BIN=/usr/local/bin/veilkey
-export VEILKEY_CLI_BIN=/usr/local/bin/veilkey-cli
-export VEILKEY_VK_BIN=/usr/local/bin/veilkey
-export VEILKEY_SESSION_CONFIG_BIN=/usr/local/bin/veilkey-session-config
-EOF
-cp services/veil-cli/examples/.veilkey.yml ~/.veilkey.yml
-source ~/.bashrc
-
-# 5. 셋업 + 진입
+# 4. 셋업 + 진입
 # https://localhost:11181 → 비밀번호 설정
 veil
+```
+
+### 업데이트
+
+```bash
+npm update -g veilkey-cli          # CLI 업데이트
+cd veilkey-selfhosted && git pull  # 서버 업데이트
+docker compose up --build -d       # Docker 재빌드
 ```
 
 ### LocalVault 별도 설치
