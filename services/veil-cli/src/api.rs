@@ -184,7 +184,10 @@ impl VeilKeyClient {
                 let data: serde_json::Value = resp.into_json().unwrap_or_default();
                 data["refs"].as_array().cloned().unwrap_or_default()
             }
-            Err(_) => return mask_map,
+            Err(e) => {
+                eprintln!("[veilkey] failed to fetch refs: {}", e);
+                return mask_map;
+            }
         };
 
         // 2. Resolve each ref to get plaintext → canonical mapping
@@ -193,9 +196,15 @@ impl VeilKeyClient {
                 Some(c) => c,
                 None => continue,
             };
-            let resolve_resp = self.agent.get(
-                &format!("{}/api/resolve/{}", self.base_url, urlencoding::encode(canonical))
-            ).call();
+            let resolve_url = format!("{}/api/resolve/{}", self.base_url, urlencoding::encode(canonical));
+            let resolve_resp = self.agent.get(&resolve_url).call();
+            match &resolve_resp {
+                Err(e) => {
+                    eprintln!("[veilkey] resolve {} failed: {}", canonical, e);
+                    continue;
+                }
+                _ => {}
+            }
             if let Ok(resp) = resolve_resp {
                 let data: serde_json::Value = resp.into_json().unwrap_or_default();
                 if let Some(value) = data["value"].as_str() {
