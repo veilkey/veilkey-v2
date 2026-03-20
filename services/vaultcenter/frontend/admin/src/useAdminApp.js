@@ -38,6 +38,12 @@ const state = reactive({
     status: null,
     uiConfig: null,
     systemUpdate: null,
+    authSettings: null,
+    totpEnrollStep: null,
+    totpSecret: null,
+    totpOtpauthURI: null,
+    recoveryCodes: [],
+    recoveryCopied: false,
     globalQuery: '',
     vaults: [],
     selectedVault: null,
@@ -170,6 +176,7 @@ function tabLabelKey(tab) {
         FUNCTION_RUN: 'tab_function_run',
         AUDIT_LOG: 'tab_audit_log',
         UI: 'tab_ui',
+        SECURITY: 'tab_security',
         ADMIN: 'tab_admin'
     }[tab] || tab;
 }
@@ -264,7 +271,7 @@ function navCount(page) {
     if (page === 'vaults') return state.vaults.length;
     if (page === 'functions') return state.functions.length;
     if (page === 'audit') return auditTotalCount();
-    if (page === 'settings') return state.uiConfig ? 2 : 0;
+    if (page === 'settings') return state.uiConfig ? 3 : 0;
     return 0;
 }
 
@@ -1425,11 +1432,15 @@ function prettyJSON(value) {
 }
 
 function settingsCenterTitle() {
-    return activeTab() === 'ADMIN' ? t('admin_settings') : t('ui_settings');
+    if (activeTab() === 'ADMIN') return t('admin_settings');
+    if (activeTab() === 'SECURITY') return t('security_title');
+    return t('ui_settings');
 }
 
 function settingsRightPaneTitle() {
-    return activeTab() === 'ADMIN' ? t('admin_setting_detail') : t('edit_ui_config');
+    if (activeTab() === 'ADMIN') return t('admin_setting_detail');
+    if (activeTab() === 'SECURITY') return t('security_title');
+    return t('edit_ui_config');
 }
 
 function syncVaultVuePanels() {
@@ -1828,6 +1839,84 @@ async function loadSystemUpdate() {
     } catch (err) {
         setMessage('error', 'Failed to load update status: ' + err.message);
     }
+}
+
+async function loadAuthSettings() {
+    try {
+        state.authSettings = await request('/api/admin/auth/settings');
+    } catch (err) {
+        // Auth settings may not be available if not authenticated
+    }
+}
+
+async function startTOTPEnroll() {
+    try {
+        const data = await request('/api/admin/auth/totp/enroll/start', { method: 'POST' });
+        state.totpSecret = data.secret;
+        state.totpOtpauthURI = data.otpauth_uri;
+        state.totpEnrollStep = 'qr';
+        state.recoveryCodes = [];
+        state.recoveryCopied = false;
+        render();
+    } catch (err) {
+        setMessage('error', err.message);
+    }
+}
+
+async function verifyTOTPEnroll(code) {
+    try {
+        await request('/api/admin/auth/totp/enroll/verify', {
+            method: 'POST',
+            body: JSON.stringify({ code })
+        });
+        // Generate recovery codes (client-side, backed by crypto.getRandomValues)
+        state.recoveryCodes = Array.from({ length: 5 }, () => {
+            const bytes = new Uint8Array(32);
+            crypto.getRandomValues(bytes);
+            return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        });
+        state.totpEnrollStep = 'recovery';
+        state.authSettings = await request('/api/admin/auth/settings');
+        render();
+    } catch (err) {
+        setMessage('error', err.message);
+    }
+}
+
+function copyRecoveryCodes() {
+    const text = state.recoveryCodes.join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+        state.recoveryCopied = true;
+        render();
+    });
+}
+
+function downloadRecoveryCodes() {
+    const text = state.recoveryCodes.join('\n');
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'veilkey-recovery-codes.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function printRecoveryCodes() {
+    const text = state.recoveryCodes.join('\n');
+    const win = window.open('', '_blank');
+    win.document.write('<pre style="font-size:14px;line-height:2">' + text + '</pre>');
+    win.document.close();
+    win.print();
+}
+
+function finishTOTPEnroll() {
+    state.totpEnrollStep = null;
+    state.totpSecret = null;
+    state.totpOtpauthURI = null;
+    state.recoveryCodes = [];
+    state.recoveryCopied = false;
+    render();
 }
 
 async function loadVaults() {
@@ -2356,6 +2445,7 @@ async function syncPageData() {
         } else if (state.activePage === 'settings') {
             await loadUIConfig();
             await loadSystemUpdate();
+            await loadAuthSettings();
         }
         setMessage(null, null);
     } catch (err) {
@@ -2619,6 +2709,15 @@ async function handleFormSubmit(form) {
             await syncPageData();
             return;
         }
+        if (formType === 'verify-totp-enroll') {
+            const code = String(data.get('code') || '').trim();
+            if (code.length !== 6) {
+                setMessage('error', 'Enter a 6-digit code');
+                return;
+            }
+            await verifyTOTPEnroll(code);
+            return;
+        }
         if (formType === 'save-admin-update-settings') {
             const payload = {
                 locale: String(state.uiConfig.locale || 'ko'),
@@ -2664,6 +2763,21 @@ async function handleAction(action, dataset) {
         if (action === 'clear-audit-key') {
             state.auditKey = null;
             return syncPageData();
+        }
+        if (action === 'start-totp-enroll') {
+            return startTOTPEnroll();
+        }
+        if (action === 'finish-totp-enroll') {
+            return finishTOTPEnroll();
+        }
+        if (action === 'copy-recovery-codes') {
+            return copyRecoveryCodes();
+        }
+        if (action === 'download-recovery-codes') {
+            return downloadRecoveryCodes();
+        }
+        if (action === 'print-recovery-codes') {
+            return printRecoveryCodes();
         }
         if (action === 'run-system-update') {
             await request('/api/system/update', {

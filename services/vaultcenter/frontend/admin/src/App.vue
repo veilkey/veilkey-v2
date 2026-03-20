@@ -795,6 +795,69 @@
                                         <template v-if="!state.uiConfig">
                                             <div class="empty">{{ t('loading_ui_config') }}</div>
                                         </template>
+                                        <template v-else-if="activeTab() === 'SECURITY'">
+                                            <!-- 2FA Section -->
+                                            <div class="card">
+                                                <div class="card-title">{{ t('security_2fa_title') }}</div>
+                                                <div class="stack">
+                                                    <div class="value">{{ t('security_2fa_desc') }}</div>
+                                                    <div v-if="state.authSettings && state.authSettings.totp_enrolled" class="stack">
+                                                        <div class="pill pill-success" style="display:inline-block;padding:4px 12px">✓ {{ t('security_2fa_enabled') }}</div>
+                                                    </div>
+                                                    <div v-else class="stack">
+                                                        <div class="pill pill-warn" style="display:inline-block;padding:4px 12px">{{ t('security_2fa_disabled') }}</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <!-- TOTP Enrollment Flow -->
+                                            <div class="card" v-if="state.totpEnrollStep === 'qr'">
+                                                <div class="card-title">{{ t('security_2fa_enable') }}</div>
+                                                <div class="stack" style="gap:16px">
+                                                    <div class="value">{{ t('security_2fa_step1') }}</div>
+                                                    <div style="text-align:center;padding:16px;background:#fff;border-radius:8px;display:inline-block">
+                                                        <img :src="'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(state.totpOtpauthURI)" alt="QR Code" style="width:200px;height:200px">
+                                                    </div>
+                                                    <div class="value" style="font-family:monospace;word-break:break-all;font-size:0.85rem;background:#f3f4f6;padding:8px;border-radius:4px">{{ state.totpSecret }}</div>
+                                                    <div class="value">{{ t('security_2fa_step2') }}</div>
+                                                    <form data-form="verify-totp-enroll" class="inline-actions" style="gap:8px">
+                                                        <input class="field" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="000000" autocomplete="off" style="max-width:140px;font-size:1.2rem;letter-spacing:0.3em;text-align:center">
+                                                        <button class="btn btn-primary" type="submit">{{ t('security_2fa_verify') }}</button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                            <!-- Recovery Codes -->
+                                            <div class="card" v-if="state.totpEnrollStep === 'recovery'">
+                                                <div class="card-title" style="color:#16a34a">✓ {{ t('security_2fa_success') }}</div>
+                                                <div class="stack" style="gap:12px">
+                                                    <div class="card-title">{{ t('security_recovery_title') }}</div>
+                                                    <div class="value" style="color:#dc2626;font-weight:600">{{ t('security_recovery_warning') }}</div>
+                                                    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px;font-family:monospace;font-size:0.85rem;line-height:2">
+                                                        <div v-for="code in state.recoveryCodes" :key="code">{{ code }}</div>
+                                                    </div>
+                                                    <div class="inline-actions" style="gap:8px">
+                                                        <button class="btn btn-soft" data-action="copy-recovery-codes">{{ t('security_recovery_copy') }}</button>
+                                                        <button class="btn btn-soft" data-action="download-recovery-codes">{{ t('security_recovery_download') }}</button>
+                                                        <button class="btn btn-soft" data-action="print-recovery-codes">{{ t('security_recovery_print') }}</button>
+                                                    </div>
+                                                    <div v-if="state.recoveryCopied" class="value" style="color:#16a34a">✓ {{ t('security_recovery_copied') }}</div>
+                                                    <div class="value" style="color:#6b7280;font-style:italic">{{ t('security_recovery_confirm') }}</div>
+                                                    <button class="btn btn-primary" data-action="finish-totp-enroll">{{ t('security_recovery_back') }}</button>
+                                                </div>
+                                            </div>
+                                            <!-- Enable 2FA Button -->
+                                            <div v-if="!state.totpEnrollStep && !(state.authSettings && state.authSettings.totp_enrolled)">
+                                                <button class="btn btn-primary" data-action="start-totp-enroll">{{ t('security_2fa_enable') }}</button>
+                                            </div>
+                                            <!-- Passkey Section -->
+                                            <div class="card" style="margin-top:24px">
+                                                <div class="card-title">{{ t('security_passkey_title') }}</div>
+                                                <div class="stack">
+                                                    <div class="value">{{ t('security_passkey_desc') }}</div>
+                                                    <div class="value" style="color:#6b7280;font-style:italic">{{ t('security_passkey_none') }}</div>
+                                                    <button class="btn btn-soft" data-action="register-passkey" disabled style="opacity:0.5">{{ t('security_passkey_register') }} (coming soon)</button>
+                                                </div>
+                                            </div>
+                                        </template>
                                         <template v-else-if="activeTab() === 'ADMIN'">
                                             <div class="card">
                                                 <div class="card-title">{{ t('system_update') }}</div>
@@ -833,6 +896,9 @@
                                     <div class="pane-content">
                                         <template v-if="!state.uiConfig">
                                             <div class="empty">{{ t('loading') }}</div>
+                                        </template>
+                                        <template v-else-if="activeTab() === 'SECURITY'">
+                                            <div class="empty">{{ t('security_title') }}</div>
                                         </template>
                                         <template v-else-if="activeTab() === 'ADMIN'">
                                             <div class="card">
