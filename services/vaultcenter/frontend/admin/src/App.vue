@@ -1011,6 +1011,7 @@ const {
   auditTotalCount,
   auditSelectedVault,
   adminLogin,
+  adminLogout,
   unlock,
   encodeURIComponent
 } = useAdminApp();
