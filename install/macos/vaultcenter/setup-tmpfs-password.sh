@@ -7,6 +7,9 @@ set -euo pipefail
 # Creates a 1MB RAM disk, copies password file there, updates launchd plist.
 # Password exists only in RAM — gone on reboot.
 # After reboot, manually copy password back or unlock via POST /api/unlock.
+#
+# ⚠️  이 스크립트의 실행으로 발생하는 모든 결과에 대한
+#     귀책사유는 실행자 본인에게 있습니다.
 
 RAMDISK_SIZE_SECTORS=2048  # 1MB (512 bytes per sector)
 RAMDISK_MOUNT="/Volumes/veilkey-secrets"
