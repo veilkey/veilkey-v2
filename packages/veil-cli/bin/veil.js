@@ -87,6 +87,12 @@ export PS1="\\[\\033[36m\\](VEIL)\\[\\033[0m\\] \\h:\\W \\u\\$ "
   try {
     execFileSync(cliBin, ["wrap-pty", "bash", "--rcfile", rcPath], { stdio: "inherit" });
   } catch (e) {
+    if (e.status === null || e.signal === 'SIGKILL') {
+      console.error("[veilkey] Binary was killed by macOS. Run:");
+      console.error("  sudo codesign --force --sign -", cliBin);
+    } else if (e.status) {
+      console.error("[veilkey] exit:", e.status);
+    }
     process.exit(e.status || 1);
   } finally {
     try { fs.unlinkSync(rcPath); } catch (_) {}

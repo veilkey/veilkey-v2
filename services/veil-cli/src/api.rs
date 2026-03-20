@@ -85,6 +85,7 @@ impl VeilKeyClient {
     }
 
     pub fn issue(&self, value: &str) -> Result<String, String> {
+        let value = value.trim_end_matches(|c: char| c == '\r' || c == '\n');
         {
             let cache = self.cache.lock().unwrap();
             if let Some(vk) = cache.get(value) {
@@ -208,8 +209,9 @@ impl VeilKeyClient {
             if let Ok(resp) = resolve_resp {
                 let data: serde_json::Value = resp.into_json().unwrap_or_default();
                 if let Some(value) = data["value"].as_str() {
-                    if !value.is_empty() {
-                        mask_map.push((value.to_string(), canonical.to_string()));
+                    let trimmed = value.trim_end_matches(|c| c == '\r' || c == '\n');
+                    if !trimmed.is_empty() {
+                        mask_map.push((trimmed.to_string(), canonical.to_string()));
                     }
                 }
             }

@@ -624,7 +624,7 @@ patterns:
 
   # ── NPM ──
   - name: npm-access-token
-    regex: "(?i)\\b(npm_[a-z0-9]{36})(?:[\\x60'\"\\s;]|\\\\[nr]|$)"
+    regex: "\\b(npm_[A-Za-z0-9]{36,})(?:[\\x60'\"\\s;]|\\\\[nr]|$)"
     confidence: 55
 
   # ── Nuget ──

@@ -10,9 +10,15 @@ const binaries = ["veil", "veilkey", "veilkey-cli", "veilkey-session-config"];
 const allExist = binaries.every(b => fs.existsSync(path.join(nativeDir, b)));
 
 if (allExist) {
-  // Make executable
+  // Make executable + codesign for macOS
   for (const b of binaries) {
-    fs.chmodSync(path.join(nativeDir, b), 0o755);
+    const binPath = path.join(nativeDir, b);
+    fs.chmodSync(binPath, 0o755);
+    if (process.platform === "darwin") {
+      try {
+        execSync(`codesign --force --sign - "${binPath}" 2>/dev/null`, { stdio: "ignore" });
+      } catch (_) {}
+    }
   }
   console.log("[veilkey] Native binaries ready.");
 } else {

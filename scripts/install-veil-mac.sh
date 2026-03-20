@@ -7,9 +7,6 @@ set -euo pipefail
 #   cd veilkey-selfhosted
 #   bash scripts/install-veil-mac.sh
 #
-# Multiple instances: clone to different directories, use different ports:
-#   VEILKEY_URL=https://localhost:11182 bash scripts/install-veil-mac.sh
-#
 # ⚠️  이 스크립트의 실행으로 발생하는 모든 결과에 대한
 #     귀책사유는 실행자 본인에게 있습니다.
 
@@ -23,24 +20,20 @@ if [ ! -f "docker-compose.yml" ] || [ ! -d "services" ]; then
 fi
 
 REPO_ROOT="$(pwd)"
-BIN_DIR="${VEILKEY_BIN_DIR:-$HOME/.local/bin}"
 VEILKEY_URL="${VEILKEY_URL:-https://localhost:11181}"
 
 echo "=== VeilKey installer (macOS) ==="
 echo ""
-echo "  Project:  $REPO_ROOT"
-echo "  Binaries: $BIN_DIR"
-echo "  URL:      $VEILKEY_URL"
+echo "  Project: $REPO_ROOT"
+echo "  URL:     $VEILKEY_URL"
 echo ""
 
-# Ensure bin dir exists
-mkdir -p "$BIN_DIR"
-
 # Check prerequisites
-for cmd in cargo docker; do
+for cmd in npm cargo docker; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "ERROR: $cmd not found."
         case $cmd in
+            npm)    echo "  Install: brew install node" ;;
             cargo)  echo "  Install: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh" ;;
             docker) echo "  Install: https://docs.docker.com/desktop/install/mac-install/" ;;
         esac
@@ -50,20 +43,29 @@ done
 echo "[1/5] Prerequisites OK"
 
 # Build CLI
-echo "[2/5] Building CLI (first run may take a few minutes)..."
+echo "[2/5] Building CLI..."
 cargo build --release --quiet 2>&1 | tail -3
 echo "  Built"
 
-# Install binaries
-echo "[3/5] Installing to $BIN_DIR..."
-RELEASE="$REPO_ROOT/target/release"
+# Install via npm (Gatekeeper-safe)
+echo "[3/5] Installing via npm..."
+mkdir -p "$REPO_ROOT/packages/veil-cli/native"
 for bin in veil veilkey veilkey-cli veilkey-session-config; do
-    if [ -f "$RELEASE/$bin" ]; then
-        cp "$RELEASE/$bin" "$BIN_DIR/$bin"
-        xattr -cr "$BIN_DIR/$bin" 2>/dev/null || true
-        echo "  $bin ✓"
+    if [ -f "$REPO_ROOT/target/release/$bin" ]; then
+        cp "$REPO_ROOT/target/release/$bin" "$REPO_ROOT/packages/veil-cli/native/$bin"
     fi
 done
+npm install -g "$REPO_ROOT/packages/veil-cli" 2>&1 | tail -2
+
+# Codesign native binaries (macOS Sequoia requirement)
+NPM_NATIVE="$(npm prefix -g)/lib/node_modules/veilkey-cli/native"
+echo "  Signing binaries (sudo required)..."
+for bin in veil veilkey veilkey-cli veilkey-session-config; do
+    if [ -f "$NPM_NATIVE/$bin" ]; then
+        sudo codesign --force --sign - "$NPM_NATIVE/$bin" 2>/dev/null || true
+    fi
+done
+echo "  Installed + signed"
 
 # Create .veilkey/env (project-local)
 echo "[4/5] Creating .veilkey/env..."
@@ -73,7 +75,7 @@ cat > "$REPO_ROOT/.veilkey/env" << EOF
 export VEILKEY_LOCALVAULT_URL="$VEILKEY_URL"
 export VEILKEY_TLS_INSECURE=1
 export VEILKEY_CONFIG="$REPO_ROOT/.veilkey/config/veilkey.yml"
-export VEILKEY_CLI_BIN=$BIN_DIR/veilkey-cli
+export VEILKEY_CLI_BIN=$(npm prefix -g)/lib/node_modules/veilkey-cli/native/veilkey-cli
 EOF
 
 if [ ! -f "$REPO_ROOT/.veilkey/config/veilkey.yml" ]; then
@@ -82,29 +84,34 @@ fi
 
 # Docker
 echo "[5/5] Starting services..."
-docker compose up --build -d 2>&1 | tail -5
-
-echo ""
-# Check PATH
-if ! echo "$PATH" | tr ':' '\n' | grep -q "^$BIN_DIR$"; then
-    echo "⚠️  $BIN_DIR 가 PATH에 없습니다:"
-    echo "   echo 'export PATH=\"$BIN_DIR:\$PATH\"' >> ~/.zshrc && source ~/.zshrc"
+# Check port conflict
+OWN_DOCKER=false
+if docker compose ps --quiet 2>/dev/null | grep -q .; then
+    OWN_DOCKER=true
+fi
+PORT="${VEILKEY_URL##*:}"
+PORT="${PORT%%/*}"
+if [ "$OWN_DOCKER" = false ] && lsof -i ":$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
     echo ""
+    echo "⚠️  포트 $PORT 가 이미 사용 중입니다."
+    echo "   기존 인스턴스: cd <경로> && docker compose down"
+    echo "   다른 포트:     VEILKEY_URL=https://localhost:$((PORT+1)) bash scripts/install-veil-mac.sh"
+    echo "   Docker 건너뜁니다."
+else
+    # Create .env if missing
+    [ ! -f "$REPO_ROOT/.env" ] && cp "$REPO_ROOT/.env.example" "$REPO_ROOT/.env" 2>/dev/null || true
+    docker compose up --build -d 2>&1 | tail -5
 fi
 
+echo ""
 echo "=== Installation complete ==="
 echo ""
 echo "1. 초기 설정:"
-echo "   https://localhost:${VEILKEY_URL##*:} 접속 → 마스터/관리자 비밀번호 설정"
+echo "   https://localhost:${PORT} 접속 → 마스터/관리자 비밀번호 설정"
 echo ""
 echo "2. 사용:"
-echo "   cd $REPO_ROOT"
-echo "   source .veilkey/env && veil"
+echo "   cd $REPO_ROOT && veil"
 echo ""
-echo "3. 여러 인스턴스:"
-echo "   다른 폴더에 clone → 다른 포트로 설치:"
-echo "   VEILKEY_URL=https://localhost:11182 bash scripts/install-veil-mac.sh"
-echo ""
-echo "4. 서버 재시작 후:"
+echo "3. 서버 재시작 후:"
 echo "   마스터 비밀번호 입력 필요 (비밀번호는 메모리에만 존재)"
 echo ""

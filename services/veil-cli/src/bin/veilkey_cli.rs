@@ -1,5 +1,5 @@
 use veil_cli_rs::api::VeilKeyClient;
-use veil_cli_rs::config::load_config;
+use veil_cli_rs::config::{load_config, CompiledPattern};
 use veil_cli_rs::detector::SecretDetector;
 use veil_cli_rs::logger::SessionLogger;
 use veil_cli_rs::output::{Finding, Formatter};
@@ -552,7 +552,7 @@ fn cmd_proxy(args: &[String]) {
 
 #[cfg(unix)]
 mod pty_wrap {
-    use veil_cli_rs::{api::VeilKeyClient, config, state::state_dir};
+    use veil_cli_rs::{api::VeilKeyClient, config::{self, load_config, CompiledPattern}, state::state_dir};
     use nix::libc;
     use nix::sys::signal::{self, SigHandler, Signal};
     use nix::unistd::{execvp, fork, ForkResult};
@@ -589,17 +589,52 @@ mod pty_wrap {
         }
     }
 
-    fn mask_output(data: &[u8], mask_map: &[(String, String)]) -> Vec<u8> {
-        if mask_map.is_empty() {
-            return data.to_vec();
+    /// Colorize a VK ref and pad to match original secret length (prevents cursor shift)
+    fn padded_colorize_ref(vk_ref: &str, original_len: usize) -> String {
+        let colored = colorize_ref(vk_ref);
+        let visible_len = vk_ref.len();
+        if visible_len < original_len {
+            format!("{}{}", colored, " ".repeat(original_len - visible_len))
+        } else {
+            colored
         }
+    }
+
+    fn mask_output(data: &[u8], mask_map: &[(String, String)], patterns: &[CompiledPattern], client: &VeilKeyClient, _recent_input: &str) -> Vec<u8> {
         let mut s = String::from_utf8_lossy(data).to_string();
+
+        // 1. Known secrets from mask_map — padded to same visible length
         for (plaintext, vk_ref) in mask_map {
             if !plaintext.is_empty() && s.contains(plaintext.as_str()) {
-                let colored = colorize_ref(vk_ref);
-                s = s.replace(plaintext.as_str(), &colored);
+                s = s.replace(plaintext.as_str(), &padded_colorize_ref(vk_ref, plaintext.len()));
             }
         }
+
+        // 2. Pattern-detected secrets — scan, register, replace with padding
+        let scan_copy = s.clone();
+        for pat in patterns {
+            for caps in pat.regex.captures_iter(&scan_copy) {
+                let m = caps.get(pat.group.max(1))
+                    .or_else(|| caps.get(1))
+                    .unwrap_or_else(|| caps.get(0).unwrap());
+                let secret = m.as_str().trim_end_matches(|c: char| c == '\r' || c == '\n');
+                if secret.len() < 8 || secret.starts_with("VK:") {
+                    continue;
+                }
+                if mask_map.iter().any(|(p, _)| p == secret) {
+                    continue;
+                }
+                match client.issue(secret) {
+                    Ok(ref_canonical) => {
+                        s = s.replace(secret, &padded_colorize_ref(&ref_canonical, secret.len()));
+                    }
+                    Err(e) => {
+                        eprintln!("[veilkey] issue failed for pattern {}: {}", pat.name, e);
+                    }
+                }
+            }
+        }
+
         s.into_bytes()
     }
 
@@ -617,6 +652,10 @@ mod pty_wrap {
         };
 
         let client = VeilKeyClient::new(api_url);
+
+        // Load detection patterns for outbound scanning
+        let cfg = load_config(None).ok();
+        let patterns: Vec<CompiledPattern> = cfg.map(|c| c.patterns).unwrap_or_default();
 
         // Save PID file
         let sd = state_dir();
@@ -712,20 +751,36 @@ mod pty_wrap {
                 }
 
                 let mask_map = Arc::new(mask_map);
+                let patterns = Arc::new(patterns);
+                let client = Arc::new(client);
+                // Track recent stdin input to skip echo-back masking
+                let recent_input = Arc::new(Mutex::new(String::new()));
 
                 // stdin → master (forward input to PTY)
                 let master_wr = master_fd;
+                let input_tracker = recent_input.clone();
                 std::thread::spawn(move || {
                     let mut buf = [0u8; 4096];
                     loop {
                         let n = unsafe { libc::read(stdin_fd, buf.as_mut_ptr() as _, buf.len()) };
                         if n <= 0 { break; }
+                        // Track what was typed
+                        if let Ok(s) = std::str::from_utf8(&buf[..n as usize]) {
+                            let mut tracker = input_tracker.lock().unwrap();
+                            tracker.push_str(s);
+                            // Keep only last 4KB
+                            if tracker.len() > 4096 {
+                                let start = tracker.len() - 4096;
+                                *tracker = tracker[start..].to_string();
+                            }
+                        }
                         unsafe { libc::write(master_wr, buf.as_ptr() as _, n as _); }
                     }
                 });
 
                 // master → stdout (filter output from PTY)
                 let mask = mask_map.clone();
+                let input_ref = recent_input.clone();
                 let stdout_fd = io::stdout().as_raw_fd();
                 let mut partial_buf: Vec<u8> = Vec::new();
 
@@ -737,7 +792,8 @@ mod pty_wrap {
                     let chunk = &buf[..n];
                     if let Some(last_nl) = chunk.iter().rposition(|&b| b == b'\n') {
                         partial_buf.extend_from_slice(&chunk[..last_nl + 1]);
-                        let masked = mask_output(&partial_buf, &mask);
+                        let ri = input_ref.lock().unwrap().clone();
+                        let masked = mask_output(&partial_buf, &mask, &patterns, &client, &ri);
                         unsafe { libc::write(stdout_fd, masked.as_ptr() as _, masked.len()); }
                         partial_buf.clear();
                         if last_nl + 1 < n {
@@ -754,7 +810,28 @@ mod pty_wrap {
                                 let peek_result = libc::read(master_fd, peek.as_mut_ptr() as _, 1);
                                 libc::fcntl(master_fd, libc::F_SETFL, flags);
                                 if peek_result <= 0 {
-                                    let masked = mask_output(&partial_buf, &mask);
+                                    // Check if partial_buf ends with prefix of any known secret
+                                    let buf_str = String::from_utf8_lossy(&partial_buf);
+                                    let has_partial_secret = mask.iter().any(|(plaintext, _)| {
+                                        plaintext.len() > 8 && buf_str.len() < plaintext.len() + 50
+                                            && plaintext.starts_with(
+                                                &buf_str[buf_str.len().saturating_sub(plaintext.len())..])
+                                    }) || mask.iter().any(|(plaintext, _)| {
+                                        // Also check if any secret partially appears at end of buffer
+                                        let pl = plaintext.as_str();
+                                        (4..pl.len()).any(|i| buf_str.ends_with(&pl[..i]))
+                                    });
+                                    if has_partial_secret {
+                                        // Wait a bit more for the rest of the secret
+                                        std::thread::sleep(Duration::from_millis(50));
+                                        let n2 = libc::read(master_fd, buf.as_mut_ptr() as _, buf.len());
+                                        if n2 > 0 {
+                                            partial_buf.extend_from_slice(&buf[..n2 as usize]);
+                                            continue; // Re-enter loop to process combined buffer
+                                        }
+                                    }
+                                    let ri = input_ref.lock().unwrap().clone();
+                                    let masked = mask_output(&partial_buf, &mask, &patterns, &client, &ri);
                                     libc::write(stdout_fd, masked.as_ptr() as _, masked.len());
                                     partial_buf.clear();
                                 } else {
@@ -767,7 +844,8 @@ mod pty_wrap {
 
                 // Flush remaining
                 if !partial_buf.is_empty() {
-                    let masked = mask_output(&partial_buf, &mask);
+                    let ri = input_ref.lock().unwrap().clone();
+                        let masked = mask_output(&partial_buf, &mask, &patterns, &client, &ri);
                     unsafe { libc::write(stdout_fd, masked.as_ptr() as _, masked.len()); }
                 }
 
