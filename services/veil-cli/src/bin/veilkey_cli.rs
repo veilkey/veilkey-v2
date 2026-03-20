@@ -693,7 +693,10 @@ mod pty_wrap {
                 let c_args: Vec<CString> = shell_args.iter()
                     .map(|a| CString::new(a.as_str()).unwrap())
                     .collect();
-                execvp(&prog, &c_args).expect("execvp failed");
+                if let Err(e) = execvp(&prog, &c_args) {
+                    eprintln!("[veilkey] execvp failed: {} ({})", shell_args[0], e);
+                    std::process::exit(1);
+                }
             }
             ForkResult::Parent { child } => {
                 unsafe { libc::close(slave_fd); }

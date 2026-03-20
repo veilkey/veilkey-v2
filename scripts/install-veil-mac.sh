@@ -1,104 +1,133 @@
 #!/bin/bash
 set -euo pipefail
 
-# VeilKey veil CLI installer for macOS
-# Usage: bash scripts/install-veil-mac.sh
+# VeilKey installer for macOS
+# Usage:
+#   curl -sL https://gist.githubusercontent.com/dalsoop/3136c5c2fd582b44357149771771659e/raw/install-veil-mac.sh | bash
+#   OR: bash scripts/install-veil-mac.sh
+#
+# ⚠️  이 스크립트의 실행으로 발생하는 모든 결과에 대한
+#     귀책사유는 실행자 본인에게 있습니다.
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN_DIR="/usr/local/bin"
+BIN_DIR="${VEILKEY_BIN_DIR:-$HOME/.local/bin}"
 VEILKEY_URL="${VEILKEY_URL:-https://localhost:11181}"
+INSTALL_DIR="${VEILKEY_INSTALL_DIR:-$HOME/.veilkey}"
+REPO_URL="https://github.com/veilkey/veilkey-selfhosted.git"
 
-echo "=== VeilKey veil CLI installer (macOS) ==="
-echo "Repo: $REPO_ROOT"
-echo "URL:  $VEILKEY_URL"
+echo "=== VeilKey installer (macOS) ==="
+echo ""
+echo "  Install dir: $INSTALL_DIR"
+echo "  Binaries:    $BIN_DIR"
+echo "  URL:         $VEILKEY_URL"
 echo ""
 
-# 1. Check Rust toolchain
-if ! command -v cargo &>/dev/null; then
-    echo "ERROR: Rust toolchain not found. Install from https://rustup.rs"
-    exit 1
-fi
-echo "[1/6] Rust toolchain OK"
+# Ensure bin dir exists
+mkdir -p "$BIN_DIR"
 
-# 2. Build
-echo "[2/6] Building veilkey-cli + veil-cli..."
-cd "$REPO_ROOT"
-cargo build --release --quiet
-echo "  Built successfully"
+# Check if already installed
+EXISTING=false
+if [ -d "$INSTALL_DIR/.git" ]; then
+    EXISTING=true
+    cd "$INSTALL_DIR"
+    LOCAL_HASH=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+    REMOTE_HASH=$(git ls-remote origin HEAD 2>/dev/null | cut -f1 || echo "unknown")
 
-# 3. Install binaries
-echo "[3/6] Installing to $BIN_DIR (requires sudo)..."
-RELEASE="$REPO_ROOT/target/release"
-sudo cp "$RELEASE/veilkey-cli" "$BIN_DIR/veilkey-cli"
-sudo cp "$RELEASE/veilkey-session-config" "$BIN_DIR/veilkey-session-config"
-sudo cp "$RELEASE/veil" "$BIN_DIR/veil"
-sudo cp "$RELEASE/veilkey" "$BIN_DIR/veilkey"
-
-# 4. Ad-hoc code sign (required for macOS Gatekeeper)
-echo "[4/6] Code signing (ad-hoc)..."
-sudo codesign --force --sign - "$BIN_DIR/veilkey-cli"
-sudo codesign --force --sign - "$BIN_DIR/veilkey-session-config"
-sudo codesign --force --sign - "$BIN_DIR/veil"
-sudo codesign --force --sign - "$BIN_DIR/veilkey"
-echo "  Signed"
-
-# 5. Shell config
-echo "[5/6] Configuring shell..."
-SHELL_RC="$HOME/.zshrc"
-if [[ "$SHELL" == *"bash"* ]]; then
-    SHELL_RC="$HOME/.bashrc"
+    if [ "$LOCAL_HASH" = "$REMOTE_HASH" ]; then
+        echo "✅ 이미 최신 버전입니다. (${LOCAL_HASH:0:8})"
+        echo "   다시 빌드합니다..."
+    else
+        echo "🔄 업데이트가 있습니다."
+        echo "   현재: ${LOCAL_HASH:0:8}"
+        echo "   최신: ${REMOTE_HASH:0:8}"
+        echo "   업데이트합니다..."
+    fi
 fi
 
-MARKER="# VeilKey veil CLI"
-if ! grep -q "$MARKER" "$SHELL_RC" 2>/dev/null; then
-    cat >> "$SHELL_RC" << SHELLEOF
+# Check prerequisites
+for cmd in git cargo docker; do
+    if ! command -v "$cmd" &>/dev/null; then
+        echo "ERROR: $cmd not found."
+        case $cmd in
+            git)    echo "  Install: xcode-select --install" ;;
+            cargo)  echo "  Install: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh" ;;
+            docker) echo "  Install: https://docs.docker.com/desktop/install/mac-install/" ;;
+        esac
+        exit 1
+    fi
+done
+echo "[1/6] Prerequisites OK"
 
-$MARKER
+# Clone or update repo
+if [ "$EXISTING" = true ]; then
+    echo "[2/6] Updating..."
+    cd "$INSTALL_DIR"
+    git pull --quiet
+else
+    if [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
+        echo "ERROR: $INSTALL_DIR exists and is not empty."
+        echo "  Remove it first: rm -rf $INSTALL_DIR"
+        exit 1
+    fi
+    echo "[2/6] Cloning repository..."
+    git clone --quiet "$REPO_URL" "$INSTALL_DIR"
+    cd "$INSTALL_DIR"
+fi
+
+# Build
+echo "[3/6] Building (this may take a few minutes on first run)..."
+cargo build --release --quiet 2>&1 | tail -5
+echo "  Built"
+
+# Install binaries
+echo "[4/6] Installing to $BIN_DIR (sudo required)..."
+RELEASE="$INSTALL_DIR/target/release"
+for bin in veil veilkey veilkey-cli veilkey-session-config; do
+    if [ -f "$RELEASE/$bin" ]; then
+        cp "$RELEASE/$bin" "$BIN_DIR/$bin"
+        xattr -cr "$BIN_DIR/$bin" 2>/dev/null || true
+        echo "  $bin ✓"
+    fi
+done
+
+# Create .veilkey/env
+echo "[5/6] Creating config..."
+mkdir -p "$INSTALL_DIR/.veilkey/config"
+cat > "$INSTALL_DIR/.veilkey/env" << EOF
+#!/bin/sh
 export VEILKEY_LOCALVAULT_URL="$VEILKEY_URL"
 export VEILKEY_TLS_INSECURE=1
-export VEILKEY_CONFIG="\$HOME/.veilkey.yml"
-export VEILKEY_BIN=$BIN_DIR/veilkey
+export VEILKEY_CONFIG="$INSTALL_DIR/.veilkey/config/veilkey.yml"
 export VEILKEY_CLI_BIN=$BIN_DIR/veilkey-cli
-export VEILKEY_VK_BIN=$BIN_DIR/veilkey
-export VEILKEY_SESSION_CONFIG_BIN=$BIN_DIR/veilkey-session-config
-SHELLEOF
-    echo "  Added to $SHELL_RC"
-else
-    echo "  Already in $SHELL_RC (skipped)"
+EOF
+
+if [ ! -f "$INSTALL_DIR/.veilkey/config/veilkey.yml" ]; then
+    echo "threshold: 0.7" > "$INSTALL_DIR/.veilkey/config/veilkey.yml"
 fi
 
-# 6. Config file
-if [ ! -f "$HOME/.veilkey.yml" ]; then
-    cp "$REPO_ROOT/services/veil-cli/examples/.veilkey.yml" "$HOME/.veilkey.yml"
-    echo "  Created ~/.veilkey.yml"
-else
-    echo "  ~/.veilkey.yml exists (skipped)"
-fi
-
-# 7. Trust VaultCenter self-signed cert (optional)
-echo "[6/6] TLS certificate..."
-CERT_PATH="$REPO_ROOT/data/vaultcenter/certs/server.crt"
-if [ -f "$CERT_PATH" ]; then
-    echo "  Found VaultCenter cert at $CERT_PATH"
-    read -p "  Trust this cert in system keychain? [y/N] " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$CERT_PATH"
-        echo "  Trusted"
-    else
-        echo "  Skipped (using VEILKEY_TLS_INSECURE=1 instead)"
-    fi
-else
-    echo "  No cert found (using VEILKEY_TLS_INSECURE=1)"
-fi
+# Docker
+echo "[6/6] Starting services..."
+cd "$INSTALL_DIR"
+docker compose up --build -d 2>&1 | tail -5
 
 echo ""
+# Check PATH
+if ! echo "$PATH" | tr ':' '\n' | grep -q "^$BIN_DIR$"; then
+    echo "⚠️  $BIN_DIR 가 PATH에 없습니다. 추가하세요:"
+    echo "   echo 'export PATH=\"$BIN_DIR:\$PATH\"' >> ~/.zshrc"
+    echo ""
+fi
+
 echo "=== Installation complete ==="
 echo ""
-echo "Restart your terminal, then:"
-echo "  veil              # Enter protected session"
-echo "  veil status       # Check connection"
-echo "  veil help         # Show commands"
+echo "1. 초기 설정:"
+echo "   https://localhost:11181 접속 → 마스터/관리자 비밀번호 설정"
 echo ""
-echo "Make sure docker compose is running:"
-echo "  cd $REPO_ROOT && docker compose up -d"
+echo "2. 사용:"
+echo "   cd $INSTALL_DIR"
+echo "   source .veilkey/env"
+echo "   veil"
+echo ""
+echo "3. 서버 재시작 후:"
+echo "   마스터 비밀번호 입력 필요 (https://localhost:11181)"
+echo "   비밀번호는 메모리에만 존재, 디스크에 저장되지 않음"
+echo ""

@@ -1,3 +1,6 @@
+# Local config (per-machine)
+.veilkey/
+
 # Build outputs
 /bin/
 /dist/

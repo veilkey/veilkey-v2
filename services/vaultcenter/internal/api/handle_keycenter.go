@@ -42,8 +42,13 @@ func (s *Server) handleListRefs(w http.ResponseWriter, r *http.Request) {
 		SecretName   string `json:"secret_name"`
 		Scope        string `json:"scope"`
 	}
+	now := time.Now().UTC()
 	entries := make([]refEntry, 0, len(allRefs))
 	for _, ref := range allRefs {
+		// Skip expired TEMP refs
+		if ref.ExpiresAt != nil && ref.ExpiresAt.Before(now) {
+			continue
+		}
 		entries = append(entries, refEntry{
 			RefCanonical: ref.RefCanonical,
 			SecretName:   ref.SecretName,
