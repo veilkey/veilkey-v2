@@ -53,3 +53,4 @@ node_modules/
 services/*/main
 .claude/
 packages/veil-cli/native/
+.localvault/
