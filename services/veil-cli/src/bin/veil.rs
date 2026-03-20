@@ -77,6 +77,88 @@ export PS1="\[\033[36m\](VEIL)\[\033[0m\] \h:\W \u\$ "
             full.extend_from_slice(&args[1..]);
             exec_replace(&cli_bin, &full);
         }
+        "localvault" => {
+            let sub = args.get(1).map(|s| s.as_str()).unwrap_or("init");
+            match sub {
+                "init" | "update" => {
+                    let center_url = env::var("VEILKEY_VAULTCENTER_URL")
+                        .or_else(|_| env::var("VEILKEY_KEYCENTER_URL"))
+                        .unwrap_or_default();
+                    let lv_url = env::var("VEILKEY_LOCALVAULT_URL").unwrap_or_default();
+                    // Extract port from LOCALVAULT_URL if set, else default
+                    let port = lv_url
+                        .rsplit(':')
+                        .next()
+                        .and_then(|p| p.trim_end_matches('/').parse::<u16>().ok())
+                        .unwrap_or(10180);
+
+                    if center_url.is_empty() {
+                        eprintln!("veil localvault: VEILKEY_VAULTCENTER_URL is not set");
+                        eprintln!("  Set it in your shell or ~/.veilkey.yml");
+                        process::exit(1);
+                    }
+
+                    let gist_url = "https://gist.githubusercontent.com/dalsoop/LOCALVAULT_GIST_ID/raw/install-localvault.sh";
+                    let script = format!(
+                        "VEILKEY_CENTER_URL='{}' VEILKEY_PORT='{}' curl -sL '{}?{}' | bash",
+                        center_url,
+                        port,
+                        gist_url,
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs()
+                    );
+                    let status = process::Command::new("bash")
+                        .arg("-c")
+                        .arg(&script)
+                        .status()
+                        .unwrap_or_else(|e| {
+                            eprintln!("veil localvault: failed to run installer: {}", e);
+                            process::exit(1);
+                        });
+                    process::exit(status.code().unwrap_or(1));
+                }
+                "stop" => {
+                    let pid_file = format!("{}/.localvault/localvault.pid", env::current_dir().unwrap().display());
+                    match std::fs::read_to_string(&pid_file) {
+                        Ok(pid) => {
+                            let pid = pid.trim();
+                            let _ = process::Command::new("kill").arg(pid).status();
+                            let _ = std::fs::remove_file(&pid_file);
+                            println!("localvault stopped (PID: {})", pid);
+                        }
+                        Err(_) => eprintln!("localvault is not running (no pid file)"),
+                    }
+                }
+                "log" | "logs" => {
+                    let log_file = format!("{}/.localvault/localvault.log", env::current_dir().unwrap().display());
+                    exec_replace("tail", &["-f".to_string(), log_file]);
+                }
+                "status" => {
+                    let lv_url = env::var("VEILKEY_LOCALVAULT_URL")
+                        .unwrap_or_else(|_| "http://localhost:10180".to_string());
+                    let health_url = format!("{}/health", lv_url.trim_end_matches('/'));
+                    let status = process::Command::new("curl")
+                        .args(["-s", &health_url])
+                        .status();
+                    if status.map(|s| s.success()).unwrap_or(false) {
+                        println!();
+                    } else {
+                        eprintln!("localvault is not reachable at {}", health_url);
+                        process::exit(1);
+                    }
+                }
+                _ => {
+                    eprintln!("Usage:");
+                    eprintln!("  veil localvault [init]    Install/update localvault in current directory");
+                    eprintln!("  veil localvault stop      Stop localvault");
+                    eprintln!("  veil localvault log       Tail localvault logs");
+                    eprintln!("  veil localvault status    Check localvault health");
+                    process::exit(1);
+                }
+            }
+        }
         "help" | "-h" | "--help" => {
             println!("Usage:");
             println!("  veil                     Enter protected session (PTY masking)");
@@ -84,6 +166,10 @@ export PS1="\[\033[36m\](VEIL)\[\033[0m\] \h:\W \u\$ "
             println!("  veil resolve <VK:ref>    Resolve a VK reference");
             println!("  veil exec <command...>   Resolve VK refs in args and execute");
             println!("  veil scan [file...]      Scan files for secrets");
+            println!("  veil localvault [init]   Install/update localvault here");
+            println!("  veil localvault stop     Stop localvault");
+            println!("  veil localvault log      Tail logs");
+            println!("  veil localvault status   Health check");
             println!("  veil help                Show this help");
         }
         _ => {
