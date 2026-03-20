@@ -79,4 +79,4 @@ Cross-component changes should be reviewed carefully to avoid breaking contracts
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under AGPL-3.0.
+By contributing, you agree that your contributions will be licensed under MIT.
