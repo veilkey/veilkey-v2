@@ -21,4 +21,4 @@ else
     cd "$TARGET_DIR"
 fi
 
-exec bash scripts/install-veil-mac.sh
+exec bash install/macos/install.sh
