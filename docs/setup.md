@@ -2,7 +2,7 @@
 
 Installation complete? Follow these steps to initialize VeilKey.
 
-This guide is common to all platforms. For platform-specific installation, see [install/](../install/).
+This guide is common to all platforms. For platform-specific installation, see [install/](../install/README.md).
 
 ## Conventions
 

@@ -38,20 +38,31 @@ For manual step-by-step installation, continue below.
 
 ```bash
 # Download template (if not cached)
-pveam download local debian-13-standard_13.1-2_amd64.tar.zst
+pveam download local <TEMPLATE>
 
 # Create privileged container
-pct create <CTID> local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst \
-  --hostname veilkey \
-  --memory 2048 \
-  --cores 2 \
-  --rootfs local-lvm:16 \
-  --net0 name=eth0,bridge=vmbr1,ip=<IP>/16,gw=<GATEWAY> \
+pct create <CTID> local:vztmpl/<TEMPLATE> \
+  --hostname <HOSTNAME> \
+  --memory <MEMORY> \
+  --cores <CORES> \
+  --rootfs <STORAGE>:<DISK_GB> \
+  --net0 name=eth0,bridge=<BRIDGE>,ip=<IP>/<MASK>,gw=<GATEWAY> \
   --password '<PASSWORD>' \
   --unprivileged 0 \
   --features nesting=1 \
   --start 1
 ```
+
+| Placeholder | Default | Description |
+|-------------|---------|-------------|
+| `<CTID>` | next available | Container ID |
+| `<TEMPLATE>` | `debian-13-standard_13.1-2_amd64.tar.zst` | LXC template |
+| `<HOSTNAME>` | `veilkey` | Container hostname |
+| `<MEMORY>` | `2048` | Memory in MB |
+| `<CORES>` | `2` | CPU cores |
+| `<STORAGE>` | `local-lvm` | Storage backend |
+| `<DISK_GB>` | `16` | Disk size in GB |
+| `<BRIDGE>` | `vmbr1` | Network bridge |
 
 Replace `<CTID>`, `<IP>`, `<GATEWAY>`, `<PASSWORD>` with your values.
 
@@ -122,14 +133,14 @@ VeilKey listens on `https://<CT_IP>:<vc_port>` inside the internal network. To a
 ### Option A: Port forwarding on Proxmox host
 
 ```bash
-# Forward host port to container
-iptables -t nat -A PREROUTING -i vmbr0 -p tcp --dport 11181 \
+# Forward host port to container (adjust interface and port)
+iptables -t nat -A PREROUTING -i <WAN_BRIDGE> -p tcp --dport <vc_port> \
   -j DNAT --to-destination <CT_IP>:<vc_port>
 ```
 
 ### Option B: Access from host network directly
 
-If your client is on the same network as vmbr1, access `https://<CT_IP>:<vc_port>` directly.
+If your client is on the same network as `<BRIDGE>`, access `https://<CT_IP>:<vc_port>` directly.
 
 ## 6. Initial Setup (headless)
 
