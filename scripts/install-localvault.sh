@@ -66,6 +66,9 @@ echo "  빌드 완료: $BIN"
 echo "[3/5] 데이터 디렉토리 설정..."
 mkdir -p "$DATA_DIR"
 
+if [ -f "$ENV_FILE" ]; then
+    echo "  기존 설정 유지: $ENV_FILE"
+else
 cat > "$ENV_FILE" << ENVEOF
 VEILKEY_DB_PATH=$DATA_DIR/veilkey.db
 VEILKEY_ADDR=:$PORT
@@ -77,17 +80,9 @@ ENVEOF
 if [[ -n "$CENTER_URL" ]]; then
     echo "VEILKEY_VAULTCENTER_URL=$CENTER_URL" >> "$ENV_FILE"
 fi
-
-# Password file for auto-unlock
-PW_FILE="$DATA_DIR/password"
-if [ ! -f "$PW_FILE" ]; then
-    # Generate random password for first-time init
-    openssl rand -base64 24 > "$PW_FILE"
-    chmod 600 "$PW_FILE"
-    echo "  비밀번호 생성됨: $PW_FILE"
-fi
-echo "VEILKEY_PASSWORD_FILE=$PW_FILE" >> "$ENV_FILE"
 echo "  환경 설정: $ENV_FILE"
+echo "  (LOCKED 모드로 시작 — POST /api/unlock 으로 수동 unlock)"
+fi
 
 # 4. Stop existing process if running
 echo "[4/5] 기존 프로세스 확인..."
