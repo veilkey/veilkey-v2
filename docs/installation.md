@@ -1,7 +1,7 @@
 # Installation
 
 > **This page is a legacy reference.** For platform-specific installation guides, see [`install/`](../install/).
-> For post-install setup, see [`setup.md`](./setup.md).
+> For post-install setup, see [`setup/`](./setup/README.md).
 
 ## Platform Guides
 

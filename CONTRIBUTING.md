@@ -20,7 +20,9 @@ chmod +x .git/hooks/pre-commit
 
 - Repository overview: [`README.md`](./README.md)
 - Architecture: [`docs/architecture.md`](./docs/architecture.md)
-- Installation: [`docs/installation.md`](./docs/installation.md)
+- Installation: [`install/`](./install/README.md)
+- Post-install setup: [`docs/setup/`](./docs/setup/README.md)
+- Development setup: [`docs/contributing.md`](./docs/contributing.md)
 
 ## Development
 
@@ -31,21 +33,20 @@ cd services/localvault && go build ./...
 
 # Rust CLI
 cd services/veil-cli && cargo build --release
-cd services/veil-cli && cargo build --release
 
 # Docker
 docker compose up --build -d
 ```
 
-## Validation
+## Testing
 
 ```bash
 # Pre-commit
 bash scripts/pre-commit
 
-# Go build
-cd services/vaultcenter && go build ./...
-cd services/localvault && go build ./...
+# Smoke tests (requires bats + running VeilKey)
+bash tests/smoke/run.sh veil-cli
+bash tests/smoke/run.sh localvault
 ```
 
 ## Pull Request Standard

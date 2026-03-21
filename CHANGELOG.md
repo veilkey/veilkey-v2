@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.3.0 (2026-03-21)
+
+### Install
+- **Platform-specific install structure** — `install/macos/`, `install/proxmox-lxc-debian/`, `install/common/`
+- Each service has its own `install.sh` + `install.md` + `uninstall.sh`
+- `install/proxmox-lxc-debian/install-localvault.sh` — TLS auto-gen, bulk-apply paths, update on re-run
+- `install/common/install-veil-cli.sh` — works on any Linux (host, LXC, VM)
+- Removed old `scripts/install-veil-mac.sh`, `scripts/uninstall-veil-mac.sh`
+
+### Bulk Apply
+- Configurable allowed paths via `VEILKEY_BULK_APPLY_ALLOWED_PATHS` env var
+- Configurable hooks via `VEILKEY_BULK_APPLY_ALLOWED_HOOKS` env var
+- Fix: resolve secret by name→ref lookup (was failing with "workflow execution failed")
+- Improved error messages: include actual error in workflow failure response
+
+### Docs
+- Split `docs/setup.md` into service-based `docs/setup/` structure
+- New: `docs/setup/secrets/bulk-apply.md` — template, workflow, deploy, multi-vault
+- New: `docs/setup/env-vars.md` — consolidated environment variable reference
+- Platform-specific setup guides: `localvault/macos.md`, `localvault/proxmox-lxc-debian.md`
+
+### CI
+- GitHub Actions smoke test workflow (`smoke.yml`)
+- bats-core smoke tests: veil-cli (11 tests), localvault (9 tests)
+- Retry loops for VaultCenter/LocalVault setup/unlock in CI
+
+### License
+- Changed from MIT to AGPL-3.0
+
+### Other
+- `.env.example`: uncomment `LOCALVAULT_CHAIN_PEERS=` to suppress warning
+- All hardcoded ports/IPs removed from docs and scripts — use env vars/placeholders
+
 ## v0.2.0 (2026-03-20)
 
 ### veil CLI
