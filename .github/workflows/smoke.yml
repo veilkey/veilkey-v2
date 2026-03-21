@@ -42,30 +42,24 @@ jobs:
       - name: Build images
         run: |
           cp .env.example .env
-          echo "VAULTCENTER_AUTO_COMPLETE_INSTALL_FLOW=1" >> .env
+          # Do NOT use auto-complete — it restarts the server and kills the container
           docker compose build
 
       - name: Start VeilKey services
         timeout-minutes: 5
         run: |
-          # Start vaultcenter and wait for it via logs
+          # Start all services
           docker compose up -d --no-deps vaultcenter
-          echo "Waiting for VaultCenter to be ready (via docker logs)..."
-          timeout 120 bash -c '
-            while true; do
-              if docker compose logs vaultcenter 2>/dev/null | grep -q "setup mode on\|starting on\|Server started"; then
+
+          # Wait for VaultCenter to respond (setup or locked)
+          echo "Waiting for VaultCenter..."
+          for i in $(seq 1 60); do
+            STATUS=$(curl -sk --max-time 3 https://localhost:11181/health 2>/dev/null || true)
+            if [ -n "$STATUS" ]; then
+              echo "  [$i] $STATUS"
+              if echo "$STATUS" | grep -qE '"status"'; then
                 break
               fi
-              sleep 2
-            done
-          ' || echo "WARNING: log wait timed out"
-
-          # Poll health as final confirmation
-          for i in $(seq 1 30); do
-            STATUS=$(curl -sk --max-time 3 https://localhost:11181/health 2>/dev/null || true)
-            echo "  [$i] $STATUS"
-            if echo "$STATUS" | grep -qE '"locked"|"ok"|"setup"'; then
-              break
             fi
             sleep 3
           done
