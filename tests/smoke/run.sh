@@ -4,6 +4,9 @@ set -euo pipefail
 # Smoke test runner
 # Runs specified test suites and saves results to tests/smoke/results/
 #
+# ⚠️  이 스크립트의 실행으로 발생하는 모든 결과에 대한
+#     귀책사유는 실행자 본인에게 있습니다.
+#
 # Usage:
 #   bash tests/smoke/run.sh <suite> [suite...]
 #
