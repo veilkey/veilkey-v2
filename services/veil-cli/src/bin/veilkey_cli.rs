@@ -240,6 +240,7 @@ fn cmd_filter(file: &str, api_url: &str, log_path: &str, patterns_file: Option<&
     };
     let client = VeilKeyClient::new(api_url);
     let logger = SessionLogger::new(log_path);
+    let entries_before = logger.count();
     let mut detector = SecretDetector::new(&cfg, &client, &logger, false);
 
     let reader: Box<dyn Read> = if file == "-" {
@@ -258,7 +259,13 @@ fn cmd_filter(file: &str, api_url: &str, log_path: &str, patterns_file: Option<&
 
     if detector.stats.detections > 0 {
         // Check if any replacements used VK:TEMP refs
-        let temp_count = detector.stats.entries.iter()
+        let all_entries = logger.read_entries();
+        let new_entries = if entries_before < all_entries.len() {
+            &all_entries[entries_before..]
+        } else {
+            &[]
+        };
+        let temp_count = new_entries.iter()
             .filter(|e| e.veilkey.contains(":TEMP:"))
             .count();
 
