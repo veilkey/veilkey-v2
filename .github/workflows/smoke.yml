@@ -112,35 +112,60 @@ jobs:
 
       - name: Create test secret
         run: |
-          # Admin login
-          curl -sk -X POST https://localhost:11181/api/admin/login \
+          # Admin login — extract session cookie from Set-Cookie header
+          LOGIN_HEADERS=$(curl -sk -X POST https://localhost:11181/api/admin/login \
             -H 'Content-Type: application/json' \
             -d '{"password":"smoke-test-password"}' \
-            -c /tmp/vk-cookies.txt
+            -D - -o /dev/null)
+          echo "Login headers received"
+          SESSION=$(echo "$LOGIN_HEADERS" | grep -i 'set-cookie' | grep -oP 'vk_session=[^;]+' | head -1)
+          echo "Session: ${SESSION:0:20}..."
+
+          if [ -z "$SESSION" ]; then
+            echo "ERROR: Admin login failed — no session cookie"
+            echo "Response headers: $LOGIN_HEADERS"
+            exit 1
+          fi
 
           # Create temp ref
           REF_RESPONSE=$(curl -sk -X POST https://localhost:11181/api/keycenter/temp-refs \
             -H 'Content-Type: application/json' \
-            -b /tmp/vk-cookies.txt \
+            -H "Cookie: $SESSION" \
             -d '{"name":"SMOKE_TEST","value":"smoke-test-secret-value"}')
           echo "Temp ref: $REF_RESPONSE"
           TEMP_REF=$(echo "$REF_RESPONSE" | grep -oP '"ref":"VK:TEMP:[^"]+' | cut -d'"' -f4)
+
+          if [ -z "$TEMP_REF" ]; then
+            echo "ERROR: Failed to create temp ref"
+            exit 1
+          fi
 
           # Get agent hash
           AGENT_HASH=$(curl -sk https://localhost:11181/api/agents | grep -oP '"agent_hash":"[^"]+' | head -1 | cut -d'"' -f4)
           echo "Agent hash: $AGENT_HASH"
 
+          if [ -z "$AGENT_HASH" ]; then
+            echo "ERROR: No agents found"
+            exit 1
+          fi
+
           # Promote
           PROMOTE_RESPONSE=$(curl -sk -X POST https://localhost:11181/api/keycenter/promote \
             -H 'Content-Type: application/json' \
-            -b /tmp/vk-cookies.txt \
+            -H "Cookie: $SESSION" \
             -d "{\"ref\":\"$TEMP_REF\",\"name\":\"SMOKE_TEST\",\"vault_hash\":\"$AGENT_HASH\"}")
           echo "Promote: $PROMOTE_RESPONSE"
           LOCAL_REF=$(echo "$PROMOTE_RESPONSE" | grep -oP '"token":"VK:LOCAL:[^"]+' | cut -d'"' -f4)
 
+          if [ -z "$LOCAL_REF" ]; then
+            echo "ERROR: Failed to promote secret"
+            exit 1
+          fi
+
           # Save for tests
           echo "VEILKEY_TEST_REF=$LOCAL_REF" >> "$GITHUB_ENV"
           echo "VEILKEY_TEST_VALUE=smoke-test-secret-value" >> "$GITHUB_ENV"
+          echo "Secret created: $LOCAL_REF"
 
       - name: Run veil-cli smoke tests
         env:
