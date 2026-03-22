@@ -205,6 +205,7 @@ VeilKey prevents AI from accessing secrets, but with root access:
 - Run AI coding tools as a regular user
 - Work inside `veil` shell only → PTY masking guaranteed
 - Perform `sudo` operations outside veil
+- Add [`examples/CLAUDE.md`](./examples/CLAUDE.md) to your project → enforces AI agent security boundary
 
 ## Security Disclaimer
 

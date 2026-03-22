@@ -98,6 +98,38 @@ Write operations (store secret, delete, etc.) restricted to trusted IPs.
 - Rate limiting: 10 failed attempts → 15-minute lockout
 - Configurable TTL: `VEILKEY_ADMIN_SESSION_TTL` (default: 2h)
 
+## AI Agent Security Boundary
+
+When running AI coding tools (Claude Code, Cursor, etc.) inside a `veil` session on a machine with a LocalVault:
+
+### Allowed
+
+| Action | Example |
+|--------|---------|
+| LocalVault API calls | `curl -sk https://localhost:10180/health` |
+| Service management | `docker compose restart localvault` |
+| Log viewing | `tail -f .localvault/localvault.log` |
+| VK ref usage in code | `export DB_PASSWORD=VK:LOCAL:xxx` |
+| Secret status check | `veilkey-cli status` |
+
+### Forbidden
+
+| Action | Reason |
+|--------|--------|
+| Read `.env` files directly | Contains infra config + VaultCenter URL |
+| Run `veilkey-cli resolve` | Decrypts secret to plaintext |
+| Read `/proc/*/environ` | Exposes resolved env vars |
+| Access `~/.bash_history` | May contain unmasked commands |
+| Read session log plaintext | `$TMPDIR/veilkey-cli/session.log` |
+
+### Principle
+
+> AI agents should interact with secrets **only through VK refs**. Any operation that would reveal plaintext must go through the VaultCenter admin UI or a human operator — never through the AI agent.
+
+### CLAUDE.md Template
+
+A template for `.claude/CLAUDE.md` is provided at [`examples/CLAUDE.md`](../examples/CLAUDE.md). Add this to any project where Claude Code runs alongside VeilKey to enforce the security boundary.
+
 ## Blockchain Audit
 
 - **Chain:** CometBFT (single validator + full nodes)
