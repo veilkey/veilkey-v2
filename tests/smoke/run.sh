@@ -66,6 +66,9 @@ for suite in "${SUITES[@]}"; do
         localvault)
             run_suite "localvault" "$SCRIPT_DIR/proxmox-lxc-debian-localvault.bats"
             ;;
+        full)
+            run_suite "full-scenario" "$SCRIPT_DIR/full-scenario.bats"
+            ;;
         all)
             if [[ -n "${VEILKEY_URL:-}" ]]; then
                 run_suite "veil-cli" "$SCRIPT_DIR/common-veil-cli.bats"
@@ -76,6 +79,11 @@ for suite in "${SUITES[@]}"; do
                 run_suite "localvault" "$SCRIPT_DIR/proxmox-lxc-debian-localvault.bats"
             else
                 echo "SKIP: localvault (VEILKEY_CENTER_URL not set)"
+            fi
+            if [[ -n "${VEILKEY_URL:-}" ]] && [[ -n "${VEILKEY_TEST_REF:-}" ]]; then
+                run_suite "full-scenario" "$SCRIPT_DIR/full-scenario.bats"
+            else
+                echo "SKIP: full-scenario (VEILKEY_TEST_REF not set)"
             fi
             ;;
         *)
