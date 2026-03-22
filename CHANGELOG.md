@@ -1,5 +1,50 @@
 # Changelog
 
+## v0.4.0 (2026-03-22)
+
+### Security — PTY Masking
+- **Fail-closed**: mask_map empty → block all output (no plaintext leakage)
+- **Pattern issue failure**: replace with `[REDACTED]` instead of passthrough
+- **base64 variants**: auto-add base64-encoded secrets to mask_map
+- **Retry**: mask_map fetch retries 3x with exponential backoff
+
+### Security — AI Agent Boundary
+- `docs/security-model.md`: AI agent allowed/forbidden actions
+- `examples/CLAUDE.md`: drop-in template for Claude Code projects
+- Principle: AI interacts with secrets only through VK refs
+
+### VaultCenter
+- Fix: `/api/resolve/{ref}` — canonical + raw ref fallback lookup
+- Fix: bulk-apply name→ref resolve via `/api/secrets/meta`
+- Agent soft delete: `POST /api/agents/by-node/{id}/archive`
+- Agent unarchive: `POST /api/agents/by-node/{id}/unarchive`
+- Auto-archive: stale agents (no heartbeat 7d) archived by GC
+- Agent health: `healthy`/`stale`/`unreachable`/`archived` + `last_seen_ago`
+- `?include_archived=true` query parameter
+
+### Frontend
+- Health pill (green/yellow/red/gray) replaces status pill
+- Last seen ago display
+- Archive/unarchive buttons in vault table
+
+### Deployment
+- `examples/docker-entrypoint-veilkey.sh` — Docker VK ref resolution at startup
+- `examples/Dockerfile.veilkey-app` — multi-stage build example
+- `examples/veilkey-app.service` — systemd with veil wrapper
+- All deployment modes: direct, systemd, cron, Docker — no plaintext in .env
+
+### veil-cli
+- Fix: `fetch_all_secrets_mask_map` uses `self.resolve()` with candidate fallback
+- Fix: skip VE: config refs (not secrets)
+- Fix: Stats.entries compile error
+- cargo fmt + clippy clean
+
+### CI
+- Fix: UI build check — pin node version via `.node-version`
+- Fix: relative path for `working-directory`
+- Fix: remove stale ui_dist assets
+- Fix: VaultCenter startup timing in smoke tests
+
 ## v0.3.0 (2026-03-21)
 
 ### Install
