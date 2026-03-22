@@ -177,6 +177,7 @@ type Agent struct {
 	NextRetryAt      *time.Time `gorm:"column:next_retry_at" json:"next_retry_at"`
 	BlockedAt        *time.Time `gorm:"column:blocked_at" json:"blocked_at"`
 	BlockReason      string     `gorm:"column:block_reason" json:"block_reason"`
+	ArchivedAt       *time.Time `gorm:"column:archived_at;index" json:"archived_at"`
 	IP               string     `gorm:"column:ip" json:"ip"`
 	Port             int        `gorm:"column:port;default:0" json:"port"`
 	DEK              []byte     `gorm:"column:dek" json:"dek"`

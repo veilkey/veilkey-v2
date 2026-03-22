@@ -199,8 +199,23 @@ func (d *DB) BackfillAgentCapabilities() error {
 
 func (d *DB) ListAgents() ([]Agent, error) {
 	var agents []Agent
+	err := d.conn.Where("archived_at IS NULL").Order("last_seen DESC").Find(&agents).Error
+	return agents, err
+}
+
+func (d *DB) ListAgentsIncludeArchived() ([]Agent, error) {
+	var agents []Agent
 	err := d.conn.Order("last_seen DESC").Find(&agents).Error
 	return agents, err
+}
+
+func (d *DB) ArchiveAgent(nodeID string) error {
+	now := time.Now().UTC()
+	return d.conn.Model(&Agent{}).Where("node_id = ?", nodeID).Update("archived_at", &now).Error
+}
+
+func (d *DB) UnarchiveAgent(nodeID string) error {
+	return d.conn.Model(&Agent{}).Where("node_id = ?", nodeID).Update("archived_at", nil).Error
 }
 
 func (d *DB) GetAgentByNodeID(nodeID string) (*Agent, error) {
