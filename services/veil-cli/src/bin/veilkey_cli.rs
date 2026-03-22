@@ -1000,99 +1000,45 @@ mod pty_wrap {
                     }
                     let n = n as usize;
                     let chunk = &buf[..n];
+
+                    // Split: everything up to last newline gets masked,
+                    // remainder (no newline = echo-back/prompt) passes through raw.
                     if let Some(last_nl) = chunk.iter().rposition(|&b| b == b'\n') {
-                        // Combine partial buffer + current chunk up to last newline
-                        let mut combined = Vec::new();
-                        combined.extend_from_slice(&partial_buf);
-                        combined.extend_from_slice(&chunk[..last_nl + 1]);
+                        // Flush partial_buf + chunk up to newline → mask
+                        let mut to_mask = Vec::new();
+                        to_mask.extend_from_slice(&partial_buf);
+                        to_mask.extend_from_slice(&chunk[..last_nl + 1]);
+                        partial_buf.clear();
 
                         let ri = input_ref.lock().unwrap().clone();
                         let masked =
-                            mask_output(&combined, &mask.read().unwrap(), &patterns, &client, &ri);
-
+                            mask_output(&to_mask, &mask.read().unwrap(), &patterns, &client, &ri);
                         unsafe {
                             libc::write(stdout_fd, masked.as_ptr() as _, masked.len());
                         }
-                        partial_buf.clear();
+
+                        // Remainder after last newline → pass through raw (echo-back/prompt)
                         if last_nl + 1 < n {
-                            partial_buf.extend_from_slice(&chunk[last_nl + 1..]);
+                            let remainder = &chunk[last_nl + 1..];
+                            unsafe {
+                                libc::write(stdout_fd, remainder.as_ptr() as _, remainder.len());
+                            }
                         }
                     } else {
-                        partial_buf.extend_from_slice(chunk);
-                        if !partial_buf.is_empty() {
-                            std::thread::sleep(Duration::from_millis(30));
-                            let mut peek = [0u8; 1];
-                            unsafe {
-                                let flags = libc::fcntl(master_fd, libc::F_GETFL);
-                                libc::fcntl(master_fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
-                                let peek_result = libc::read(master_fd, peek.as_mut_ptr() as _, 1);
-                                libc::fcntl(master_fd, libc::F_SETFL, flags);
-                                if peek_result <= 0 {
-                                    // Check if partial_buf ends with prefix of any known secret
-                                    // (removed the >8 length gate — all secrets now checked)
-                                    let buf_str = String::from_utf8_lossy(&partial_buf);
-                                    let has_partial_secret =
-                                        mask.read().unwrap().iter().any(|(plaintext, _)| {
-                                            let pl = plaintext.as_str();
-                                            (4..pl.len()).any(|i| buf_str.ends_with(&pl[..i]))
-                                        });
-                                    if has_partial_secret {
-                                        // Wait for the rest of the secret
-                                        std::thread::sleep(Duration::from_millis(lookahead_ms));
-                                        let n2 =
-                                            libc::read(master_fd, buf.as_mut_ptr() as _, buf.len());
-                                        if n2 > 0 {
-                                            partial_buf.extend_from_slice(&buf[..n2 as usize]);
-                                            continue; // Re-enter loop to process combined buffer
-                                        }
-                                    }
-                                    // Flush partial with overlap
-                                    let mut combined = std::mem::take(&mut overlap_buf);
-                                    let prev_overlap_len = combined.len();
-                                    combined.extend_from_slice(&partial_buf);
-                                    let saved_overlap_len = combined.len().min(max_secret_len);
-
-                                    let ri = input_ref.lock().unwrap().clone();
-                                    let masked = mask_output(
-                                        &combined,
-                                        &mask.read().unwrap(),
-                                        &patterns,
-                                        &client,
-                                        &ri,
-                                    );
-                                    if masked.len() > prev_overlap_len {
-                                        let new_output = &masked[prev_overlap_len..];
-                                        libc::write(
-                                            stdout_fd,
-                                            new_output.as_ptr() as _,
-                                            new_output.len(),
-                                        );
-                                    }
-                                    overlap_buf = combined
-                                        [combined.len().saturating_sub(saved_overlap_len)..]
-                                        .to_vec();
-                                    partial_buf.clear();
-                                } else {
-                                    partial_buf.push(peek[0]);
-                                }
-                            }
+                        // No newline — pass through raw immediately (echo-back, prompt, etc.)
+                        unsafe {
+                            libc::write(stdout_fd, chunk.as_ptr() as _, chunk.len());
                         }
                     }
                 }
 
-                // Flush remaining
-                if !partial_buf.is_empty() || !overlap_buf.is_empty() {
-                    let mut combined = overlap_buf;
-                    let prev_overlap_len = combined.len();
-                    combined.extend_from_slice(&partial_buf);
+                // Flush remaining partial_buf (mask it since session is ending)
+                if !partial_buf.is_empty() {
                     let ri = input_ref.lock().unwrap().clone();
                     let masked =
-                        mask_output(&combined, &mask.read().unwrap(), &patterns, &client, &ri);
-                    if masked.len() > prev_overlap_len {
-                        let new_output = &masked[prev_overlap_len..];
-                        unsafe {
-                            libc::write(stdout_fd, new_output.as_ptr() as _, new_output.len());
-                        }
+                        mask_output(&partial_buf, &mask.read().unwrap(), &patterns, &client, &ri);
+                    unsafe {
+                        libc::write(stdout_fd, masked.as_ptr() as _, masked.len());
                     }
                 }
 
