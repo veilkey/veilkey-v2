@@ -175,4 +175,55 @@ MIT License. See [`LICENSE`](./LICENSE).
 
 ---
 
+## Why I Built This
+
+Been using AI coding tools a lot lately.
+And something felt off.
+They can see your terminal.
+
+Which means... yeah, secrets too.
+Even if it just flashes for a second.
+
+Not a huge deal at first, but still.
+Didn't feel right.
+
+Secret managers don't really help here.
+They protect storage, not this part.
+
+So I hacked together something.
+
+It sits between your program and the terminal
+and swaps secrets before they show up.
+
+Instead of:
+`AWS_SECRET=abcd1234`
+
+you get:
+`VK:LOCAL:ea2bfd16`
+
+But that's not all.
+I introduced the concept of a local vault —
+a way to manage ENV variables and passwords
+that's more convenient than what we have now.
+
+If you try it, you'll see.
+I was so stressed by passwords scattered everywhere
+that I wanted to propose this approach.
+
+Going forward, AI should be able to manage our information safely.
+
+I keep going back and forth on whether to keep this MIT or switch to AGPL-3.
+
+In two months, I'll be bankrupt.
+
+So here's the deal:
+if this repo hits **10,000 stars by April 1st**, I'll keep it MIT.
+
+If something's missing or broken, let me know.
+I'll fix it.
+
+https://github.com/veilkey/veilkey-selfhosted
+
+---
+
 <sub>Images in this README are AI-generated.</sub>
