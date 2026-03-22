@@ -34,9 +34,16 @@ func (h *Handler) handleResolveSecret(w http.ResponseWriter, r *http.Request) {
 
 	isCascade := r.Header.Get("X-VeilKey-Cascade") == "true"
 
-	if tracked, err := h.deps.DB().GetRef(ref); err == nil && tracked != nil {
-		if h.resolveTrackedRef(w, ref, tracked) {
-			return
+	// Try exact match first, then canonical forms (VK:LOCAL:ref, VK:TEMP:ref)
+	candidates := []string{ref}
+	if !strings.Contains(ref, ":") {
+		candidates = append(candidates, "VK:LOCAL:"+ref, "VK:TEMP:"+ref)
+	}
+	for _, candidate := range candidates {
+		if tracked, err := h.deps.DB().GetRef(candidate); err == nil && tracked != nil {
+			if h.resolveTrackedRef(w, candidate, tracked) {
+				return
+			}
 		}
 	}
 
@@ -63,6 +70,38 @@ func (h *Handler) handleResolveSecret(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
+		}
+	}
+
+	// Fallback: scan all agents for this ref (when tracked ref has no agent_hash)
+	if !strings.Contains(ref, ":") {
+		agents, _ := h.deps.DB().ListAgents()
+		for i := range agents {
+			agent := &agents[i]
+			if len(agent.DEK) == 0 {
+				continue
+			}
+			agentDEK, dekErr := h.decryptAgentDEK(agent.DEK, agent.DEKNonce)
+			if dekErr != nil {
+				continue
+			}
+			ai := agentToInfo(agent)
+			cipher, cipherErr := h.fetchAgentCiphertext(ai.URL(), ref)
+			if cipherErr != nil {
+				continue
+			}
+			plaintext, decErr := crypto.Decrypt(agentDEK, cipher.Ciphertext, cipher.Nonce)
+			if decErr != nil {
+				continue
+			}
+			respondJSON(w, http.StatusOK, map[string]interface{}{
+				"ref":                ref,
+				"name":               cipher.Name,
+				"value":              string(plaintext),
+				"vault":              agent.Label,
+				"vault_runtime_hash": agent.AgentHash,
+			})
+			return
 		}
 	}
 

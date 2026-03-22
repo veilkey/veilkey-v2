@@ -239,28 +239,25 @@ impl VeilKeyClient {
         };
 
         // 2. Resolve each ref to get plaintext → canonical mapping
+        //    Uses self.resolve() which tries canonical + raw ref via resolve_candidates
         for entry in &ref_entries {
             let canonical = match entry["ref_canonical"].as_str() {
                 Some(c) => c,
                 None => continue,
             };
-            let resolve_url = format!(
-                "{}/api/resolve/{}",
-                self.base_url,
-                urlencoding::encode(canonical)
-            );
-            let resolve_resp = self.agent.get(&resolve_url).call();
-            if let Err(e) = &resolve_resp {
-                eprintln!("[veilkey] resolve {} failed: {}", canonical, e);
+            // Skip non-VK refs (VE: configs are not secrets)
+            if !canonical.starts_with("VK:") {
                 continue;
             }
-            if let Ok(resp) = resolve_resp {
-                let data: serde_json::Value = resp.into_json().unwrap_or_default();
-                if let Some(value) = data["value"].as_str() {
+            match self.resolve(canonical) {
+                Ok(value) => {
                     let trimmed = value.trim_end_matches(['\r', '\n']);
                     if !trimmed.is_empty() {
                         mask_map.push((trimmed.to_string(), canonical.to_string()));
                     }
+                }
+                Err(e) => {
+                    eprintln!("[veilkey] resolve {} failed: {}", canonical, e);
                 }
             }
         }
