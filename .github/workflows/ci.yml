@@ -47,6 +47,9 @@ jobs:
         working-directory: services/vaultcenter
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: services/vaultcenter/frontend/admin/.node-version
       - uses: actions/setup-go@v5
         with:
           go-version-file: services/vaultcenter/go.mod
