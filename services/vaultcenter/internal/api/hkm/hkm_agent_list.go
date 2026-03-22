@@ -10,7 +10,13 @@ import (
 func (h *Handler) handleAgentList(w http.ResponseWriter, r *http.Request) {
 	h.advancePendingRotationsBestEffort()
 
-	agents, err := h.deps.DB().ListAgents()
+	var agents []db.Agent
+	var err error
+	if r.URL.Query().Get("include_archived") == "true" {
+		agents, err = h.deps.DB().ListAgentsIncludeArchived()
+	} else {
+		agents, err = h.deps.DB().ListAgents()
+	}
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to list agents")
 		return
