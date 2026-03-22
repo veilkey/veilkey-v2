@@ -1,6 +1,7 @@
 package hkm
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 	"veilkey-vaultcenter/internal/db"
@@ -34,12 +35,15 @@ func (h *Handler) handleAgentList(w http.ResponseWriter, r *http.Request) {
 		ManagedPaths     []string `json:"managed_paths"`
 		KeyVersion       int      `json:"key_version"`
 		Status           string   `json:"status"`
+		Health           string   `json:"health"`
+		LastSeenAgo      string   `json:"last_seen_ago"`
 		RotationRequired bool     `json:"rotation_required"`
 		RebindRequired   bool     `json:"rebind_required"`
 		RetryStage       int      `json:"retry_stage"`
 		NextRetryAt      string   `json:"next_retry_at,omitempty"`
 		Blocked          bool     `json:"blocked"`
 		BlockReason      string   `json:"block_reason,omitempty"`
+		Archived         bool     `json:"archived"`
 		IP               string   `json:"ip"`
 		Port             int      `json:"port"`
 		SecretsCount     int      `json:"secrets_count"`
@@ -49,6 +53,7 @@ func (h *Handler) handleAgentList(w http.ResponseWriter, r *http.Request) {
 		LastSeen         string   `json:"last_seen"`
 	}
 
+	now := time.Now().UTC()
 	var result []agentResp
 	for _, a := range agents {
 		status := "ok"
@@ -59,6 +64,20 @@ func (h *Handler) handleAgentList(w http.ResponseWriter, r *http.Request) {
 		} else if a.RebindRequired {
 			status = "rebind_required"
 		}
+
+		// Health based on last_seen
+		health := "healthy"
+		sinceLastSeen := now.Sub(a.LastSeen)
+		if a.ArchivedAt != nil {
+			health = "archived"
+		} else if sinceLastSeen > 7*24*time.Hour {
+			health = "unreachable"
+		} else if sinceLastSeen > 10*time.Minute {
+			health = "stale"
+		}
+
+		lastSeenAgo := formatDuration(sinceLastSeen)
+
 		nextRetryAt := ""
 		if a.NextRetryAt != nil {
 			nextRetryAt = a.NextRetryAt.UTC().Format(time.RFC3339)
@@ -75,12 +94,15 @@ func (h *Handler) handleAgentList(w http.ResponseWriter, r *http.Request) {
 			ManagedPaths:     db.DecodeManagedPaths(a.ManagedPaths),
 			KeyVersion:       a.KeyVersion,
 			Status:           status,
+			Health:           health,
+			LastSeenAgo:      lastSeenAgo,
 			RotationRequired: a.RotationRequired,
 			RebindRequired:   a.RebindRequired,
 			RetryStage:       a.RetryStage,
 			NextRetryAt:      nextRetryAt,
 			Blocked:          a.BlockedAt != nil,
 			BlockReason:      a.BlockReason,
+			Archived:         a.ArchivedAt != nil,
 			IP:               a.IP,
 			Port:             a.Port,
 			SecretsCount:     a.SecretsCount,
@@ -95,4 +117,17 @@ func (h *Handler) handleAgentList(w http.ResponseWriter, r *http.Request) {
 		"agents": result,
 		"count":  len(result),
 	})
+}
+
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
