@@ -257,7 +257,7 @@ func mustLoadServer() (*api.Server, string, int) {
 
 	// Derive DB encryption key from salt
 	if os.Getenv("VEILKEY_DB_KEY") == "" {
-		os.Setenv("VEILKEY_DB_KEY", deriveDBKey(salt))
+		_ = os.Setenv("VEILKEY_DB_KEY", deriveDBKey(salt))
 	}
 
 	database, err := db.New(dbPath)

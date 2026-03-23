@@ -47,7 +47,7 @@ func RunServer() {
 	// Derive DB encryption key from salt — no separate VEILKEY_DB_KEY needed
 	if os.Getenv("VEILKEY_DB_KEY") == "" {
 		dbKey := deriveDBKey(salt)
-		os.Setenv("VEILKEY_DB_KEY", dbKey)
+		_ = os.Setenv("VEILKEY_DB_KEY", dbKey)
 	}
 
 	database, err := db.New(dbPath)
