@@ -8,8 +8,8 @@ import (
 func TestPasswordFileEnvRejected(t *testing.T) {
 	// VEILKEY_PASSWORD_FILE must not be supported
 	t.Setenv("VEILKEY_PASSWORD_FILE", "/tmp/test-password")
-	os.WriteFile("/tmp/test-password", []byte("test"), 0600)
-	defer os.Remove("/tmp/test-password")
+	_ = os.WriteFile("/tmp/test-password", []byte("test"), 0600)
+	defer func() { _ = os.Remove("/tmp/test-password") }()
 
 	// The env var should have no effect — server starts locked regardless
 	// If any code reads this env var, it's a security violation
