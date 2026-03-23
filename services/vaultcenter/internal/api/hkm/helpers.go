@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 
@@ -22,14 +21,12 @@ type agentAuthContextKey struct{}
 var agentAuthKey = agentAuthContextKey{}
 
 // requireAgentAuth is a middleware that validates agent Bearer tokens.
-// Phase 1: if no Authorization header is present, warn but allow through.
+// Rejects requests without valid agent authentication.
 func (h *Handler) requireAgentAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			// Phase 1: warn but allow
-			log.Printf("WARNING: unauthenticated agent request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
-			next(w, r)
+			respondError(w, http.StatusUnauthorized, "agent authentication required")
 			return
 		}
 		token := strings.TrimPrefix(authHeader, "Bearer ")
@@ -56,11 +53,10 @@ func (h *Handler) authenticateAgentBySecret(token string) (*db.Agent, error) {
 }
 
 // verifyAgentAccess checks that the authenticated agent matches the URL path agent.
-// Returns true if access is allowed (either no auth present in Phase 1, or agent matches).
 func (h *Handler) verifyAgentAccess(r *http.Request) bool {
 	authedAgent, ok := r.Context().Value(agentAuthKey).(string)
 	if !ok {
-		return true // Phase 1: no auth present, allow
+		return false
 	}
 	urlAgent := r.PathValue("agent")
 	return authedAgent == urlAgent
