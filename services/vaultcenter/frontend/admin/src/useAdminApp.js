@@ -32,6 +32,7 @@ const state = reactive({
         vaults: 'ALL_VAULTS',
         functions: 'FUNCTION_LIST',
         audit: 'AUDIT_LOG',
+        plugins: 'PLUGIN_LIST',
         settings: 'UI'
     },
     message: null,
@@ -79,6 +80,8 @@ const state = reactive({
     functionSummary: null,
     functionImpact: null,
     functionRunResult: null,
+    plugins: [],
+    selectedPlugin: null,
     auditVault: null,
     auditKey: null,
     auditRows: [],
@@ -550,6 +553,11 @@ function renderSecondarySidebar() {
                 </div>
             </div>
         `;
+        return;
+    }
+
+    if (state.activePage === 'plugins') {
+        state.ui.secondarySidebarHidden = true;
         return;
     }
 
@@ -1552,8 +1560,47 @@ function render() {
         renderKeycenterPage();
         return;
     }
+    if (state.activePage === 'plugins') {
+        renderPluginsPage();
+        return;
+    }
     renderSecondarySidebar();
     if (state.activePage === 'configs') renderConfigs();
+}
+
+function renderPluginsPage() {
+    state.ui.leftHTML = '';
+    state.ui.leftVisible = false;
+    state.ui.twoPane = true;
+    state.ui.secondarySidebarHidden = true;
+    state.ui.rightHTML = '';
+
+    const plugins = state.plugins || [];
+
+    state.ui.centerHTML = `
+        <div class="pane-header">
+            <div class="pane-title"><strong>${escapeHTML(t('page_plugins'))}</strong></div>
+            <div class="toolbar">
+                <span class="pill">${plugins.length}</span>
+                <button class="btn btn-soft" data-action="refresh-plugins" style="margin-left:8px;font-size:0.8rem">${escapeHTML(t('refresh') || 'Refresh')}</button>
+            </div>
+        </div>
+        ${plugins.length === 0 ? `<div class="empty">${escapeHTML(t('no_plugins') || 'No plugins installed.')}</div>` :
+        renderTable([
+            { label: 'Name', render: (row) => `<strong>${escapeHTML(row.name)}</strong>` },
+            { label: 'Version', render: (row) => `<code>${escapeHTML(row.version)}</code>` },
+            { label: 'Status', render: (row) => row.loaded
+                ? '<span class="status-pill ok">loaded</span>'
+                : '<span class="status-pill">unloaded</span>' },
+            { label: 'Description', render: (row) => escapeHTML(row.description || '-') },
+            { label: 'Installed', render: (row) => escapeHTML(row.installed_at ? new Date(row.installed_at).toLocaleDateString() : '-') },
+            { label: '', render: (row) => row.loaded
+                ? `<button class="btn btn-soft btn-xs" data-action="unload-plugin" data-key="${escapeHTML(row.name)}">Unload</button>
+                   <button class="btn btn-soft btn-xs" data-action="sync-plugin" data-key="${escapeHTML(row.name)}" style="margin-left:4px">Sync</button>`
+                : `<button class="btn btn-soft btn-xs" data-action="load-plugin" data-key="${escapeHTML(row.name)}">Load</button>
+                   <button class="btn btn-soft btn-xs btn-danger" data-action="remove-plugin" data-key="${escapeHTML(row.name)}" style="margin-left:4px">Remove</button>` }
+        ], plugins, { emptyText: 'No plugins' })}
+    `;
 }
 
 function renderKeycenterPage() {
@@ -2348,6 +2395,15 @@ async function loadFunctions() {
     }
 }
 
+async function loadPlugins() {
+    try {
+        const data = await request('/api/plugins');
+        state.plugins = data.plugins || [];
+    } catch (e) {
+        state.plugins = [];
+    }
+}
+
 async function loadSelectedFunctionDetail() {
     if (!state.selectedFunction) {
         state.functionDetail = null;
@@ -2576,6 +2632,8 @@ async function syncPageData() {
             await loadAuditCountsPerVault();
             if (!state.auditVault && state.vaults.length) state.auditVault = state.vaults[0].vault_runtime_hash;
             await loadAuditVaultFeed();
+        } else if (state.activePage === 'plugins') {
+            await loadPlugins();
         } else if (state.activePage === 'settings') {
             await loadUIConfig();
             await loadSystemUpdate();
@@ -3052,6 +3110,30 @@ async function handleAction(action, dataset) {
         if (action === 'refresh-functions') {
             await loadFunctions();
             return syncPageData();
+        }
+        if (action === 'refresh-plugins') {
+            await loadPlugins();
+            return render();
+        }
+        if (action === 'load-plugin') {
+            await request(`/api/plugins/${encodeURIComponent(dataset.key)}/load`, { method: 'POST' });
+            await loadPlugins();
+            return render();
+        }
+        if (action === 'unload-plugin') {
+            await request(`/api/plugins/${encodeURIComponent(dataset.key)}/unload`, { method: 'POST' });
+            await loadPlugins();
+            return render();
+        }
+        if (action === 'remove-plugin') {
+            if (!confirm(`Remove plugin "${dataset.key}"?`)) return;
+            await request(`/api/plugins/${encodeURIComponent(dataset.key)}`, { method: 'DELETE' });
+            await loadPlugins();
+            return render();
+        }
+        if (action === 'sync-plugin') {
+            setMessage('info', `Sync "${dataset.key}" — use POST /api/vaults/{vault}/plugins/${dataset.key}/sync`);
+            return;
         }
         if (action === 'select-function') return selectFunctionByName(dataset.key);
         if (action === 'select-grouped-name') {
