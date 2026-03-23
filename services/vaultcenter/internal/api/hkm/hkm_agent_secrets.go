@@ -11,6 +11,11 @@ import (
 )
 
 func (h *Handler) handleAgentSecrets(w http.ResponseWriter, r *http.Request) {
+	if !h.verifyAgentAccess(r) {
+		respondError(w, http.StatusForbidden, "agent access denied")
+		return
+	}
+
 	hashOrLabel := r.PathValue("agent")
 	agent, err := h.findAgent(hashOrLabel)
 	if err != nil {

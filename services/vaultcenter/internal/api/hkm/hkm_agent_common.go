@@ -134,15 +134,6 @@ func (h *Handler) setAgentAuthHeader(req *http.Request, agent *agentInfo) {
 	}
 }
 
-// agentSecretForHash retrieves and decrypts the agent secret for the given agent hash.
-func (h *Handler) agentSecretForHash(agentHash string) string {
-	dbAgent, err := h.deps.DB().GetAgentByHash(agentHash)
-	if err != nil {
-		return ""
-	}
-	return h.decryptAgentSecret(dbAgent.AgentSecretEnc, dbAgent.AgentSecretNonce)
-}
-
 func (h *Handler) decryptAgentDEK(encDEK, encNonce []byte) ([]byte, error) {
 	if len(encDEK) == 0 {
 		return nil, fmt.Errorf("agent has no DEK assigned")

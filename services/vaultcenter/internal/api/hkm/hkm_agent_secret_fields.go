@@ -18,6 +18,11 @@ type agentSecretField struct {
 }
 
 func (h *Handler) handleAgentSaveSecretFields(w http.ResponseWriter, r *http.Request) {
+	if !h.verifyAgentAccess(r) {
+		respondError(w, http.StatusForbidden, "agent access denied")
+		return
+	}
+
 	hashOrLabel := r.PathValue("agent")
 	name := r.PathValue("name")
 	agent, err := h.findAgent(hashOrLabel)
@@ -123,6 +128,11 @@ func (h *Handler) handleAgentSaveSecretFields(w http.ResponseWriter, r *http.Req
 }
 
 func (h *Handler) handleAgentGetSecretField(w http.ResponseWriter, r *http.Request) {
+	if !h.verifyAgentAccess(r) {
+		respondError(w, http.StatusForbidden, "agent access denied")
+		return
+	}
+
 	hashOrLabel := r.PathValue("agent")
 	name := r.PathValue("name")
 	fieldKey := r.PathValue("field")
@@ -188,6 +198,11 @@ func (h *Handler) handleAgentGetSecretField(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *Handler) handleAgentDeleteSecretField(w http.ResponseWriter, r *http.Request) {
+	if !h.verifyAgentAccess(r) {
+		respondError(w, http.StatusForbidden, "agent access denied")
+		return
+	}
+
 	hashOrLabel := r.PathValue("agent")
 	name := r.PathValue("name")
 	fieldKey := r.PathValue("field")

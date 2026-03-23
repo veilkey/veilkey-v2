@@ -9,6 +9,11 @@ import (
 )
 
 func (h *Handler) handleAgentGetConfig(w http.ResponseWriter, r *http.Request) {
+	if !h.verifyAgentAccess(r) {
+		respondError(w, http.StatusForbidden, "agent access denied")
+		return
+	}
+
 	hashOrLabel := r.PathValue("agent")
 	key := r.PathValue("key")
 
