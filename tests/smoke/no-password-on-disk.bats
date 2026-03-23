@@ -32,3 +32,11 @@ REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)}"
     --include='*.go' | grep -v '_test.go' | wc -l)
   [ "$count" -eq 0 ]
 }
+
+@test "VEILKEY_DB_KEY check enforced in VaultCenter server.go" {
+  grep -q 'VEILKEY_DB_KEY.*required' "$REPO_ROOT/services/vaultcenter/internal/commands/server.go"
+}
+
+@test "VEILKEY_DB_KEY check enforced in LocalVault server.go" {
+  grep -q 'VEILKEY_DB_KEY.*required' "$REPO_ROOT/services/localvault/internal/commands/server.go"
+}

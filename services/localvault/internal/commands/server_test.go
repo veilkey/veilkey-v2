@@ -30,11 +30,6 @@ func TestPasswordEnvRejected(t *testing.T) {
 }
 
 func TestServerStartsLocked(t *testing.T) {
-	// Server must always start in locked mode
-	// KEK only exists in memory after POST /api/unlock
-	// No auto-unlock mechanism should exist
-
-	// Check that no password-related env vars trigger auto-unlock
 	for _, envVar := range []string{
 		"VEILKEY_PASSWORD",
 		"VEILKEY_PASSWORD_FILE",
@@ -45,4 +40,27 @@ func TestServerStartsLocked(t *testing.T) {
 			t.Errorf("env var %s is set — server must not auto-unlock from any env var", envVar)
 		}
 	}
+}
+
+func TestDBEncryptionRequired(t *testing.T) {
+	src, err := os.ReadFile("server.go")
+	if err != nil {
+		t.Fatalf("failed to read server.go: %v", err)
+	}
+	code := string(src)
+	if !contains(code, `os.Getenv("VEILKEY_DB_KEY") == ""`) {
+		t.Error("server.go must check VEILKEY_DB_KEY and refuse to start without it")
+	}
+	if !contains(code, "database must be encrypted") {
+		t.Error("server.go must log a fatal message about database encryption requirement")
+	}
+}
+
+func contains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

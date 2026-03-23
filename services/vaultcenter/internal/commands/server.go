@@ -20,6 +20,9 @@ func RunServer() {
 	if dbPath == "" {
 		log.Fatal("VEILKEY_DB_PATH is required")
 	}
+	if os.Getenv("VEILKEY_DB_KEY") == "" {
+		log.Fatal("VEILKEY_DB_KEY is required — database must be encrypted with SQLCipher")
+	}
 	dataDir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		log.Fatalf("Failed to create data directory: %v", err)
