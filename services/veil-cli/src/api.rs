@@ -93,6 +93,23 @@ impl VeilKeyClient {
         &self.base_url
     }
 
+    /// Login to VaultCenter with admin password.
+    /// Session cookie is stored in the agent's cookie jar for subsequent requests.
+    pub fn admin_login(&self, password: &str) -> Result<(), String> {
+        let url = format!("{}/api/admin/login", self.base_url);
+        let body = serde_json::json!({"password": password});
+        match self.agent.post(&url).send_json(&body) {
+            Ok(resp) => {
+                if resp.status() == 200 {
+                    Ok(())
+                } else {
+                    Err(format!("login failed: HTTP {}", resp.status()))
+                }
+            }
+            Err(e) => Err(format!("login request failed: {}", e)),
+        }
+    }
+
     #[allow(clippy::result_large_err)]
     pub fn raw_get(&self, url: &str) -> Result<ureq::Response, ureq::Error> {
         self.agent.get(url).call()

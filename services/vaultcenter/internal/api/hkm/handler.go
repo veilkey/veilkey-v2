@@ -68,13 +68,16 @@ func NewHandler(deps Deps) *Handler {
 // Register mounts all HKM routes onto mux.
 //   - requireTrustedIP  – restricts to trusted IP ranges
 //   - requireReadyForOps – requires server unlocked + install complete
+//   - requireAdminAuth  – requires admin session (password login)
 func (h *Handler) Register(
 	mux *http.ServeMux,
 	requireTrustedIP func(http.HandlerFunc) http.HandlerFunc,
 	requireReadyForOps func(http.HandlerFunc) http.HandlerFunc,
+	requireAdminAuth func(http.HandlerFunc) http.HandlerFunc,
 ) {
 	ready := requireReadyForOps
 	trusted := requireTrustedIP
+	adminAuth := requireAdminAuth
 
 	// Parent API (called by root/parent to manage this node's children)
 	mux.HandleFunc("POST /api/register", trusted(ready(h.handleRegister)))
@@ -96,8 +99,8 @@ func (h *Handler) Register(
 	// Key rotation (root triggers full tree rotation)
 	mux.HandleFunc("POST /api/federation/rotate", trusted(ready(h.handleFederatedRotate)))
 
-	// Mask map for veil-cli PTY masking
-	mux.HandleFunc("GET /api/mask-map", trusted(ready(h.handleMaskMap)))
+	// Mask map for veil-cli PTY masking — requires admin session
+	mux.HandleFunc("GET /api/mask-map", adminAuth(trusted(ready(h.handleMaskMap))))
 
 	// Agent management (Hub-only decryption)
 	agentAuth := h.requireAgentAuth

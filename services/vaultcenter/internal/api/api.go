@@ -644,7 +644,7 @@ func (s *Server) SetupRoutes() http.Handler {
 	s.adminHandler.Register(mux, s.requireReadyForOps, s.requireTrustedIP)
 	// tracked-ref cleanup routes delegate to the hkm handler (registered after IsHKM check below)
 	if s.IsHKM() {
-		s.hkmHandler.Register(mux, s.requireTrustedIP, s.requireReadyForOps)
+		s.hkmHandler.Register(mux, s.requireTrustedIP, s.requireReadyForOps, s.requireAdminAuth)
 		s.bulkHandler.Register(mux, s.requireTrustedIP)
 		s.pluginHandler.Register(mux, s.requireTrustedIP)
 		// Admin tracked-ref cleanup routes require an active hkm handler.

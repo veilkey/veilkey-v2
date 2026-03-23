@@ -38,6 +38,17 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
 
     let client = VeilKeyClient::new(api_url);
 
+    // Authenticate with admin password before fetching secrets
+    let password = rpassword::prompt_password("VeilKey password: ").unwrap_or_default();
+    if password.is_empty() {
+        eprintln!("[veilkey] password is required");
+        std::process::exit(1);
+    }
+    if let Err(e) = client.admin_login(&password) {
+        eprintln!("[veilkey] authentication failed: {}", e);
+        std::process::exit(1);
+    }
+
     // Load detection patterns
     let cfg = load_config(patterns_file).ok();
     let patterns: Vec<CompiledPattern> = cfg.map(|c| c.patterns).unwrap_or_default();
