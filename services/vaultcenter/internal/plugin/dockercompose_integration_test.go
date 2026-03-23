@@ -13,7 +13,7 @@ func TestDockerComposeSyncPlugin(t *testing.T) {
 	ctx := context.Background()
 	inst, err := LoadInstance(ctx, wasm, HostFunctions{})
 	if err != nil { t.Fatalf("load: %v", err) }
-	defer inst.Close(ctx)
+	defer func() { _ = inst.Close(ctx) }()
 
 	t.Run("info", func(t *testing.T) {
 		if inst.Info().Name != "docker-compose-sync" { t.Errorf("name = %q", inst.Info().Name) }
