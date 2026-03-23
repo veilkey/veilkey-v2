@@ -52,10 +52,7 @@ pub fn mask_output(
     for (plaintext, ref_str) in mask_map {
         if !plaintext.is_empty() && s.contains(plaintext.as_str()) {
             if ref_str.starts_with("VE:") {
-                s = s.replace(
-                    plaintext.as_str(),
-                    &colorize_ve_ref(plaintext, ref_str),
-                );
+                s = s.replace(plaintext.as_str(), &colorize_ve_ref(plaintext, ref_str));
             } else {
                 s = s.replace(
                     plaintext.as_str(),
