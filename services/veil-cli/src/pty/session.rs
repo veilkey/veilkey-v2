@@ -70,8 +70,6 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
             std::process::exit(1);
         }
     };
-    eprintln!("[veilkey] loaded {} secret(s) from vaults", mask_map.len());
-
     // 2. Resolve VK refs in environment variables
     let vk_re = regex::Regex::new(crate::detector::VEILKEY_RE_STR).unwrap();
     let mut child_env: Vec<(String, String)> = Vec::new();
@@ -94,6 +92,7 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
         }
     }
     crate::api::enrich_mask_map(&mut mask_map);
+    eprintln!("[veilkey] {} secret(s) masked", mask_map.len());
 
     // Open PTY
     let (master_fd, slave_fd): (RawFd, RawFd) = unsafe {

@@ -102,8 +102,11 @@ impl VeilKeyClient {
         let body = serde_json::json!({"password": password});
         match self.agent.post(&url).send_json(&body) {
             Ok(resp) => {
+                if resp.status() == 429 {
+                    return Err("too many attempts — try again later".to_string());
+                }
                 if resp.status() != 200 {
-                    return Err(format!("login failed: HTTP {}", resp.status()));
+                    return Err("invalid password".to_string());
                 }
                 // Extract session cookie from Set-Cookie header
                 if let Some(set_cookie) = resp.header("set-cookie") {
@@ -115,7 +118,7 @@ impl VeilKeyClient {
                 }
                 Ok(())
             }
-            Err(e) => Err(format!("login request failed: {}", e)),
+            Err(_) => Err("cannot reach VeilKey server".to_string()),
         }
     }
 
@@ -331,10 +334,6 @@ pub fn enrich_mask_map(map: &mut Vec<(String, String)>) {
     let mut seen: HashSet<String> = map.iter().map(|(p, _)| p.clone()).collect();
     let mut encoded: Vec<(String, String)> = Vec::new();
     for (plaintext, vk_ref) in map.iter() {
-        // VE (config) entries don't need encoding variants — display only
-        if vk_ref.starts_with("VE:") {
-            continue;
-        }
         if plaintext.len() < 8 {
             continue;
         }

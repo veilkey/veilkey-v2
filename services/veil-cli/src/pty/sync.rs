@@ -24,7 +24,7 @@ pub fn spawn_mask_map_sync(
                     let data: serde_json::Value = resp.into_json().unwrap_or_default();
                     let new_version = data["version"].as_u64().unwrap_or(version);
                     let changed = data["changed"].as_bool().unwrap_or(false);
-                    if changed && new_version > version {
+                    if changed && new_version >= version {
                         if let Some(entries) = data["entries"].as_array() {
                             let mut new_map: Vec<(String, String)> = Vec::new();
                             for e in entries {

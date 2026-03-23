@@ -48,17 +48,13 @@ pub fn mask_output(
     let mut s = String::from_utf8_lossy(data).to_string();
     let mut had_replacement = false;
 
-    // 1. Known secrets — VK refs replaced, VE refs show original + tag
-    for (plaintext, ref_str) in mask_map {
+    // 1. Known secrets — replace with colorized VK refs
+    for (plaintext, vk_ref) in mask_map {
         if !plaintext.is_empty() && s.contains(plaintext.as_str()) {
-            if ref_str.starts_with("VE:") {
-                s = s.replace(plaintext.as_str(), &colorize_ve_ref(plaintext, ref_str));
-            } else {
-                s = s.replace(
-                    plaintext.as_str(),
-                    &padded_colorize_ref(ref_str, plaintext.len()),
-                );
-            }
+            s = s.replace(
+                plaintext.as_str(),
+                &padded_colorize_ref(vk_ref, plaintext.len()),
+            );
             had_replacement = true;
         }
     }
@@ -71,9 +67,7 @@ pub fn mask_output(
             if i > 0 {
                 cleared.push('\n');
             }
-            let has_our_ansi = line.contains("\x1b[1m\x1b[36m")
-                || line.contains("\x1b[1m\x1b[31m")
-                || line.contains("\x1b[2m\x1b[35m");
+            let has_our_ansi = line.contains("\x1b[1m\x1b[36m") || line.contains("\x1b[1m\x1b[31m");
             if has_our_ansi {
                 cleared.push_str("\r\x1b[2K");
             }

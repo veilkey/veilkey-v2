@@ -2,7 +2,6 @@ package hkm
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -108,46 +107,9 @@ func (h *Handler) handleMaskMap(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Add VE (config) entries from each agent
-	for i := range agents {
-		agent := &agents[i]
-		if agent.IP == "" {
-			continue
-		}
-		ai := agentToInfo(agent)
-		configURL := ai.URL() + "/api/configs"
-		req, reqErr := http.NewRequest(http.MethodGet, configURL, nil)
-		if reqErr != nil {
-			continue
-		}
-		h.setAgentAuthHeader(req, ai)
-		configResp, configErr := h.deps.HTTPClient().Do(req)
-		if configErr != nil {
-			continue
-		}
-		var configData struct {
-			Configs []struct {
-				Key    string `json:"key"`
-				Value  string `json:"value"`
-				Scope  string `json:"scope"`
-				Status string `json:"status"`
-			} `json:"configs"`
-		}
-		if err := json.NewDecoder(configResp.Body).Decode(&configData); err == nil {
-			for _, cfg := range configData.Configs {
-				if cfg.Value == "" || cfg.Status != "active" {
-					continue
-				}
-				veRef := "VE:" + cfg.Scope + ":" + cfg.Key
-				entries = append(entries, maskEntry{
-					Ref:   veRef,
-					Value: cfg.Value,
-					Vault: agent.VaultName,
-				})
-			}
-		}
-		configResp.Body.Close()
-	}
+	// VE (config) entries are NOT included in mask-map.
+	// Config values (URLs, vault names) should not be masked in PTY output
+	// as it breaks environment variables and command output.
 
 	respondJSON(w, http.StatusOK, map[string]any{
 		"version": serverVersion,
