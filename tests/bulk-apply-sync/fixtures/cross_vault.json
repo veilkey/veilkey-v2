@@ -1,0 +1,15 @@
+{
+  "lv_secrets": {
+    "count": 2,
+    "secrets": [
+      {"name": "SHARED_KEY", "token": "VK:LOCAL:ddd444", "scope": "LOCAL", "status": "active"},
+      {"name": "LOCAL_ONLY", "token": "VK:LOCAL:eee555", "scope": "LOCAL", "status": "active"}
+    ]
+  },
+  "vc_agents": [
+    {"agent_hash": "agent-1", "vault_name": "primary"},
+    {"agent_hash": "agent-2", "vault_name": "secondary"}
+  ],
+  "vc_secret:agent-1:LOCAL_ONLY": {"name": "LOCAL_ONLY", "value": "local-only-value"},
+  "vc_secret:agent-2:SHARED_KEY": {"name": "SHARED_KEY", "value": "shared-from-secondary"}
+}

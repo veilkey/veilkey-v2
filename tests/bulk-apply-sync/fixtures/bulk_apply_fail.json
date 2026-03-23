@@ -1,0 +1,13 @@
+{
+  "lv_secrets": {
+    "count": 1,
+    "secrets": [
+      {"name": "FAIL_KEY", "token": "VK:LOCAL:lll222", "scope": "LOCAL", "status": "active"}
+    ]
+  },
+  "vc_agents": [
+    {"agent_hash": "agent-1", "vault_name": "primary"}
+  ],
+  "vc_secret:agent-1:FAIL_KEY": {"name": "FAIL_KEY", "value": "fail-value"},
+  "bulk_apply_response": {"status": "precheck_failed", "error": "target path not allowed"}
+}

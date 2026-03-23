@@ -1,0 +1,18 @@
+{
+  "lv_secrets": {
+    "count": 3,
+    "secrets": [
+      {"name": "API_KEY", "token": "VK:LOCAL:aaa111", "scope": "LOCAL", "status": "active"},
+      {"name": "DB_PASSWORD", "token": "VK:LOCAL:bbb222", "scope": "LOCAL", "status": "active"},
+      {"name": "ADMIN_TOKEN", "token": "VK:LOCAL:ccc333", "scope": "LOCAL", "status": "active"}
+    ]
+  },
+  "vc_agents": [
+    {"agent_hash": "agent-1", "vault_name": "primary"},
+    {"agent_hash": "agent-2", "vault_name": "secondary"}
+  ],
+  "vc_secret:agent-1:API_KEY": {"name": "API_KEY", "value": "sk-primary-api-key-123"},
+  "vc_secret:agent-1:DB_PASSWORD": {"name": "DB_PASSWORD", "value": "super-secret-db-pw"},
+  "vc_secret:agent-1:ADMIN_TOKEN": {"name": "ADMIN_TOKEN", "value": "admin-tok-456"},
+  "bulk_apply_response": {"status": "applied"}
+}
