@@ -57,10 +57,12 @@ log "Fetching agents for cross-vault key lookup"
 ALL_AGENTS=$($CURL "$VC_URL/api/agents" | \
   python3 -c "
 import json, sys
-agents = json.load(sys.stdin)
+data = json.load(sys.stdin)
+agents = data if isinstance(data, list) else data.get('agents', data.get('data', []))
 for a in agents:
-    h = a.get('agent_hash', '')
-    if h: print(h)
+    if isinstance(a, dict):
+        h = a.get('agent_hash', '')
+        if h: print(h)
 " 2>/dev/null) || ALL_AGENTS=""
 
 # ── 3. 시크릿 resolve (이 vault 우선 → 다른 vault fallback) ──
@@ -86,8 +88,8 @@ while IFS= read -r name; do
   # 이 vault에서 먼저 resolve
   val=$(resolve_from_agent "$AGENT" "$name")
 
-  # 없으면 다른 vault에서 같은 이름 찾기 (통일성)
-  if [ -z "$val" ]; then
+  # 값이 없거나 placeholder(16자 미만)면 다른 vault에서 같은 이름 찾기 (통일성)
+  if [ -z "$val" ] || [ "${#val}" -lt 16 ]; then
     for other_agent in $ALL_AGENTS; do
       [ "$other_agent" = "$AGENT" ] && continue
       val=$(resolve_from_agent "$other_agent" "$name")
