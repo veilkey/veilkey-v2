@@ -27,6 +27,10 @@
 | Lateral movement | Per-vault agentDEK — one vault compromised, others safe |
 | Stale keys | VaultCenter tracks key_version, enforces rotation |
 | Unauthorized agent | Registration token required for first heartbeat |
+| Cross-vault secret access | Agent auth (Bearer token) — each vault can only query its own secrets |
+| DB direct manipulation | SQLCipher encryption — `VEILKEY_DB_KEY` required, plain sqlite3 blocked |
+| Password file on disk | Removed — KEK exists only in memory, entered via `POST /api/unlock` |
+| Admin password hijack | Change requires owner password (KEK verification), not admin session |
 
 ### What VeilKey does NOT protect against
 
@@ -80,6 +84,31 @@ Screen/AI sees:      VK:LOCAL:ea2bfd16
 - `cat .env` also masked if file contains resolved values
 - mask_map sorted by length (longest match first)
 
+## Database Encryption
+
+All databases (VaultCenter + LocalVault) are encrypted with SQLCipher. `VEILKEY_DB_KEY` environment variable is **required** — server refuses to start without it.
+
+```
+VEILKEY_DB_KEY=<64-char-hex>  →  SQLCipher _pragma_key
+                               →  plain sqlite3 cannot read DB
+                               →  direct admin_auth_configs manipulation blocked
+```
+
+## Vault Isolation (Agent Auth)
+
+Each LocalVault authenticates to VaultCenter with an `agent_secret` (Bearer token), issued during registration. Authentication is bidirectional:
+
+```
+LocalVault → VaultCenter:  Authorization: Bearer {agent_secret}
+                           VaultCenter verifies SHA256(token) → agent_hash
+                           URL {agent} must match authenticated agent
+
+VaultCenter → LocalVault:  Authorization: Bearer {agent_secret}
+                           LocalVault verifies via constant-time comparison
+```
+
+`mask-map` endpoint returns all vaults' secrets (for PTY masking) but the veil CLI processes them as a black box — plaintext never reaches terminal output.
+
 ## Network Security
 
 ### TLS
@@ -97,6 +126,7 @@ Write operations (store secret, delete, etc.) restricted to trusted IPs.
 - bcrypt password hash + HttpOnly session cookie
 - Rate limiting: 10 failed attempts → 15-minute lockout
 - Configurable TTL: `VEILKEY_ADMIN_SESSION_TTL` (default: 2h)
+- Password change: `POST /api/admin/change-password` — requires owner password (KEK), not admin session
 
 ## AI Agent Security Boundary
 
