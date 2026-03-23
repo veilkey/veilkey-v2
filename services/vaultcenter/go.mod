@@ -111,3 +111,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorm.io/driver/sqlite v1.6.0 // indirect
 )
+
+replace github.com/mattn/go-sqlite3 v1.14.33 => github.com/mutecomm/go-sqlcipher/v4 v4.4.2
