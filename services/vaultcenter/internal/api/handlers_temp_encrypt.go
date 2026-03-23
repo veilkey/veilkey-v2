@@ -62,7 +62,7 @@ func (s *Server) handleTempEncrypt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refID, err := crypto.GenerateHexRef(16)
+	refID, err := crypto.GenerateHexRef(8)
 	if err != nil {
 		s.respondError(w, http.StatusInternalServerError, "failed to generate ref")
 		return
