@@ -7,9 +7,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/api"
-	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
+	extism "github.com/extism/go-sdk"
 )
 
 // HostFunctions are callbacks the plugin can invoke.
@@ -18,182 +16,219 @@ type HostFunctions struct {
 	ResolveConfig func(name string) (string, bool)
 }
 
-// Instance is a loaded, running plugin.
+// Instance is a loaded, running plugin backed by Extism.
 type Instance struct {
 	info    PluginInfo
-	rt      wazero.Runtime
-	mod     api.Module
+	plugin  *extism.Plugin
 	mu      sync.Mutex
 	hostFns HostFunctions
 }
 
-// LoadInstance compiles and instantiates a WASM plugin.
+// LoadInstance compiles and instantiates a WASM plugin via Extism.
 func LoadInstance(ctx context.Context, wasmBytes []byte, hostFns HostFunctions) (*Instance, error) {
-	rt := wazero.NewRuntime(ctx)
-	wasi_snapshot_preview1.MustInstantiate(ctx, rt)
+	inst := &Instance{hostFns: hostFns}
 
-	inst := &Instance{rt: rt, hostFns: hostFns}
+	// Host functions provided to the plugin
+	hostResolveSecret := extism.NewHostFunctionWithStack(
+		"host_resolve_secret",
+		func(ctx context.Context, p *extism.CurrentPlugin, stack []uint64) {
+			offset := stack[0]
+			name, err := p.ReadString(offset)
+			if err != nil {
+				stack[0] = 0
+				return
+			}
+			value, ok := hostFns.ResolveSecret(name)
+			if !ok {
+				stack[0] = 0
+				return
+			}
+			out, err := p.WriteString(value)
+			if err != nil {
+				stack[0] = 0
+				return
+			}
+			stack[0] = out
+		},
+		[]extism.ValueType{extism.ValueTypePTR},
+		[]extism.ValueType{extism.ValueTypePTR},
+	)
+	hostResolveSecret.SetNamespace("veilkey")
 
-	_, err := rt.NewHostModuleBuilder("veilkey").
-		NewFunctionBuilder().WithFunc(inst.hostLog).Export("host_log").
-		NewFunctionBuilder().WithFunc(inst.hostResolveSecret).Export("host_resolve_secret").
-		NewFunctionBuilder().WithFunc(inst.hostResolveConfig).Export("host_resolve_config").
-		Instantiate(ctx)
-	if err != nil {
-		_ = rt.Close(ctx)
-		return nil, fmt.Errorf("register host module: %w", err)
+	hostResolveConfig := extism.NewHostFunctionWithStack(
+		"host_resolve_config",
+		func(ctx context.Context, p *extism.CurrentPlugin, stack []uint64) {
+			offset := stack[0]
+			name, err := p.ReadString(offset)
+			if err != nil {
+				stack[0] = 0
+				return
+			}
+			value, ok := hostFns.ResolveConfig(name)
+			if !ok {
+				stack[0] = 0
+				return
+			}
+			out, err := p.WriteString(value)
+			if err != nil {
+				stack[0] = 0
+				return
+			}
+			stack[0] = out
+		},
+		[]extism.ValueType{extism.ValueTypePTR},
+		[]extism.ValueType{extism.ValueTypePTR},
+	)
+	hostResolveConfig.SetNamespace("veilkey")
+
+	hostLog := extism.NewHostFunctionWithStack(
+		"host_log",
+		func(ctx context.Context, p *extism.CurrentPlugin, stack []uint64) {
+			msg, _ := p.ReadString(stack[0])
+			log.Printf("[plugin] %s", msg)
+		},
+		[]extism.ValueType{extism.ValueTypePTR},
+		[]extism.ValueType{},
+	)
+	hostLog.SetNamespace("veilkey")
+
+	manifest := extism.Manifest{
+		Wasm: []extism.Wasm{extism.WasmData{Data: wasmBytes}},
 	}
 
-	mod, err := rt.Instantiate(ctx, wasmBytes)
+	plugin, err := extism.NewPlugin(ctx, manifest, extism.PluginConfig{
+		EnableWasi: true,
+	}, []extism.HostFunction{hostResolveSecret, hostResolveConfig, hostLog})
 	if err != nil {
-		_ = rt.Close(ctx)
-		return nil, fmt.Errorf("instantiate wasm: %w", err)
+		return nil, fmt.Errorf("create plugin: %w", err)
 	}
-	inst.mod = mod
+	inst.plugin = plugin
 
-	info, err := inst.callPluginInfo(ctx)
+	// Call plugin_info to get metadata
+	info, err := inst.callJSON("plugin_info", nil)
 	if err != nil {
-		_ = rt.Close(ctx)
+		plugin.Close(ctx)
 		return nil, fmt.Errorf("plugin_info: %w", err)
 	}
-	inst.info = *info
+	var pInfo PluginInfo
+	if err := json.Unmarshal(info, &pInfo); err != nil {
+		plugin.Close(ctx)
+		return nil, fmt.Errorf("parse plugin_info: %w", err)
+	}
+	inst.info = pInfo
+
 	return inst, nil
 }
 
-func (inst *Instance) Info() PluginInfo { return inst.info }
+// Info returns the plugin's metadata.
+func (inst *Instance) Info() PluginInfo {
+	return inst.info
+}
 
+// Init calls plugin_init with the given config.
 func (inst *Instance) Init(ctx context.Context, config map[string]any) (*PluginInitResult, error) {
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
 	input, _ := json.Marshal(config)
-	out, err := inst.callGuest(ctx, "plugin_init", input)
-	if err != nil { return nil, err }
+	out, err := inst.callJSON("plugin_init", input)
+	if err != nil {
+		return nil, err
+	}
 	var result PluginInitResult
-	if err := json.Unmarshal(out, &result); err != nil { return nil, fmt.Errorf("parse init result: %w", err) }
+	if err := json.Unmarshal(out, &result); err != nil {
+		return nil, fmt.Errorf("parse init: %w", err)
+	}
 	return &result, nil
 }
 
+// Destroy calls plugin_destroy.
 func (inst *Instance) Destroy(ctx context.Context) error {
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
-	_, err := inst.callGuest(ctx, "plugin_destroy", nil)
+	_, err := inst.callJSON("plugin_destroy", nil)
 	return err
 }
 
+// Hooks calls plugin_hooks.
 func (inst *Instance) Hooks(ctx context.Context) ([]HookDef, error) {
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
-	out, err := inst.callGuest(ctx, "plugin_hooks", nil)
-	if err != nil { return nil, err }
+	out, err := inst.callJSON("plugin_hooks", nil)
+	if err != nil {
+		return nil, err
+	}
 	var hooks []HookDef
-	if err := json.Unmarshal(out, &hooks); err != nil { return nil, fmt.Errorf("parse hooks: %w", err) }
+	if err := json.Unmarshal(out, &hooks); err != nil {
+		return nil, fmt.Errorf("parse hooks: %w", err)
+	}
 	return hooks, nil
 }
 
+// Paths calls plugin_paths.
 func (inst *Instance) Paths(ctx context.Context) ([]string, error) {
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
-	out, err := inst.callGuest(ctx, "plugin_paths", nil)
-	if err != nil { return nil, err }
+	out, err := inst.callJSON("plugin_paths", nil)
+	if err != nil {
+		return nil, err
+	}
 	var paths []string
-	if err := json.Unmarshal(out, &paths); err != nil { return nil, fmt.Errorf("parse paths: %w", err) }
+	if err := json.Unmarshal(out, &paths); err != nil {
+		return nil, fmt.Errorf("parse paths: %w", err)
+	}
 	return paths, nil
 }
 
+// Validate calls plugin_validate.
 func (inst *Instance) Validate(ctx context.Context, path, content string) (*ValidateResult, error) {
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
 	input, _ := json.Marshal(map[string]string{"path": path, "content": content})
-	out, err := inst.callGuest(ctx, "plugin_validate", input)
-	if err != nil { return nil, err }
+	out, err := inst.callJSON("plugin_validate", input)
+	if err != nil {
+		return nil, err
+	}
 	var result ValidateResult
-	if err := json.Unmarshal(out, &result); err != nil { return nil, fmt.Errorf("parse validate: %w", err) }
+	if err := json.Unmarshal(out, &result); err != nil {
+		return nil, fmt.Errorf("parse validate: %w", err)
+	}
 	return &result, nil
 }
 
+// Render calls plugin_render.
 func (inst *Instance) Render(ctx context.Context, action string, input any) (*RenderResult, error) {
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
 	req := RenderRequest{Action: action, Input: input}
 	data, _ := json.Marshal(req)
-	out, err := inst.callGuest(ctx, "plugin_render", data)
-	if err != nil { return nil, err }
+	out, err := inst.callJSON("plugin_render", data)
+	if err != nil {
+		return nil, err
+	}
 	var result RenderResult
-	if err := json.Unmarshal(out, &result); err != nil { return nil, fmt.Errorf("parse render: %w", err) }
+	if err := json.Unmarshal(out, &result); err != nil {
+		return nil, fmt.Errorf("parse render: %w", err)
+	}
 	return &result, nil
 }
 
-func (inst *Instance) Close(ctx context.Context) error { return inst.rt.Close(ctx) }
-
-func (inst *Instance) callPluginInfo(ctx context.Context) (*PluginInfo, error) {
-	out, err := inst.callGuest(ctx, "plugin_info", nil)
-	if err != nil { return nil, err }
-	var info PluginInfo
-	if err := json.Unmarshal(out, &info); err != nil { return nil, fmt.Errorf("parse plugin_info: %w", err) }
-	return &info, nil
+// Close releases the Extism plugin.
+func (inst *Instance) Close(ctx context.Context) error {
+	inst.plugin.Close(ctx)
+	return nil
 }
 
-func (inst *Instance) callGuest(ctx context.Context, fnName string, input []byte) ([]byte, error) {
-	fn := inst.mod.ExportedFunction(fnName)
-	if fn == nil { return nil, fmt.Errorf("plugin does not export %s", fnName) }
-	if input == nil { input = []byte("{}") }
-
-	malloc := inst.mod.ExportedFunction("malloc")
-	if malloc == nil { return nil, fmt.Errorf("plugin does not export malloc") }
-
-	inputLen := uint64(len(input))
-	results, err := malloc.Call(ctx, inputLen)
-	if err != nil { return nil, fmt.Errorf("malloc(%d): %w", inputLen, err) }
-	inputPtr := results[0]
-
-	if !inst.mod.Memory().Write(uint32(inputPtr), input) {
-		return nil, fmt.Errorf("memory write failed at ptr=%d len=%d", inputPtr, inputLen)
+// callJSON calls a plugin function with JSON input and returns JSON output.
+func (inst *Instance) callJSON(fnName string, input []byte) ([]byte, error) {
+	if input == nil {
+		input = []byte("{}")
 	}
-
-	ret, err := fn.Call(ctx, inputPtr, inputLen)
-	if err != nil { return nil, fmt.Errorf("%s call: %w", fnName, err) }
-	if len(ret) == 0 { return []byte("{}"), nil }
-
-	packed := ret[0]
-	resultPtr := uint32(packed >> 32)
-	resultLen := uint32(packed & 0xFFFFFFFF)
-	if resultLen == 0 { return []byte("{}"), nil }
-
-	out, ok := inst.mod.Memory().Read(resultPtr, resultLen)
-	if !ok { return nil, fmt.Errorf("memory read failed at ptr=%d len=%d", resultPtr, resultLen) }
-
-	if free := inst.mod.ExportedFunction("free"); free != nil {
-		_, _ = free.Call(ctx, uint64(resultPtr), uint64(resultLen))
+	exit, out, err := inst.plugin.Call(fnName, input)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", fnName, err)
+	}
+	if exit != 0 {
+		return nil, fmt.Errorf("%s: exit code %d", fnName, exit)
 	}
 	return out, nil
-}
-
-func (inst *Instance) hostLog(ctx context.Context, m api.Module, levelPtr, levelLen, msgPtr, msgLen uint32) {
-	level, _ := m.Memory().Read(levelPtr, levelLen)
-	msg, _ := m.Memory().Read(msgPtr, msgLen)
-	log.Printf("[plugin:%s] [%s] %s", inst.info.Name, string(level), string(msg))
-}
-
-func (inst *Instance) hostResolveSecret(ctx context.Context, m api.Module, namePtr, nameLen uint32) uint64 {
-	name, _ := m.Memory().Read(namePtr, nameLen)
-	value, ok := inst.hostFns.ResolveSecret(string(name))
-	if !ok { return 0 }
-	return inst.writeToGuest(ctx, []byte(value))
-}
-
-func (inst *Instance) hostResolveConfig(ctx context.Context, m api.Module, namePtr, nameLen uint32) uint64 {
-	name, _ := m.Memory().Read(namePtr, nameLen)
-	value, ok := inst.hostFns.ResolveConfig(string(name))
-	if !ok { return 0 }
-	return inst.writeToGuest(ctx, []byte(value))
-}
-
-func (inst *Instance) writeToGuest(ctx context.Context, data []byte) uint64 {
-	malloc := inst.mod.ExportedFunction("malloc")
-	if malloc == nil { return 0 }
-	results, err := malloc.Call(ctx, uint64(len(data)))
-	if err != nil { return 0 }
-	ptr := uint32(results[0])
-	if !inst.mod.Memory().Write(ptr, data) { return 0 }
-	return (uint64(ptr) << 32) | uint64(len(data))
 }
