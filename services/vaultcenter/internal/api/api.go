@@ -17,6 +17,7 @@ import (
 	"veilkey-vaultcenter/internal/api/approval"
 	"veilkey-vaultcenter/internal/api/bulk"
 	"veilkey-vaultcenter/internal/api/hkm"
+	"veilkey-vaultcenter/internal/plugin"
 	"veilkey-vaultcenter/internal/db"
 	"veilkey-vaultcenter/internal/httputil"
 
@@ -70,6 +71,7 @@ type Server struct {
 	chainHome       string
 	chainNodeID     string
 	bulkApplyDir    string
+	pluginDir       string
 	maskMapVersion  uint64
 	maskMapMu       sync.RWMutex
 	maskMapNotify   chan struct{}
@@ -79,6 +81,8 @@ type Server struct {
 	adminHandler    *admin.Handler
 	hkmHandler      *hkm.Handler
 	bulkHandler     *bulk.Handler
+	pluginRegistry  *plugin.Registry
+	pluginHandler   *plugin.Handler
 }
 
 // ── hkm.Deps implementation ──────────────────────────────────────────────────
@@ -418,6 +422,7 @@ func NewServer(database *db.DB, kek []byte, trustedIPs []string) *Server {
 		httpClient:    newPooledHTTPClient(tlsutil.InitHTTPClientFromEnv()),
 		chainStore:    &db.ChainStoreAdapter{DB: database},
 		bulkApplyDir:   strings.TrimSpace(os.Getenv("VEILKEY_BULK_APPLY_DIR")),
+		pluginDir:      strings.TrimSpace(os.Getenv("VEILKEY_PLUGIN_DIR")),
 		maskMapNotify:  make(chan struct{}),
 	}
 	if database.HasNodeInfo() {
@@ -433,7 +438,40 @@ func NewServer(database *db.DB, kek []byte, trustedIPs []string) *Server {
 	srv.adminHandler = admin.NewHandler(srv)
 	srv.hkmHandler = hkm.NewHandler(srv)
 	srv.bulkHandler = bulk.NewHandler(srv)
+
+	// Plugin system
+	pluginDir := srv.pluginDir
+	if pluginDir == "" {
+		pluginDir = filepath.Join(srv.bulkApplyDir, "plugins")
+	}
+	srv.pluginRegistry = plugin.NewRegistry(pluginDir, plugin.HostFunctions{
+		ResolveSecret: func(name string) (string, bool) { return srv.ResolveTemplateValue("", "secret", name) },
+		ResolveConfig: func(name string) (string, bool) { return srv.ResolveTemplateValue("", "config", name) },
+	})
+	srv.pluginHandler = plugin.NewHandler(srv.pluginRegistry)
+
 	return srv
+}
+
+// LoadPlugins loads all installed plugins from the plugin directory.
+func (s *Server) LoadPlugins() []error {
+	ctx := context.Background()
+	log.Printf("Loading plugins from %s", s.pluginRegistry.PluginDir())
+	errs := s.pluginRegistry.LoadAll(ctx)
+	plugins, _ := s.pluginRegistry.List()
+	loaded := 0
+	for _, p := range plugins {
+		if p.Loaded {
+			loaded++
+		}
+	}
+	log.Printf("Plugins: %d installed, %d loaded", len(plugins), loaded)
+	return errs
+}
+
+// ClosePlugins stops all running plugins.
+func (s *Server) ClosePlugins() {
+	s.pluginRegistry.CloseAll(context.Background())
 }
 
 // SetTimeouts overrides default timeout settings
@@ -608,6 +646,7 @@ func (s *Server) SetupRoutes() http.Handler {
 	if s.IsHKM() {
 		s.hkmHandler.Register(mux, s.requireTrustedIP, s.requireReadyForOps)
 		s.bulkHandler.Register(mux, s.requireTrustedIP)
+		s.pluginHandler.Register(mux, s.requireTrustedIP)
 		// Admin tracked-ref cleanup routes require an active hkm handler.
 		mux.HandleFunc("POST /api/admin/tracked-refs/cleanup", s.requireReadyForOps(s.adminHandler.RequireAdminSession(s.hkmHandler.HandleTrackedRefCleanup)))
 	}

@@ -108,6 +108,13 @@ func RunServer() {
 	go api.StartTempRefGC(database, cmdutil.ParseDurationEnv("VEILKEY_GC_INTERVAL", 5*time.Minute), gcStop)
 	log.Println("Temp ref GC started")
 
+	// Load all installed plugins
+	if errs := server.LoadPlugins(); len(errs) > 0 {
+		for _, err := range errs {
+			log.Printf("Plugin load warning: %v", err)
+		}
+	}
+
 	handler := server.SetupRoutes()
 	tlsCert := os.Getenv("VEILKEY_TLS_CERT")
 	tlsKey := os.Getenv("VEILKEY_TLS_KEY")
