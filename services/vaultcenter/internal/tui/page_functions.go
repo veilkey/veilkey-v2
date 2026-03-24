@@ -99,6 +99,23 @@ func (m functionsModel) update(msg tea.Msg, c *Client) (functionsModel, tea.Cmd)
 		m.offline = true
 		return m, nil
 
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft && !m.showDetail {
+			// Sub-tab header(1) + blank(1) + col header(1) + main tab(1) = row 4
+			idx := msg.Y - 4
+			switch m.tab {
+			case fnTabList:
+				if idx >= 0 && idx < len(m.functions) {
+					m.cursor = idx
+				}
+			case fnTabBindings:
+				if idx >= 0 && idx < len(m.bindings) {
+					m.bindingCursor = idx
+				}
+			}
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		if !m.showDetail {
 			switch msg.String() {

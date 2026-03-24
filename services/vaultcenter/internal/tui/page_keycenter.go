@@ -98,6 +98,26 @@ func (m keycenterModel) update(msg tea.Msg, c *Client) (keycenterModel, tea.Cmd)
 		m.promoting = false
 		return m, loadRefsCmd(c)
 
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+			switch m.subview {
+			case kcList:
+				// List starts at Y=4 (header + blank line + column header + data rows)
+				// Tab bar(1) + header(1) + blank(1) + col header(1) = row 4
+				idx := msg.Y - 4
+				if idx >= 0 && idx < len(m.refs) {
+					m.cursor = idx
+				}
+			case kcPromote:
+				// Promote list starts at Y=5 (header + blank + "select target" + blank + items)
+				idx := msg.Y - 5
+				if idx >= 0 && idx < len(m.vaults) {
+					m.vaultCursor = idx
+				}
+			}
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		switch m.subview {
 		case kcPromote:

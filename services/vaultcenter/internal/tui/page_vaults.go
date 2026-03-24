@@ -289,6 +289,45 @@ func (m vaultsModel) update(msg tea.Msg, c *Client) (vaultsModel, tea.Cmd) {
 		m.revealing = false
 		return m, nil
 
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+			if !m.showDetail && !m.showSecretDetail && !m.creatingSecret && !m.searching && !m.catalogSearching && !m.confirmDelete {
+				// Sub-tab header(1) + blank(1) + col header(1) = list starts at Y=4 (relative to page, +1 for main tab bar)
+				switch m.tab {
+				case vaultTabList:
+					idx := msg.Y - 4
+					if idx >= 0 && idx < len(m.vaults) {
+						m.cursor = idx
+					}
+				case vaultTabAgents:
+					idx := msg.Y - 4
+					if idx >= 0 && idx < len(m.agents) {
+						m.agentCursor = idx
+					}
+				case vaultTabCatalog:
+					offset := 4
+					if m.catalogQuery != "" {
+						offset += 2 // search line + blank
+					}
+					idx := msg.Y - offset
+					if idx >= 0 && idx < len(m.filteredCatalog) {
+						m.catalogCursor = idx
+					}
+				}
+			} else if m.showDetail && !m.showSecretDetail {
+				// Secrets list: header(1) + blank(1) + col header(1) = starts at Y=4
+				offset := 4
+				if m.searchQuery != "" {
+					offset += 2
+				}
+				idx := msg.Y - offset
+				if idx >= 0 && idx < len(m.filteredSecrets) {
+					m.secretsCursor = idx
+				}
+			}
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		// Delete confirm mode
 		if m.confirmDelete {

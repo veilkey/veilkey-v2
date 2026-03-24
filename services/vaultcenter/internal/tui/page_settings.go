@@ -173,6 +173,23 @@ func (m settingsModel) update(msg tea.Msg, c *Client) (settingsModel, tea.Cmd) {
 		m.offline = true
 		return m, nil
 
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft && !m.creatingToken {
+			// Sub-tab header(1) + blank(1) + col header(1) + main tab(1) = row 4
+			idx := msg.Y - 4
+			switch m.tab {
+			case settingsTokens:
+				if idx >= 0 && idx < len(m.tokens) {
+					m.tokenCursor = idx
+				}
+			case settingsConfigs:
+				if idx >= 0 && idx < len(m.configs) {
+					m.configCursor = idx
+				}
+			}
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		if m.creatingToken {
 			return m.updateCreateToken(msg, c)

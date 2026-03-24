@@ -47,6 +47,16 @@ func (m auditModel) update(msg tea.Msg, c *Client) (auditModel, tea.Cmd) {
 		m.offline = true
 		return m, nil
 
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+			// Header(1) + blank(1) + col header(1) + main tab(1) = row 4
+			idx := msg.Y - 4
+			if idx >= 0 && idx < len(m.events) {
+				m.cursor = idx
+			}
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "j", "down":
