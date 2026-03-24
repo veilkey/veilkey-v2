@@ -1,5 +1,9 @@
+use unicode_width::UnicodeWidthStr;
+
 use crate::api::VeilKeyClient;
 use crate::config::CompiledPattern;
+
+use super::ansi::{SegmentKind, Tokenizer};
 
 const BOLD: &str = "\x1b[1m";
 const CYAN: &str = "\x1b[36m";
@@ -24,26 +28,93 @@ pub fn colorize_ve_ref(original: &str, _ve_ref: &str) -> String {
 
 /// Replace a secret with a colorized VK ref, padded to EXACTLY the original width.
 /// This ensures no surrounding text shifts position and no characters leak.
-/// If the ref is longer than the original, we truncate the visible ref to fit.
-pub fn padded_colorize_ref(vk_ref: &str, original_len: usize) -> String {
-    if original_len == 0 {
+/// If the ref is longer than the original, show the FULL ref as-is (no truncation)
+/// because seeing the complete VK reference is more useful than preserving column width.
+pub fn padded_colorize_ref(vk_ref: &str, original_width: usize) -> String {
+    if original_width == 0 {
         return String::new();
     }
-    let ref_visible_len = vk_ref.chars().count();
-    if ref_visible_len <= original_len {
-        // Ref fits — pad with spaces to fill the original width
+    let ref_width = UnicodeWidthStr::width(vk_ref);
+    if ref_width <= original_width {
         let colored = colorize_ref(vk_ref);
-        let pad = original_len - ref_visible_len;
+        let pad = original_width - ref_width;
         if pad > 0 {
             format!("{}{}", colored, " ".repeat(pad))
         } else {
             colored
         }
     } else {
-        // Ref is longer than original — truncate to fit exactly
-        let truncated: String = vk_ref.chars().take(original_len).collect();
-        colorize_ref(&truncated)
+        // Ref is longer than original — show full ref (no truncation)
+        colorize_ref(vk_ref)
     }
+}
+
+/// ANSI-aware secret replacement. Tokenizes input to separate ANSI escape
+/// sequences from plaintext, searches for `needle` in concatenated plaintext,
+/// then reconstructs output preserving all ANSI codes.
+fn ansi_aware_replace(text: &str, needle: &str, replacement: &str) -> (String, bool) {
+    if needle.is_empty() {
+        return (text.to_string(), false);
+    }
+    let segments = Tokenizer::tokenize(text.as_bytes());
+    let mut plain = String::new();
+    for seg in &segments {
+        if seg.kind == SegmentKind::Text {
+            plain.push_str(&String::from_utf8_lossy(&seg.data));
+        }
+    }
+    let mut matches: Vec<(usize, usize)> = Vec::new();
+    let mut search_start = 0;
+    while let Some(pos) = plain[search_start..].find(needle) {
+        let abs_start = search_start + pos;
+        matches.push((abs_start, abs_start + needle.len()));
+        search_start = abs_start + needle.len();
+    }
+    if matches.is_empty() {
+        return (text.to_string(), false);
+    }
+    let mut out = String::new();
+    let mut plain_cursor = 0;
+    let mut match_idx = 0;
+    for seg in &segments {
+        if seg.kind == SegmentKind::Escape {
+            out.push_str(&String::from_utf8_lossy(&seg.data));
+            continue;
+        }
+        let seg_text = String::from_utf8_lossy(&seg.data);
+        let seg_start = plain_cursor;
+        let seg_end = seg_start + seg_text.len();
+        let mut local_cursor = 0;
+        while local_cursor < seg_text.len() && match_idx < matches.len() {
+            let (m_start, m_end) = matches[match_idx];
+            if m_start >= seg_end {
+                break;
+            }
+            if m_end <= seg_start + local_cursor {
+                match_idx += 1;
+                continue;
+            }
+            let match_local_start = m_start.saturating_sub(seg_start);
+            if match_local_start > local_cursor {
+                out.push_str(&seg_text[local_cursor..match_local_start]);
+            }
+            if m_start >= seg_start + local_cursor {
+                out.push_str(replacement);
+            }
+            let match_local_end = (m_end - seg_start).min(seg_text.len());
+            local_cursor = match_local_end;
+            if m_end <= seg_end {
+                match_idx += 1;
+            } else {
+                break;
+            }
+        }
+        if local_cursor < seg_text.len() {
+            out.push_str(&seg_text[local_cursor..]);
+        }
+        plain_cursor = seg_end;
+    }
+    (out, true)
 }
 
 // Alt-screen detection sequences (vim, less, htop, etc.)
@@ -127,8 +198,7 @@ pub fn mask_output(
             if match_start < tail_len && match_end > tail_len {
                 let overlap = &combined[tail_len..match_end];
                 if !overlap.is_empty() {
-                    cross_chunk_replacements
-                        .push((overlap.to_string(), " ".repeat(overlap.len())));
+                    cross_chunk_replacements.push((overlap.to_string(), " ".repeat(overlap.len())));
                 }
             }
         }
@@ -137,25 +207,26 @@ pub fn mask_output(
     // Output masking: apply replacements on new_text only (tail was already emitted).
     // The combined pre-scan above already issued split secrets to the API.
     let mut output = new_text.clone();
-    let mut output_had_replacement = false;
 
     // Apply cross-chunk boundary replacements first (secret suffix leaked into new_text)
     for (leaked, replacement) in &cross_chunk_replacements {
         output = output.replacen(leaked, replacement, 1);
-        output_had_replacement = true;
     }
     for (plaintext, vk_ref) in mask_map {
-        if !plaintext.is_empty() && output.contains(plaintext.as_str()) {
-            output = output.replace(
-                plaintext.as_str(),
-                &padded_colorize_ref(vk_ref, plaintext.len()),
-            );
-            output_had_replacement = true;
+        if plaintext.is_empty() {
+            continue;
+        }
+        let repl = padded_colorize_ref(vk_ref, UnicodeWidthStr::width(plaintext.as_str()));
+        let (new_out, replaced) = ansi_aware_replace(&output, plaintext, &repl);
+        if replaced {
+            output = new_out;
         }
     }
-    // Also apply pattern-detected replacements on new_text
+    // Pattern-detected replacements — scan on ANSI-stripped text
+    let plain_for_scan =
+        String::from_utf8_lossy(&Tokenizer::strip_ansi(new_text.as_bytes())).to_string();
     for pat in patterns {
-        for caps in pat.regex.captures_iter(&new_text) {
+        for caps in pat.regex.captures_iter(&plain_for_scan) {
             let m = caps
                 .get(pat.group.max(1))
                 .or_else(|| caps.get(1))
@@ -173,11 +244,11 @@ pub fn mask_output(
             // Already issued above via combined scan — just replace here
             match client.issue(secret) {
                 Ok(ref_canonical) => {
-                    output = output.replace(
-                        secret,
-                        &padded_colorize_ref(&ref_canonical, secret.len()),
-                    );
-                    output_had_replacement = true;
+                    let repl = padded_colorize_ref(&ref_canonical, UnicodeWidthStr::width(secret));
+                    let (new_out, replaced) = ansi_aware_replace(&output, secret, &repl);
+                    if replaced {
+                        output = new_out;
+                    }
                 }
                 Err(e) => {
                     eprintln!(
@@ -185,36 +256,27 @@ pub fn mask_output(
                         pat.name, e
                     );
                     let redacted = format!("[REDACTED:{}]", pat.name);
-                    output = output.replace(
-                        secret,
-                        &padded_colorize_ref(&redacted, secret.len()),
-                    );
-                    output_had_replacement = true;
+                    let repl = padded_colorize_ref(&redacted, UnicodeWidthStr::width(secret));
+                    let (new_out, replaced) = ansi_aware_replace(&output, secret, &repl);
+                    if replaced {
+                        output = new_out;
+                    }
                 }
             }
         }
     }
     for (plaintext, ve_ref) in ve_map {
-        if !plaintext.is_empty() && output.contains(plaintext.as_str()) {
-            output = output.replace(plaintext.as_str(), &colorize_ve_ref(plaintext, ve_ref));
+        if !plaintext.is_empty() {
+            let repl = colorize_ve_ref(plaintext, ve_ref);
+            let (new_out, _) = ansi_aware_replace(&output, plaintext, &repl);
+            output = new_out;
         }
     }
 
-    // Line-clear on lines that had secrets replaced
-    if output_had_replacement {
-        let mut cleared = String::new();
-        for (i, line) in output.split('\n').enumerate() {
-            if i > 0 {
-                cleared.push('\n');
-            }
-            let has_our_ansi = line.contains("\x1b[1m\x1b[36m") || line.contains("\x1b[1m\x1b[31m");
-            if has_our_ansi {
-                cleared.push_str("\r\x1b[2K");
-            }
-            cleared.push_str(line);
-        }
-        output = cleared;
-    }
+    // NOTE: Line-clear (\r\x1b[2K) was previously inserted on lines with masked
+    // secrets. Removed because it breaks readline prompt redraws — the clear
+    // sequence erases the prompt that bash/zsh already drew, causing visual
+    // glitches on PS1 lines. The padded replacement already preserves width.
 
     // Update plain tail — keep last PLAIN_TAIL_SIZE bytes of the ORIGINAL new text
     // (not the masked version, so future matching works on plaintext)
@@ -239,25 +301,86 @@ pub fn mask_output(
     (output.into_bytes(), new_tail)
 }
 
+/// Result of a cross-chunk secret match detection.
+#[derive(Debug, PartialEq)]
+#[allow(dead_code)]
+pub(crate) struct CrossChunkMatch {
+    pub output: String,
+}
+
+/// Detect a secret that spans across two PTY output chunks.
+///
+/// `plain_tail` is the trailing plaintext from the previous chunk(s).
+/// `new_text` is the current chunk. If a secret from `mask_map` straddles
+/// the boundary (starts in tail, ends in new_text), returns a replacement
+/// string with cursor-back + colorized ref + remainder.
+///
+/// Not used in the mask_output pipeline (which has its own cross-chunk logic),
+/// but available for targeted testing.
+#[allow(dead_code)]
+pub(crate) fn find_cross_chunk_mask(
+    plain_tail: &str,
+    new_text: &str,
+    mask_map: &[(String, String)],
+) -> Option<CrossChunkMatch> {
+    if new_text.contains("\x1b[") {
+        return None;
+    }
+    let combined = format!("{}{}", plain_tail, new_text);
+    let tail_len = plain_tail.len();
+    let mut best: Option<(usize, String, String, String)> = None;
+    for (plaintext, vk_ref) in mask_map {
+        if plaintext.is_empty() || plaintext.len() < 3 {
+            continue;
+        }
+        let raw_start = tail_len.saturating_sub(plaintext.len() - 1);
+        let search_start = combined.floor_char_boundary(raw_start);
+        let boundary = &combined[search_start..];
+        if let Some(rel_pos) = boundary.find(plaintext.as_str()) {
+            let pos = search_start + rel_pos;
+            let end = pos + plaintext.len();
+            if pos < tail_len && end > tail_len && end <= combined.len() {
+                let new_part = &combined[tail_len..end];
+                if !new_text.starts_with(new_part) {
+                    continue;
+                }
+                let is_longer = best
+                    .as_ref()
+                    .map_or(true, |(len, _, _, _)| plaintext.len() > *len);
+                if is_longer {
+                    let tail_part = &combined[pos..tail_len];
+                    let tail_chars = tail_part.chars().count();
+                    let erase = format!("\x1b[{}D\x1b[K", tail_chars);
+                    let replacement = padded_colorize_ref(vk_ref, plaintext.len());
+                    let remainder = new_text[new_part.len()..].to_string();
+                    best = Some((plaintext.len(), erase, replacement, remainder));
+                }
+            }
+        }
+    }
+    best.map(|(_, erase, replacement, remainder)| CrossChunkMatch {
+        output: format!("{}{}{}", erase, replacement, remainder),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn strip_ansi(s: &str) -> String {
-        let re = regex::Regex::new(r"\x1b\[[0-9;]*m").unwrap();
-        re.replace_all(s, "").to_string()
+        String::from_utf8_lossy(&Tokenizer::strip_ansi(s.as_bytes())).to_string()
     }
 
-    /// Helper: simulate mask_map replacement like mask_output step 1
+    /// Helper: simulate ANSI-aware mask_map replacement like mask_output step 1
     fn simulate_mask(input: &str, mask_map: &[(String, String)]) -> String {
         let mut s = input.to_string();
         for (plaintext, vk_ref) in mask_map {
-            if !plaintext.is_empty() && s.contains(plaintext.as_str()) {
-                s = s.replace(
-                    plaintext.as_str(),
-                    &padded_colorize_ref(vk_ref, plaintext.len()),
-                );
+            if plaintext.is_empty() {
+                continue;
             }
+            let repl = padded_colorize_ref(vk_ref, UnicodeWidthStr::width(plaintext.as_str()));
+            let (new_s, _) = ansi_aware_replace(&s, plaintext, &repl);
+            s = new_s;
         }
         strip_ansi(&s)
     }
@@ -275,10 +398,11 @@ mod tests {
 
     #[test]
     fn test_pad_ref_longer_than_secret() {
-        // ref 17 chars, secret 10 chars → truncate ref to 10
+        // ref 17 chars, secret 10 chars → show full ref (no truncation)
         let result = padded_colorize_ref("VK:LOCAL:6da25530", 10);
         let visible = strip_ansi(&result);
-        assert_eq!(visible.chars().count(), 10);
+        assert_eq!(visible, "VK:LOCAL:6da25530");
+        assert_eq!(visible.chars().count(), 17); // full ref shown
     }
 
     #[test]
@@ -292,10 +416,10 @@ mod tests {
 
     #[test]
     fn test_pad_very_short_secret() {
-        // secret 3 chars → ref truncated heavily
+        // secret 3 chars, ref 12 chars → full ref shown (no truncation)
         let result = padded_colorize_ref("VK:LOCAL:abc", 3);
         let visible = strip_ansi(&result);
-        assert_eq!(visible.chars().count(), 3);
+        assert_eq!(visible, "VK:LOCAL:abc");
     }
 
     #[test]
@@ -308,9 +432,10 @@ mod tests {
 
     #[test]
     fn test_pad_single_char_secret() {
+        // secret 1 char, ref 12 chars → full ref shown (no truncation)
         let result = padded_colorize_ref("VK:LOCAL:abc", 1);
         let visible = strip_ansi(&result);
-        assert_eq!(visible.chars().count(), 1);
+        assert_eq!(visible, "VK:LOCAL:abc");
     }
 
     #[test]
@@ -339,7 +464,7 @@ mod tests {
             "VK:LOCAL:aaa11111".to_string(),
         )];
         let result = simulate_mask(input, &mask_map);
-        assert_eq!(result.len(), input.len(), "line width must be preserved");
+        // ref (17) > secret (14) so result is wider — that's OK
         assert!(
             result.contains("@db.example.com:3306/mydb"),
             "host must be intact"
@@ -354,7 +479,7 @@ mod tests {
         let input = "postgres://user:p@ss!word@host:5432";
         let mask_map = vec![("p@ss!word".to_string(), "VK:LOCAL:bbb22222".to_string())];
         let result = simulate_mask(input, &mask_map);
-        assert_eq!(result.len(), input.len());
+        // ref (17) > secret (9) so result is wider
         assert!(result.contains("@host:5432"), "host part must survive");
         assert!(!result.contains("p@ss"), "password must not leak");
     }
@@ -387,7 +512,7 @@ mod tests {
         let input = "first=MyPassword second=MyPassword";
         let mask_map = vec![("MyPassword".to_string(), "VK:LOCAL:ccc".to_string())];
         let result = simulate_mask(input, &mask_map);
-        assert_eq!(result.len(), input.len());
+        // ref (12) > secret (10) so result is wider
         // Both occurrences must be masked
         assert!(!result.contains("MyPassword"));
     }
@@ -472,7 +597,7 @@ mod tests {
             ("secret2".to_string(), "VK:LOCAL:nl2".to_string()),
         ];
         let result = simulate_mask(input, &mask_map);
-        assert_eq!(result.len(), input.len());
+        // ref (12) > secret (7) so result is wider
         assert!(!result.contains("secret1"));
         assert!(!result.contains("secret2"));
     }
@@ -499,7 +624,7 @@ mod tests {
         let input = "export DATABASE_URL=postgres://admin:hunter2@db:5432/prod";
         let mask_map = vec![("hunter2".to_string(), "VK:LOCAL:env1".to_string())];
         let result = simulate_mask(input, &mask_map);
-        assert_eq!(result.len(), input.len());
+        // ref (13) > secret (7) so result is wider
         assert!(!result.contains("hunter2"));
         assert!(result.contains("admin:"));
         assert!(result.contains("@db:5432/prod"));
@@ -525,22 +650,18 @@ mod tests {
     // ── Width preservation regression ───────────────────────────────
 
     #[test]
-    fn test_width_preserved_across_various_ref_lengths() {
+    fn test_width_preserved_when_ref_fits() {
+        // When ref <= secret length, width is exactly preserved (padded).
+        // When ref > secret length, full ref is shown (result is longer).
+        let ref_str = "VK:LOCAL:6da25530"; // 17 chars
+        let ref_len = ref_str.len();
         for secret_len in [5, 10, 15, 17, 20, 30, 50, 100] {
             let secret: String = (0..secret_len)
                 .map(|i| (b'a' + (i % 26) as u8) as char)
                 .collect();
             let input = format!("prefix:{}:suffix", secret);
-            let mask_map = vec![(secret.clone(), "VK:LOCAL:6da25530".to_string())];
+            let mask_map = vec![(secret.clone(), ref_str.to_string())];
             let result = simulate_mask(&input, &mask_map);
-            assert_eq!(
-                result.len(),
-                input.len(),
-                "width mismatch for secret_len={}: input=[{}] result=[{}]",
-                secret_len,
-                input,
-                result
-            );
             assert!(
                 !result.contains(&secret),
                 "secret leaked for len={}",
@@ -551,6 +672,29 @@ mod tests {
                 "suffix missing for len={}",
                 secret_len
             );
+            if secret_len >= ref_len {
+                // Ref fits — width is exactly preserved
+                assert_eq!(
+                    result.len(),
+                    input.len(),
+                    "width mismatch for secret_len={}: input=[{}] result=[{}]",
+                    secret_len,
+                    input,
+                    result
+                );
+            } else {
+                // Ref is longer — result is longer than input (full ref shown)
+                assert!(
+                    result.len() >= input.len(),
+                    "result should be at least as long for secret_len={}",
+                    secret_len
+                );
+                assert!(
+                    result.contains(ref_str),
+                    "full ref must be shown for secret_len={}",
+                    secret_len
+                );
+            }
         }
     }
 
@@ -586,5 +730,360 @@ mod tests {
     fn test_alt_screen_disable_then_enable() {
         let data = b"\x1b[?1049lstuff\x1b[?1049h";
         assert!(detect_alt_screen(data, false), "enable comes last");
+    }
+
+    // ── ANSI-aware masking ────────────────────────────────────────────
+
+    #[test]
+    fn test_ansi_replace_split_by_color() {
+        let input = "\x1b[31mpass\x1b[0mword123";
+        let (r, ok) = ansi_aware_replace(input, "password123", "[MASKED]");
+        assert!(ok);
+        let p = strip_ansi(&r);
+        assert!(!p.contains("pass"));
+        assert!(p.contains("[MASKED]"));
+    }
+
+    #[test]
+    fn test_ansi_replace_three_segments() {
+        let input = "\x1b[31mmy\x1b[32msecret\x1b[33mkey\x1b[0m";
+        let (r, ok) = ansi_aware_replace(input, "mysecretkey", "[R]");
+        assert!(ok);
+        let p = strip_ansi(&r);
+        assert!(p.contains("[R]"));
+        assert!(!p.contains("mysecretkey"));
+    }
+
+    #[test]
+    fn test_ansi_replace_grep_color() {
+        let input = "KEY=\x1b[01;31m\x1b[Ksk-abc123\x1b[m\x1b[K";
+        let (r, ok) = ansi_aware_replace(input, "sk-abc123", "VK:LOCAL:x");
+        assert!(ok);
+        let p = strip_ansi(&r);
+        assert!(!p.contains("sk-abc123"));
+        assert!(p.contains("VK:LOCAL:x"));
+    }
+
+    #[test]
+    fn test_ansi_replace_preserves_surrounding() {
+        let input = "\x1b[1mpre\x1b[0m secret \x1b[1mpost\x1b[0m";
+        let (r, ok) = ansi_aware_replace(input, "secret", "[X]");
+        assert!(ok);
+        assert!(r.contains("\x1b[1mpre\x1b[0m"));
+        assert!(r.contains("\x1b[1mpost\x1b[0m"));
+        assert_eq!(strip_ansi(&r), "pre [X] post");
+    }
+
+    #[test]
+    fn test_simulate_mask_with_ansi_input() {
+        let input = "\x1b[31mpass\x1b[0mword";
+        let map = vec![("password".to_string(), "VK:LOCAL:pw1".to_string())];
+        let r = simulate_mask(input, &map);
+        assert!(!r.contains("password"));
+        assert!(!r.contains("pass"));
+    }
+
+    // ── No line-clear tests (prompt preservation) ─────────────────
+
+    #[test]
+    fn test_no_line_clear_in_masked_output() {
+        // Verify that masked output does NOT contain \r\x1b[2K sequences
+        // which would break readline prompt redraws.
+        let input = "SECRET=SuperSecretValue123";
+        let mask_map = vec![(
+            "SuperSecretValue123".to_string(),
+            "VK:LOCAL:abc12345".to_string(),
+        )];
+        let mut s = input.to_string();
+        for (plaintext, vk_ref) in &mask_map {
+            let repl = padded_colorize_ref(vk_ref, UnicodeWidthStr::width(plaintext.as_str()));
+            let (new_s, _) = ansi_aware_replace(&s, plaintext, &repl);
+            s = new_s;
+        }
+        assert!(
+            !s.contains("\r\x1b[2K"),
+            "line-clear must not be present in masked output"
+        );
+    }
+
+    #[test]
+    fn test_no_line_clear_multiline() {
+        let input = "line1=secret111111\nline2=secret222222";
+        let mask_map = vec![
+            ("secret111111".to_string(), "VK:LOCAL:a1".to_string()),
+            ("secret222222".to_string(), "VK:LOCAL:b2".to_string()),
+        ];
+        let mut s = input.to_string();
+        for (plaintext, vk_ref) in &mask_map {
+            let repl = padded_colorize_ref(vk_ref, UnicodeWidthStr::width(plaintext.as_str()));
+            let (new_s, _) = ansi_aware_replace(&s, plaintext, &repl);
+            s = new_s;
+        }
+        assert!(
+            !s.contains("\r\x1b[2K"),
+            "line-clear must not be present"
+        );
+        // Prompt-style prefix must survive
+        assert!(strip_ansi(&s).contains("line1="));
+        assert!(strip_ansi(&s).contains("line2="));
+    }
+
+    // ── Cross-chunk detection tests ───────────────────────────────
+
+    #[test]
+    fn test_cross_chunk_basic() {
+        let secret = "my-secret-password";
+        let map = vec![(secret.to_string(), "VK:LOCAL:cross1".to_string())];
+        // Split: "my-secret-" in tail, "password" in new_text
+        let tail = "my-secret-";
+        let new = "password";
+        let result = find_cross_chunk_mask(tail, new, &map);
+        assert!(result.is_some(), "cross-chunk match expected");
+        let m = result.unwrap();
+        let visible = strip_ansi(&m.output);
+        assert!(visible.contains("VK:LOCAL:cross1"));
+    }
+
+    #[test]
+    fn test_cross_chunk_no_match() {
+        let map = vec![("my-secret-password".to_string(), "VK:LOCAL:x".to_string())];
+        let tail = "unrelated-";
+        let new = "text-here";
+        assert!(find_cross_chunk_mask(tail, new, &map).is_none());
+    }
+
+    #[test]
+    fn test_cross_chunk_stale_tail() {
+        // Tail has extra prefix that doesn't match
+        let map = vec![("abcdef".to_string(), "VK:LOCAL:stale1".to_string())];
+        let tail = "xxxabc";
+        let new = "def";
+        let result = find_cross_chunk_mask(tail, new, &map);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_cross_chunk_utf8() {
+        let secret = "secret-value";
+        let map = vec![(secret.to_string(), "VK:LOCAL:utf1".to_string())];
+        let tail = "secret-";
+        let new = "value";
+        let result = find_cross_chunk_mask(tail, new, &map);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_cross_chunk_skips_ansi() {
+        let map = vec![("secret".to_string(), "VK:LOCAL:x".to_string())];
+        let tail = "sec";
+        let new = "\x1b[31mret";
+        // Should return None because new_text contains ANSI
+        assert!(find_cross_chunk_mask(tail, new, &map).is_none());
+    }
+
+    #[test]
+    fn test_cross_chunk_short_secret_ignored() {
+        // Secrets < 3 chars are ignored
+        let map = vec![("ab".to_string(), "VK:LOCAL:x".to_string())];
+        let tail = "a";
+        let new = "b";
+        assert!(find_cross_chunk_mask(tail, new, &map).is_none());
+    }
+
+    #[test]
+    fn test_cross_chunk_repeated_secret() {
+        // Secret appears fully in tail (not cross-chunk)
+        let map = vec![("abcdef".to_string(), "VK:LOCAL:r".to_string())];
+        let tail = "abcdef"; // full secret in tail
+        let new = "xyz";
+        // No cross-chunk match — it doesn't straddle the boundary
+        assert!(find_cross_chunk_mask(tail, new, &map).is_none());
+    }
+
+    // ── Charwise echo simulation ──────────────────────────────────
+
+    #[test]
+    fn test_charwise_echo_no_leak() {
+        // Simulate char-by-char echo: each char is a separate "chunk"
+        // The plain_tail mechanism should prevent leaking
+        let secret = "SuperSecret123";
+        let map = vec![(secret.to_string(), "VK:LOCAL:echo1".to_string())];
+        let mut tail = String::new();
+        let mut all_output = String::new();
+        for ch in secret.chars() {
+            let chunk = ch.to_string();
+            // Simulate: simulate_mask won't catch single chars, but
+            // we test that nothing leaks the full secret
+            let mut s = chunk.clone();
+            for (plaintext, vk_ref) in &map {
+                if !plaintext.is_empty() && s.contains(plaintext.as_str()) {
+                    let repl = padded_colorize_ref(vk_ref, plaintext.len());
+                    s = s.replace(plaintext.as_str(), &strip_ansi(&repl));
+                }
+            }
+            all_output.push_str(&s);
+            tail.push_str(&chunk);
+            if tail.len() > 8192 {
+                tail = tail[tail.len() - 8192..].to_string();
+            }
+        }
+        // Individual chars go through unmolested, but cross-chunk detection
+        // would catch the secret. We verify the find_cross_chunk_mask logic:
+        for split_at in 1..secret.len() {
+            let t = &secret[..split_at];
+            let n = &secret[split_at..];
+            let result = find_cross_chunk_mask(t, n, &map);
+            assert!(
+                result.is_some(),
+                "cross-chunk should catch secret split at {}",
+                split_at
+            );
+        }
+    }
+
+    // ── Chunked echo simulation ───────────────────────────────────
+
+    #[test]
+    fn test_chunked_echo_simulation() {
+        // Simulate PTY output arriving in 4-byte chunks
+        let output = "KEY=SuperSecret123 done";
+        let secret = "SuperSecret123";
+        let map = vec![(secret.to_string(), "VK:LOCAL:chunk1".to_string())];
+        let chunk_size = 4;
+        let mut tail = String::new();
+        let mut collected = String::new();
+        for start in (0..output.len()).step_by(chunk_size) {
+            let end = (start + chunk_size).min(output.len());
+            let chunk = &output[start..end];
+            // Check cross-chunk match
+            if let Some(m) = find_cross_chunk_mask(&tail, chunk, &map) {
+                collected.push_str(&strip_ansi(&m.output));
+            } else {
+                // Simple within-chunk replacement
+                let mut s = chunk.to_string();
+                for (plaintext, vk_ref) in &map {
+                    if !plaintext.is_empty() && s.contains(plaintext.as_str()) {
+                        s = s.replace(plaintext.as_str(), &strip_ansi(&padded_colorize_ref(vk_ref, plaintext.len())));
+                    }
+                }
+                collected.push_str(&s);
+            }
+            tail.push_str(chunk);
+            if tail.len() > 8192 {
+                tail = tail[tail.len() - 8192..].to_string();
+            }
+        }
+        // The secret should not appear in collected output
+        // (some intermediate chars may leak in charwise, but cross-chunk catches the split)
+        assert!(!collected.contains(secret), "secret must not appear in full: {}", collected);
+    }
+
+    // ── mask_output integration tests ─────────────────────────────
+
+    fn init_crypto() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+
+    /// Helper: call mask_output with only mask_map (no patterns, no VE, no API)
+    fn mask_with_ve(
+        data: &str,
+        mask_map: &[(String, String)],
+        ve_map: &[(String, String)],
+        tail: &str,
+    ) -> (String, String) {
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let (bytes, new_tail) = mask_output(
+            data.as_bytes(),
+            mask_map,
+            ve_map,
+            &[],
+            &client,
+            "",
+            tail,
+        );
+        (String::from_utf8_lossy(&bytes).to_string(), new_tail)
+    }
+
+    /// Helper: call mask_output with mask_map and recent_input
+    fn mask_with_input(
+        data: &str,
+        mask_map: &[(String, String)],
+        recent_input: &str,
+        tail: &str,
+    ) -> (String, String) {
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let (bytes, new_tail) = mask_output(
+            data.as_bytes(),
+            mask_map,
+            &[],
+            &[],
+            &client,
+            recent_input,
+            tail,
+        );
+        (String::from_utf8_lossy(&bytes).to_string(), new_tail)
+    }
+
+    #[test]
+    fn test_mask_output_basic() {
+        let map = vec![("my-password-1234".to_string(), "VK:LOCAL:out1".to_string())];
+        let (output, _tail) = mask_with_ve("echo my-password-1234", &map, &[], "");
+        let visible = strip_ansi(&output);
+        assert!(!visible.contains("my-password-1234"));
+        assert!(visible.contains("echo "));
+    }
+
+    #[test]
+    fn test_mask_output_empty_data() {
+        let map = vec![("secret".to_string(), "VK:LOCAL:x".to_string())];
+        let (output, tail) = mask_with_ve("", &map, &[], "prev-tail");
+        assert!(output.is_empty());
+        assert_eq!(tail, "prev-tail");
+    }
+
+    #[test]
+    fn test_mask_output_ve_coloring() {
+        let ve = vec![("config-value".to_string(), "VE:conf1".to_string())];
+        let (output, _) = mask_with_ve("show config-value here", &[], &ve, "");
+        // VE entries are colorized green
+        assert!(output.contains(GREEN));
+        let visible = strip_ansi(&output);
+        assert!(visible.contains("config-value"));
+    }
+
+    #[test]
+    fn test_mask_output_recent_input_skips() {
+        // When the secret was recently typed as input, masking is skipped
+        // (to avoid masking what the user intentionally typed)
+        let map = vec![("typed-secret-12".to_string(), "VK:LOCAL:skip1".to_string())];
+        let (output, _) = mask_with_input(
+            "typed-secret-12",
+            &map,
+            "typed-secret-12",
+            "",
+        );
+        let visible = strip_ansi(&output);
+        // The mask_map replacement still happens because recent_input only
+        // affects pattern-detected secrets, not mask_map entries
+        // mask_map is always applied regardless of recent_input
+        assert!(!visible.contains("typed-secret-12") || visible.contains("VK:LOCAL:skip1"));
+    }
+
+    #[test]
+    fn test_mask_output_tail_accumulation() {
+        let map = vec![("secret12345678".to_string(), "VK:LOCAL:t1".to_string())];
+        let (_, tail1) = mask_with_ve("hello ", &map, &[], "");
+        assert_eq!(tail1, "hello ");
+        let (_, tail2) = mask_with_ve("world", &map, &[], &tail1);
+        assert_eq!(tail2, "hello world");
+    }
+
+    #[test]
+    fn test_mask_output_no_false_positive() {
+        let map = vec![("not-in-output-at-all".to_string(), "VK:LOCAL:fp".to_string())];
+        let (output, _) = mask_with_ve("completely normal text", &map, &[], "");
+        assert_eq!(output, "completely normal text");
     }
 }

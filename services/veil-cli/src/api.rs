@@ -349,6 +349,59 @@ impl VeilKeyClient {
             .map(|r| r.status() == 200)
             .unwrap_or(false)
     }
+
+    /// Check if VaultCenter is locked by probing /api/mask-map.
+    pub fn is_locked(&self) -> bool {
+        let url = format!("{}/api/mask-map", self.base_url);
+        matches!(
+            self.agent.get(&url).timeout(std::time::Duration::from_secs(5)).call(),
+            Err(ureq::Error::Status(503, _))
+        )
+    }
+
+    /// Unlock VaultCenter with master password (KEK).
+    pub fn unlock(&self, password: &str) -> Result<(), String> {
+        let url = format!("{}/api/unlock", self.base_url);
+        let body = json_password_body(password);
+        match self.agent.post(&url).set("Content-Type", "application/json").send_string(&body) {
+            Ok(resp) => {
+                let result: serde_json::Value = resp.into_json().unwrap_or_default();
+                let status = result["status"].as_str().unwrap_or("");
+                if status == "unlocked" || status == "already_unlocked" {
+                    Ok(())
+                } else {
+                    Err("unexpected response".to_string())
+                }
+            }
+            Err(ureq::Error::Status(401, _)) => Err("invalid master password".to_string()),
+            Err(ureq::Error::Status(429, _)) => {
+                Err("too many attempts — try again later".to_string())
+            }
+            Err(ureq::Error::Status(code, _)) => Err(format!("unlock failed (HTTP {})", code)),
+            Err(_) => Err("cannot reach VaultCenter".to_string()),
+        }
+    }
+}
+
+/// Build a JSON `{"password":"..."}` body with proper escaping.
+fn json_password_body(password: &str) -> String {
+    let mut buf = String::with_capacity(16 + password.len() * 2);
+    buf.push_str(r#"{"password":""#);
+    for ch in password.chars() {
+        match ch {
+            '"' => buf.push_str(r#"\""#),
+            '\\' => buf.push_str(r"\\"),
+            '\n' => buf.push_str(r"\n"),
+            '\r' => buf.push_str(r"\r"),
+            '\t' => buf.push_str(r"\t"),
+            c if c < '\x20' => {
+                buf.push_str(&format!(r"\u{:04x}", c as u32));
+            }
+            c => buf.push(c),
+        }
+    }
+    buf.push_str(r#""}"#);
+    buf
 }
 
 /// Add encoded variants (base64, hex) to a mask_map, sort by length descending,
