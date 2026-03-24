@@ -221,7 +221,7 @@ Both provide: secret management, vault browsing, audit logs, TOTP login, and ser
 
 ### Database Encryption
 
-All databases are encrypted with SQLCipher. The encryption key is automatically derived from the salt file — no manual configuration needed.
+All databases are encrypted with SQLCipher. The encryption key is derived from the master password (KEK) — database can only be opened after unlock.
 
 Direct `sqlite3` access is blocked. Admin password can only be changed via API with the owner password.
 
