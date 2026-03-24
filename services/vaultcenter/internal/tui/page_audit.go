@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -88,8 +89,8 @@ func (m auditModel) view(width int) string {
 
 	for i, ev := range m.events {
 		ts := str(ev, "created_at")
-		if len(ts) > 16 {
-			ts = ts[5:16] // MM-DD HH:MM
+		if t, err := time.Parse(time.RFC3339, ts); err == nil {
+			ts = t.Format("01-02 15:04")
 		}
 		entity := str(ev, "entity_type")
 		if eid := str(ev, "entity_id"); eid != "" {
