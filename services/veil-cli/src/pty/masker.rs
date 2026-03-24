@@ -1,5 +1,9 @@
+use unicode_width::UnicodeWidthStr;
+
 use crate::api::VeilKeyClient;
 use crate::config::CompiledPattern;
+
+use super::ansi::{SegmentKind, Tokenizer};
 
 const BOLD: &str = "\x1b[1m";
 const CYAN: &str = "\x1b[36m";
@@ -25,25 +29,106 @@ pub fn colorize_ve_ref(original: &str, _ve_ref: &str) -> String {
 /// Replace a secret with a colorized VK ref, padded to EXACTLY the original width.
 /// This ensures no surrounding text shifts position and no characters leak.
 /// If the ref is longer than the original, we truncate the visible ref to fit.
-pub fn padded_colorize_ref(vk_ref: &str, original_len: usize) -> String {
-    if original_len == 0 {
+pub fn padded_colorize_ref(vk_ref: &str, original_width: usize) -> String {
+    if original_width == 0 {
         return String::new();
     }
-    let ref_visible_len = vk_ref.chars().count();
-    if ref_visible_len <= original_len {
-        // Ref fits — pad with spaces to fill the original width
+    let ref_width = UnicodeWidthStr::width(vk_ref);
+    if ref_width <= original_width {
         let colored = colorize_ref(vk_ref);
-        let pad = original_len - ref_visible_len;
+        let pad = original_width - ref_width;
         if pad > 0 {
             format!("{}{}", colored, " ".repeat(pad))
         } else {
             colored
         }
     } else {
-        // Ref is longer than original — truncate to fit exactly
-        let truncated: String = vk_ref.chars().take(original_len).collect();
-        colorize_ref(&truncated)
+        let mut truncated = String::new();
+        let mut w = 0;
+        for ch in vk_ref.chars() {
+            let cw = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+            if w + cw > original_width {
+                break;
+            }
+            truncated.push(ch);
+            w += cw;
+        }
+        let pad = original_width - w;
+        let colored = colorize_ref(&truncated);
+        if pad > 0 {
+            format!("{}{}", colored, " ".repeat(pad))
+        } else {
+            colored
+        }
     }
+}
+
+/// ANSI-aware secret replacement. Tokenizes input to separate ANSI escape
+/// sequences from plaintext, searches for `needle` in concatenated plaintext,
+/// then reconstructs output preserving all ANSI codes.
+fn ansi_aware_replace(text: &str, needle: &str, replacement: &str) -> (String, bool) {
+    if needle.is_empty() {
+        return (text.to_string(), false);
+    }
+    let segments = Tokenizer::tokenize(text.as_bytes());
+    let mut plain = String::new();
+    for seg in &segments {
+        if seg.kind == SegmentKind::Text {
+            plain.push_str(&String::from_utf8_lossy(&seg.data));
+        }
+    }
+    let mut matches: Vec<(usize, usize)> = Vec::new();
+    let mut search_start = 0;
+    while let Some(pos) = plain[search_start..].find(needle) {
+        let abs_start = search_start + pos;
+        matches.push((abs_start, abs_start + needle.len()));
+        search_start = abs_start + needle.len();
+    }
+    if matches.is_empty() {
+        return (text.to_string(), false);
+    }
+    let mut out = String::new();
+    let mut plain_cursor = 0;
+    let mut match_idx = 0;
+    for seg in &segments {
+        if seg.kind == SegmentKind::Escape {
+            out.push_str(&String::from_utf8_lossy(&seg.data));
+            continue;
+        }
+        let seg_text = String::from_utf8_lossy(&seg.data);
+        let seg_start = plain_cursor;
+        let seg_end = seg_start + seg_text.len();
+        let mut local_cursor = 0;
+        while local_cursor < seg_text.len() && match_idx < matches.len() {
+            let (m_start, m_end) = matches[match_idx];
+            if m_start >= seg_end {
+                break;
+            }
+            if m_end <= seg_start + local_cursor {
+                match_idx += 1;
+                continue;
+            }
+            let match_local_start = m_start.saturating_sub(seg_start);
+            if match_local_start > local_cursor {
+                out.push_str(&seg_text[local_cursor..match_local_start]);
+            }
+            if m_start >= seg_start + local_cursor {
+                out.push_str(replacement);
+            }
+            let match_local_end = (m_end - seg_start).min(seg_text.len());
+            local_cursor = match_local_end;
+            if m_end <= seg_end {
+                match_idx += 1;
+            } else {
+                break;
+            }
+        }
+        if local_cursor < seg_text.len() {
+            out.push_str(&seg_text[local_cursor..]);
+        }
+        plain_cursor = seg_end;
+    }
+    (out, true)
 }
 
 // Alt-screen detection sequences (vim, less, htop, etc.)
@@ -144,17 +229,21 @@ pub fn mask_output(
         output_had_replacement = true;
     }
     for (plaintext, vk_ref) in mask_map {
-        if !plaintext.is_empty() && output.contains(plaintext.as_str()) {
-            output = output.replace(
-                plaintext.as_str(),
-                &padded_colorize_ref(vk_ref, plaintext.len()),
-            );
+        if plaintext.is_empty() {
+            continue;
+        }
+        let repl = padded_colorize_ref(vk_ref, UnicodeWidthStr::width(plaintext.as_str()));
+        let (new_out, replaced) = ansi_aware_replace(&output, plaintext, &repl);
+        if replaced {
+            output = new_out;
             output_had_replacement = true;
         }
     }
-    // Also apply pattern-detected replacements on new_text
+    // Pattern-detected replacements — scan on ANSI-stripped text
+    let plain_for_scan =
+        String::from_utf8_lossy(&Tokenizer::strip_ansi(new_text.as_bytes())).to_string();
     for pat in patterns {
-        for caps in pat.regex.captures_iter(&new_text) {
+        for caps in pat.regex.captures_iter(&plain_for_scan) {
             let m = caps
                 .get(pat.group.max(1))
                 .or_else(|| caps.get(1))
@@ -172,9 +261,12 @@ pub fn mask_output(
             // Already issued above via combined scan — just replace here
             match client.issue(secret) {
                 Ok(ref_canonical) => {
-                    output =
-                        output.replace(secret, &padded_colorize_ref(&ref_canonical, secret.len()));
-                    output_had_replacement = true;
+                    let repl = padded_colorize_ref(&ref_canonical, UnicodeWidthStr::width(secret));
+                    let (new_out, replaced) = ansi_aware_replace(&output, secret, &repl);
+                    if replaced {
+                        output = new_out;
+                        output_had_replacement = true;
+                    }
                 }
                 Err(e) => {
                     eprintln!(
@@ -182,15 +274,21 @@ pub fn mask_output(
                         pat.name, e
                     );
                     let redacted = format!("[REDACTED:{}]", pat.name);
-                    output = output.replace(secret, &padded_colorize_ref(&redacted, secret.len()));
-                    output_had_replacement = true;
+                    let repl = padded_colorize_ref(&redacted, UnicodeWidthStr::width(secret));
+                    let (new_out, replaced) = ansi_aware_replace(&output, secret, &repl);
+                    if replaced {
+                        output = new_out;
+                        output_had_replacement = true;
+                    }
                 }
             }
         }
     }
     for (plaintext, ve_ref) in ve_map {
-        if !plaintext.is_empty() && output.contains(plaintext.as_str()) {
-            output = output.replace(plaintext.as_str(), &colorize_ve_ref(plaintext, ve_ref));
+        if !plaintext.is_empty() {
+            let repl = colorize_ve_ref(plaintext, ve_ref);
+            let (new_out, _) = ansi_aware_replace(&output, plaintext, &repl);
+            output = new_out;
         }
     }
 
@@ -238,20 +336,19 @@ mod tests {
     use super::*;
 
     fn strip_ansi(s: &str) -> String {
-        let re = regex::Regex::new(r"\x1b\[[0-9;]*m").unwrap();
-        re.replace_all(s, "").to_string()
+        String::from_utf8_lossy(&Tokenizer::strip_ansi(s.as_bytes())).to_string()
     }
 
-    /// Helper: simulate mask_map replacement like mask_output step 1
+    /// Helper: simulate ANSI-aware mask_map replacement like mask_output step 1
     fn simulate_mask(input: &str, mask_map: &[(String, String)]) -> String {
         let mut s = input.to_string();
         for (plaintext, vk_ref) in mask_map {
-            if !plaintext.is_empty() && s.contains(plaintext.as_str()) {
-                s = s.replace(
-                    plaintext.as_str(),
-                    &padded_colorize_ref(vk_ref, plaintext.len()),
-                );
+            if plaintext.is_empty() {
+                continue;
             }
+            let repl = padded_colorize_ref(vk_ref, UnicodeWidthStr::width(plaintext.as_str()));
+            let (new_s, _) = ansi_aware_replace(&s, plaintext, &repl);
+            s = new_s;
         }
         strip_ansi(&s)
     }
@@ -580,5 +677,56 @@ mod tests {
     fn test_alt_screen_disable_then_enable() {
         let data = b"\x1b[?1049lstuff\x1b[?1049h";
         assert!(detect_alt_screen(data, false), "enable comes last");
+    }
+
+    // ── ANSI-aware masking ────────────────────────────────────────────
+
+    #[test]
+    fn test_ansi_replace_split_by_color() {
+        let input = "\x1b[31mpass\x1b[0mword123";
+        let (r, ok) = ansi_aware_replace(input, "password123", "[MASKED]");
+        assert!(ok);
+        let p = strip_ansi(&r);
+        assert!(!p.contains("pass"));
+        assert!(p.contains("[MASKED]"));
+    }
+
+    #[test]
+    fn test_ansi_replace_three_segments() {
+        let input = "\x1b[31mmy\x1b[32msecret\x1b[33mkey\x1b[0m";
+        let (r, ok) = ansi_aware_replace(input, "mysecretkey", "[R]");
+        assert!(ok);
+        let p = strip_ansi(&r);
+        assert!(p.contains("[R]"));
+        assert!(!p.contains("mysecretkey"));
+    }
+
+    #[test]
+    fn test_ansi_replace_grep_color() {
+        let input = "KEY=\x1b[01;31m\x1b[Ksk-abc123\x1b[m\x1b[K";
+        let (r, ok) = ansi_aware_replace(input, "sk-abc123", "VK:LOCAL:x");
+        assert!(ok);
+        let p = strip_ansi(&r);
+        assert!(!p.contains("sk-abc123"));
+        assert!(p.contains("VK:LOCAL:x"));
+    }
+
+    #[test]
+    fn test_ansi_replace_preserves_surrounding() {
+        let input = "\x1b[1mpre\x1b[0m secret \x1b[1mpost\x1b[0m";
+        let (r, ok) = ansi_aware_replace(input, "secret", "[X]");
+        assert!(ok);
+        assert!(r.contains("\x1b[1mpre\x1b[0m"));
+        assert!(r.contains("\x1b[1mpost\x1b[0m"));
+        assert_eq!(strip_ansi(&r), "pre [X] post");
+    }
+
+    #[test]
+    fn test_simulate_mask_with_ansi_input() {
+        let input = "\x1b[31mpass\x1b[0mword";
+        let map = vec![("password".to_string(), "VK:LOCAL:pw1".to_string())];
+        let r = simulate_mask(input, &map);
+        assert!(!r.contains("password"));
+        assert!(!r.contains("pass"));
     }
 }
