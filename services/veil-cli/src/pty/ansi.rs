@@ -40,6 +40,12 @@ pub struct Tokenizer {
     text_buf: Vec<u8>,
 }
 
+impl Default for Tokenizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Tokenizer {
     pub fn new() -> Self {
         Self {
