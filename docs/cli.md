@@ -5,7 +5,7 @@
 ```bash
 veil                          # Enter protected shell
 veil status                   # Check connection
-veil resolve VK:LOCAL:xxx     # Decrypt a reference
+veil resolve VK:LOCAL:xxx     # Decrypt a reference (requires admin password)
 veil exec echo VK:LOCAL:xxx   # Run command with real values
 veil scan file.env            # Find secrets in files
 ```
@@ -124,11 +124,14 @@ veilkey-cli exec ./my-app
 
 ### resolve
 
-Decrypt a single `VK:` token:
+Decrypt a single `VK:` token. Requires interactive terminal (TTY) and admin password:
 
 ```bash
 veilkey-cli resolve VK:LOCAL:a1b2c3d4
+# Prompts for admin password, then outputs plaintext
 ```
+
+> **Security:** `resolve` is blocked in non-TTY (pipe) execution and requires admin authentication on both client and server. AI tools cannot use this command.
 
 ### function
 
@@ -185,6 +188,6 @@ scan:
 | `VEILKEY_HUB_URL` | Fallback API endpoint |
 | `VEILKEY_STATE_DIR` | Session state directory (default: `$TMPDIR/veilkey-cli`) |
 | `VEILKEY_FUNCTION_DIR` | Function wrapper directory |
-| `VEILKEY_DB_KEY` | **Required.** SQLCipher encryption key for database |
+| `VEILKEY_DB_KEY` | Auto-derived from salt. No manual setting needed |
 | `VEILKEY_TLS_INSECURE` | Set `1` to skip TLS certificate verification |
 | `VEILKEY_CURL_OPTS` | Custom curl options for bulk-apply sync (default: `-sk`) |

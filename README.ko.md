@@ -161,17 +161,9 @@ VaultCenter                    LocalVault
 
 ## 보안
 
-### 데이터베이스 암호화 (필수)
+### 데이터베이스 암호화
 
-모든 데이터베이스는 SQLCipher로 암호화됩니다. `VEILKEY_DB_KEY`가 필수이며, 없으면 서버 시작을 거부합니다.
-
-```bash
-# 키 생성
-python3 -c "import secrets; print(secrets.token_hex(32))"
-
-# .env에 추가
-VEILKEY_DB_KEY=<generated-key>
-```
+모든 데이터베이스는 SQLCipher로 암호화됩니다. 암호화 키는 salt 파일에서 자동 파생 — 별도 설정 불필요.
 
 `sqlite3` 직접 접근은 차단됩니다. admin 비밀번호는 소유자 비밀번호(owner password)로만 변경 가능합니다.
 

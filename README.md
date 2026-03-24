@@ -219,17 +219,9 @@ Both provide: secret management, vault browsing, audit logs, TOTP login, and ser
 
 ## Security
 
-### Database Encryption (Required)
+### Database Encryption
 
-All databases are encrypted with SQLCipher. `VEILKEY_DB_KEY` is required — the server refuses to start without it.
-
-```bash
-# Generate a key
-python3 -c "import secrets; print(secrets.token_hex(32))"
-
-# Add to .env
-VEILKEY_DB_KEY=<generated-key>
-```
+All databases are encrypted with SQLCipher. The encryption key is automatically derived from the salt file — no manual configuration needed.
 
 Direct `sqlite3` access is blocked. Admin password can only be changed via API with the owner password.
 

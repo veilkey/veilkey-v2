@@ -86,12 +86,13 @@ Screen/AI sees:      VK:LOCAL:ea2bfd16
 
 ## Database Encryption
 
-All databases (VaultCenter + LocalVault) are encrypted with SQLCipher. `VEILKEY_DB_KEY` environment variable is **required** — server refuses to start without it.
+All databases (VaultCenter + LocalVault) are encrypted with SQLCipher. The encryption key is automatically derived from the salt file (`DB_KEY = SHA256(salt)`). No manual `VEILKEY_DB_KEY` setting needed.
 
 ```
-VEILKEY_DB_KEY=<64-char-hex>  →  SQLCipher _pragma_key
-                               →  plain sqlite3 cannot read DB
-                               →  direct admin_auth_configs manipulation blocked
+salt file (32 bytes, generated at init)
+  → SHA256(salt) → DB_KEY (64-char hex)
+  → SQLCipher _pragma_key
+  → plain sqlite3 cannot read DB
 ```
 
 ## Vault Isolation (Agent Auth)
@@ -107,7 +108,13 @@ VaultCenter → LocalVault:  Authorization: Bearer {agent_secret}
                            LocalVault verifies via constant-time comparison
 ```
 
-`mask-map` endpoint returns all vaults' secrets (for PTY masking) but the veil CLI processes them as a black box — plaintext never reaches terminal output.
+`mask-map` endpoint requires admin session authentication. The veil CLI prompts for admin password on startup, logs in, and uses the session cookie for mask-map requests.
+
+`resolve` command requires both interactive terminal (TTY check) and admin password. Non-TTY execution (pipe) is blocked to prevent AI tools from reading plaintext.
+
+### VE (Config) Display
+
+VE config values (URLs, vault names) are displayed with green color in PTY output without text replacement. Values remain functional — only the color changes.
 
 ## Network Security
 
