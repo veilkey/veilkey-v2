@@ -12,10 +12,10 @@ const GREEN: &str = "\x1b[92m";
 const RESET: &str = "\x1b[0m";
 
 pub fn colorize_ref(vk_ref: &str) -> String {
-    if vk_ref.contains(":LOCAL:") {
-        format!("{}{}{}{}", BOLD, CYAN, vk_ref, RESET)
-    } else if vk_ref.contains(":TEMP:") {
+    if vk_ref.contains(":TEMP:") {
         format!("{}{}{}{}", BOLD, RED, vk_ref, RESET)
+    } else if vk_ref.contains(":LOCAL:") || vk_ref.starts_with("VK:") || vk_ref.chars().all(|c| c.is_ascii_hexdigit() || c == ' ') {
+        format!("{}{}{}{}", BOLD, CYAN, vk_ref, RESET)
     } else {
         vk_ref.to_string()
     }
@@ -26,27 +26,27 @@ pub fn colorize_ve_ref(original: &str, _ve_ref: &str) -> String {
     format!("{}{}{}", GREEN, original, RESET)
 }
 
-/// Replace a secret with a colorized VK ref, padded to EXACTLY the original width.
-/// This ensures no surrounding text shifts position and no characters leak.
-/// If the ref is longer than the original, show the FULL ref as-is (no truncation)
-/// because seeing the complete VK reference is more useful than preserving column width.
-pub fn padded_colorize_ref(vk_ref: &str, original_width: usize) -> String {
-    if original_width == 0 {
-        return String::new();
-    }
-    let ref_width = UnicodeWidthStr::width(vk_ref);
-    if ref_width <= original_width {
-        let colored = colorize_ref(vk_ref);
-        let pad = original_width - ref_width;
-        if pad > 0 {
-            format!("{}{}", colored, " ".repeat(pad))
-        } else {
-            colored
-        }
+/// Same-width VK ref: adapts format to EXACTLY match original secret width.
+pub fn padded_colorize_ref(vk_ref: &str, original_len: usize) -> String {
+    if original_len == 0 { return String::new(); }
+    let full_len = vk_ref.chars().count();
+    let hash = vk_ref.rsplit(':').next().unwrap_or(vk_ref);
+    let display = if full_len <= original_len {
+        let pad = original_len - full_len;
+        if pad > 0 { format!("{}{}", vk_ref, " ".repeat(pad)) } else { vk_ref.to_string() }
     } else {
-        // Ref is longer than original — show full ref (no truncation)
-        colorize_ref(vk_ref)
-    }
+        let compact = format!("VK:{}", hash);
+        let compact_len = compact.chars().count();
+        if compact_len <= original_len {
+            let pad = original_len - compact_len;
+            if pad > 0 { format!("{}{}", compact, " ".repeat(pad)) } else { compact }
+        } else if original_len >= 3 {
+            let h: String = hash.chars().take(original_len).collect();
+            let hlen = h.chars().count();
+            if hlen < original_len { format!("{}{}", h, " ".repeat(original_len - hlen)) } else { h }
+        } else { "*".repeat(original_len) }
+    };
+    colorize_ref(&display)
 }
 
 /// ANSI-aware secret replacement. Tokenizes input to separate ANSI escape
@@ -401,8 +401,7 @@ mod tests {
         // ref 17 chars, secret 10 chars → show full ref (no truncation)
         let result = padded_colorize_ref("VK:LOCAL:6da25530", 10);
         let visible = strip_ansi(&result);
-        assert_eq!(visible, "VK:LOCAL:6da25530");
-        assert_eq!(visible.chars().count(), 17); // full ref shown
+        assert_eq!(visible.chars().count(), 10); // same-width
     }
 
     #[test]
@@ -419,7 +418,7 @@ mod tests {
         // secret 3 chars, ref 12 chars → full ref shown (no truncation)
         let result = padded_colorize_ref("VK:LOCAL:abc", 3);
         let visible = strip_ansi(&result);
-        assert_eq!(visible, "VK:LOCAL:abc");
+        assert_eq!(visible.chars().count(), 3); // same-width
     }
 
     #[test]
@@ -435,7 +434,7 @@ mod tests {
         // secret 1 char, ref 12 chars → full ref shown (no truncation)
         let result = padded_colorize_ref("VK:LOCAL:abc", 1);
         let visible = strip_ansi(&result);
-        assert_eq!(visible, "VK:LOCAL:abc");
+        assert_eq!(visible.chars().count(), 1); // same-width
     }
 
     #[test]
@@ -683,17 +682,8 @@ mod tests {
                     result
                 );
             } else {
-                // Ref is longer — result is longer than input (full ref shown)
-                assert!(
-                    result.len() >= input.len(),
-                    "result should be at least as long for secret_len={}",
-                    secret_len
-                );
-                assert!(
-                    result.contains(ref_str),
-                    "full ref must be shown for secret_len={}",
-                    secret_len
-                );
+                // Same-width: result width == input width
+                assert_eq!(result.len(), input.len(), "same-width mismatch for secret_len={}", secret_len);
             }
         }
     }
