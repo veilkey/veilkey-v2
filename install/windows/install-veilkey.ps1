@@ -237,6 +237,9 @@ public class TrustAllCerts : ICertificatePolicy {
     Start-Sleep -Seconds 5
 }
 
+# Restore default certificate validation
+[System.Net.ServicePointManager]::CertificatePolicy = $null
+
 $localIp = (Get-NetIPAddress -AddressFamily IPv4 |
     Where-Object { $_.InterfaceAlias -notmatch 'Loopback' -and
                    $_.IPAddress -notmatch '^169' } |

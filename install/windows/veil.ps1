@@ -22,7 +22,7 @@
     docker-compose.yml 이 있는 디렉터리에서 실행해야 합니다.
 #>
 
-param([Parameter(ValueFromRemainingArguments)][string[]]$Args)
+param([Parameter(ValueFromRemainingArguments)][string[]]$VeilArgs)
 
 # docker-compose.yml 위치 확인 (이 스크립트가 설치 디렉터리에 있다고 가정)
 $composeDir = $PSScriptRoot
@@ -46,7 +46,7 @@ try {
     }
 
     # wrap-pty 를 컨테이너 내부에서 실행
-    docker compose exec -it veil veilkey wrap-pty @Args
+    docker compose exec -it veil veilkey wrap-pty @VeilArgs
 } finally {
     Pop-Location
 }
