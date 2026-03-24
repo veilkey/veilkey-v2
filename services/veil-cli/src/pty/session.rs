@@ -242,8 +242,11 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
             // but excluded from recent_input to avoid false masking skips.
             let master_wr = master_fd;
             let input_tracker = recent_input.clone();
+            let stdin_mask_map = mask_map.clone();
             std::thread::spawn(move || {
                 let mut buf = [0u8; 4096];
+                // Accumulated line buffer for enter-key secret detection
+                let mut line_buf = String::new();
                 loop {
                     let n = unsafe { read_eintr(stdin_fd, &mut buf) };
                     if n <= 0 {
@@ -287,9 +290,62 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
                     // during ECHO-off are implicitly registered as potential secrets
                     // since they won't appear in recent_input for masking-skip.
 
-                    // Always forward raw data to PTY (including escape sequences)
-                    unsafe {
-                        write_all_fd(master_wr, data);
+                    // Enter-key secret guard: when user presses Enter at a normal prompt
+                    // (ECHO on), check if the accumulated input line contains any known
+                    // secret. If so, send Ctrl+C to cancel execution and warn the user.
+                    let mut secret_blocked = false;
+                    if echo_on {
+                        if let Ok(s) = std::str::from_utf8(data) {
+                            for ch in s.chars() {
+                                if ch == '\r' || ch == '\n' {
+                                    if !line_buf.is_empty() {
+                                        let found_secret = {
+                                            let map = stdin_mask_map.read().unwrap();
+                                            map.iter().any(|(secret, _)| {
+                                                !secret.is_empty()
+                                                    && line_buf.contains(secret.as_str())
+                                            })
+                                        };
+                                        if found_secret {
+                                            secret_blocked = true;
+                                            break;
+                                        }
+                                    }
+                                    line_buf.clear();
+                                } else if ch == '\x03' || ch == '\x15' {
+                                    // Ctrl+C or Ctrl+U: reset line buffer
+                                    line_buf.clear();
+                                } else if ch == '\x7f' || ch == '\x08' {
+                                    // Backspace: remove last char
+                                    line_buf.pop();
+                                } else if ch >= ' ' {
+                                    line_buf.push(ch);
+                                }
+                            }
+                        }
+                    } else {
+                        // ECHO off (password input): reset line buffer
+                        line_buf.clear();
+                    }
+
+                    if secret_blocked {
+                        // Cancel the command by sending Ctrl+C to the PTY
+                        unsafe {
+                            write_all_fd(master_wr, b"\x03");
+                        }
+                        // Clear the line and show a warning directly to the user
+                        let warning =
+                            "\r\x1b[2K\x1b[1;31m[veilkey] blocked: secret detected in command input\x1b[0m\r\n";
+                        let stdout_fd = io::stdout().as_raw_fd();
+                        unsafe {
+                            write_all_fd(stdout_fd, warning.as_bytes());
+                        }
+                        line_buf.clear();
+                    } else {
+                        // Forward raw data to PTY (including escape sequences)
+                        unsafe {
+                            write_all_fd(master_wr, data);
+                        }
                     }
                 }
             });
