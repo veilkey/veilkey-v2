@@ -109,8 +109,7 @@ extern "C" fn handle_sigwinch(_: libc::c_int) {
 }
 
 /// Read a secret: try file from env var first, then interactive prompt.
-/// Returns Zeroizing<String> so the password is zeroed on drop.
-pub(crate) fn read_secret(env_file_key: &str, prompt: &str) -> zeroize::Zeroizing<String> {
+pub(crate) fn read_secret(env_file_key: &str, prompt: &str) -> String {
     // 1. Try reading from file specified by env var
     if let Ok(path) = std::env::var(env_file_key) {
         if !path.is_empty() {
@@ -118,7 +117,7 @@ pub(crate) fn read_secret(env_file_key: &str, prompt: &str) -> zeroize::Zeroizin
                 Ok(content) => {
                     let trimmed = content.trim_end_matches(['\r', '\n']).to_string();
                     if !trimmed.is_empty() {
-                        return zeroize::Zeroizing::new(trimmed);
+                        return trimmed;
                     }
                 }
                 Err(e) => {
@@ -129,7 +128,7 @@ pub(crate) fn read_secret(env_file_key: &str, prompt: &str) -> zeroize::Zeroizin
         }
     }
     // 2. Interactive prompt
-    zeroize::Zeroizing::new(rpassword::prompt_password(prompt).unwrap_or_default())
+    rpassword::prompt_password(prompt).unwrap_or_default()
 }
 
 pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Option<&str>) {
@@ -141,21 +140,6 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
     };
 
     let client = VeilKeyClient::new(api_url);
-
-    // If VaultCenter is locked, prompt for master password and unlock first
-    if client.is_locked() {
-        eprintln!("[veilkey] VaultCenter is locked — unlock required");
-        let master_pw = read_secret("VEILKEY_MASTER_PASSWORD_FILE", "Master password: ");
-        if master_pw.is_empty() {
-            eprintln!("[veilkey] master password is required");
-            std::process::exit(1);
-        }
-        if let Err(e) = client.unlock(&master_pw) {
-            eprintln!("[veilkey] unlock failed: {}", e);
-            std::process::exit(1);
-        }
-        eprintln!("[veilkey] VaultCenter unlocked");
-    }
 
     // Authenticate with admin password
     let password = read_secret("VEILKEY_PASSWORD_FILE", "VeilKey password: ");
@@ -795,13 +779,12 @@ mod tests {
     }
 
     #[test]
-    fn test_read_secret_returns_zeroizing() {
+    fn test_read_secret_returns_string() {
         let path = std::env::temp_dir().join("vk-test-read-secret-5");
-        std::fs::write(&path, "zeroize-me\n").unwrap();
+        std::fs::write(&path, "test-value\n").unwrap();
         std::env::set_var("_VK_TEST_RS5", path.to_str().unwrap());
         let result = read_secret("_VK_TEST_RS5", "unused: ");
-        let _: &str = &result; // Zeroizing<String> derefs to &str
-        assert_eq!(&*result, "zeroize-me");
+        assert_eq!(result, "test-value");
         std::fs::remove_file(&path).ok();
         std::env::remove_var("_VK_TEST_RS5");
     }
