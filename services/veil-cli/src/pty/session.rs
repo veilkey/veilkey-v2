@@ -7,6 +7,47 @@ use std::os::fd::{AsRawFd, RawFd};
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
+/// Result of processing stdin input for the secret guard.
+#[derive(Debug, PartialEq)]
+pub(crate) enum StdinGuardResult {
+    Forward,  // safe to forward data to PTY
+    Blocked,  // secret detected — do NOT forward
+}
+
+/// Process stdin data: accumulate chars in line_buf, on Enter check against secrets.
+/// Returns (StdinGuardResult, updated line_buf).
+pub(crate) fn check_stdin_for_secrets(
+    data: &[u8],
+    line_buf: &mut String,
+    secrets: &[(String, String)],
+) -> StdinGuardResult {
+    let s = match std::str::from_utf8(data) {
+        Ok(s) => s,
+        Err(_) => return StdinGuardResult::Forward,
+    };
+    for ch in s.chars() {
+        if ch == '\r' || ch == '\n' {
+            if !line_buf.is_empty() {
+                let found = secrets.iter().any(|(secret, _)| {
+                    !secret.is_empty() && line_buf.contains(secret.as_str())
+                });
+                if found {
+                    line_buf.clear();
+                    return StdinGuardResult::Blocked;
+                }
+            }
+            line_buf.clear();
+        } else if ch == '\x03' || ch == '\x15' {
+            line_buf.clear();
+        } else if ch == '\x7f' || ch == '\x08' {
+            line_buf.pop();
+        } else if ch >= ' ' {
+            line_buf.push(ch);
+        }
+    }
+    StdinGuardResult::Forward
+}
+
 /// Read from fd, retrying on EINTR. Returns bytes read, or <= 0 on EOF/error.
 unsafe fn read_eintr(fd: RawFd, buf: &mut [u8]) -> isize {
     loop {
@@ -57,6 +98,30 @@ extern "C" fn handle_sigwinch(_: libc::c_int) {
     }
 }
 
+/// Read a secret: try file from env var first, then interactive prompt.
+/// Returns Zeroizing<String> so the password is zeroed on drop.
+fn read_secret(env_file_key: &str, prompt: &str) -> zeroize::Zeroizing<String> {
+    // 1. Try reading from file specified by env var
+    if let Ok(path) = std::env::var(env_file_key) {
+        if !path.is_empty() {
+            match std::fs::read_to_string(&path) {
+                Ok(content) => {
+                    let trimmed = content.trim_end_matches(['\r', '\n']).to_string();
+                    if !trimmed.is_empty() {
+                        return zeroize::Zeroizing::new(trimmed);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[veilkey] cannot read {}: {}", path, e);
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+    // 2. Interactive prompt
+    zeroize::Zeroizing::new(rpassword::prompt_password(prompt).unwrap_or_default())
+}
+
 pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Option<&str>) {
     let shell_args: Vec<String> = if args.is_empty() {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
@@ -67,8 +132,23 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
 
     let client = VeilKeyClient::new(api_url);
 
-    // Authenticate with admin password before fetching secrets
-    let password = rpassword::prompt_password("VeilKey password: ").unwrap_or_default();
+    // If VaultCenter is locked, prompt for master password and unlock first
+    if client.is_locked() {
+        eprintln!("[veilkey] VaultCenter is locked — unlock required");
+        let master_pw = read_secret("VEILKEY_MASTER_PASSWORD_FILE", "Master password: ");
+        if master_pw.is_empty() {
+            eprintln!("[veilkey] master password is required");
+            std::process::exit(1);
+        }
+        if let Err(e) = client.unlock(&master_pw) {
+            eprintln!("[veilkey] unlock failed: {}", e);
+            std::process::exit(1);
+        }
+        eprintln!("[veilkey] VaultCenter unlocked");
+    }
+
+    // Authenticate with admin password
+    let password = read_secret("VEILKEY_PASSWORD_FILE", "VeilKey password: ");
     if password.is_empty() {
         eprintln!("[veilkey] password is required");
         std::process::exit(1);
@@ -290,43 +370,12 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
                     // during ECHO-off are implicitly registered as potential secrets
                     // since they won't appear in recent_input for masking-skip.
 
-                    // Enter-key secret guard: when user presses Enter at a normal prompt
-                    // (ECHO on), check if the accumulated input line contains any known
-                    // secret. If so, send Ctrl+C to cancel execution and warn the user.
-                    let mut secret_blocked = false;
-                    if echo_on {
-                        if let Ok(s) = std::str::from_utf8(data) {
-                            for ch in s.chars() {
-                                if ch == '\r' || ch == '\n' {
-                                    if !line_buf.is_empty() {
-                                        let found_secret = {
-                                            let map = stdin_mask_map.read().unwrap();
-                                            map.iter().any(|(secret, _)| {
-                                                !secret.is_empty()
-                                                    && line_buf.contains(secret.as_str())
-                                            })
-                                        };
-                                        if found_secret {
-                                            secret_blocked = true;
-                                            break;
-                                        }
-                                    }
-                                    line_buf.clear();
-                                } else if ch == '\x03' || ch == '\x15' {
-                                    // Ctrl+C or Ctrl+U: reset line buffer
-                                    line_buf.clear();
-                                } else if ch == '\x7f' || ch == '\x08' {
-                                    // Backspace: remove last char
-                                    line_buf.pop();
-                                } else if ch >= ' ' {
-                                    line_buf.push(ch);
-                                }
-                            }
-                        }
-                    } else {
-                        // ECHO off (password input): reset line buffer
-                        line_buf.clear();
-                    }
+                    // Enter-key secret guard: check stdin for known secrets.
+                    let secret_blocked = {
+                        let map = stdin_mask_map.read().unwrap();
+                        check_stdin_for_secrets(data, &mut line_buf, &map)
+                            == StdinGuardResult::Blocked
+                    };
 
                     if secret_blocked {
                         // Cancel the command by sending Ctrl+C to the PTY
@@ -429,5 +478,174 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
             eprintln!("[veilkey] fork failed: {}", e);
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn secrets(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs.iter().map(|(s, r)| (s.to_string(), r.to_string())).collect()
+    }
+
+    // --- Basic detection ---
+
+    #[test]
+    fn blocks_exact_secret_on_enter() {
+        let mut buf = String::new();
+        let map = secrets(&[("Ghdrhkdgh1@", "VK:LOCAL:6da25530")]);
+        let result = check_stdin_for_secrets(b"Ghdrhkdgh1@\r", &mut buf, &map);
+        assert_eq!(result, StdinGuardResult::Blocked);
+    }
+
+    #[test]
+    fn blocks_secret_embedded_in_command() {
+        let mut buf = String::new();
+        let map = secrets(&[("hunter2", "VK:LOCAL:aaa")]);
+        let result = check_stdin_for_secrets(b"echo hunter2\r", &mut buf, &map);
+        assert_eq!(result, StdinGuardResult::Blocked);
+    }
+
+    #[test]
+    fn forwards_safe_command() {
+        let mut buf = String::new();
+        let map = secrets(&[("SuperSecret123", "VK:LOCAL:bbb")]);
+        let result = check_stdin_for_secrets(b"ls -la\r", &mut buf, &map);
+        assert_eq!(result, StdinGuardResult::Forward);
+    }
+
+    #[test]
+    fn forwards_when_no_enter() {
+        let mut buf = String::new();
+        let map = secrets(&[("hunter2", "VK:LOCAL:ccc")]);
+        let result = check_stdin_for_secrets(b"hunter2", &mut buf, &map);
+        assert_eq!(result, StdinGuardResult::Forward);
+        assert_eq!(buf, "hunter2"); // accumulated but not checked yet
+    }
+
+    // --- Multi-chunk input ---
+
+    #[test]
+    fn blocks_secret_typed_across_chunks() {
+        let mut buf = String::new();
+        let map = secrets(&[("password123", "VK:LOCAL:ddd")]);
+        // Chunk 1: partial
+        assert_eq!(check_stdin_for_secrets(b"pass", &mut buf, &map), StdinGuardResult::Forward);
+        assert_eq!(buf, "pass");
+        // Chunk 2: more
+        assert_eq!(check_stdin_for_secrets(b"word123", &mut buf, &map), StdinGuardResult::Forward);
+        assert_eq!(buf, "password123");
+        // Chunk 3: enter
+        assert_eq!(check_stdin_for_secrets(b"\r", &mut buf, &map), StdinGuardResult::Blocked);
+    }
+
+    // --- Editing keys ---
+
+    #[test]
+    fn backspace_removes_chars() {
+        let mut buf = String::new();
+        let map = secrets(&[("secret", "VK:LOCAL:eee")]);
+        // Type "secretx" then backspace
+        check_stdin_for_secrets(b"secretx\x7f", &mut buf, &map);
+        assert_eq!(buf, "secret");
+        // Enter should match
+        assert_eq!(check_stdin_for_secrets(b"\r", &mut buf, &map), StdinGuardResult::Blocked);
+    }
+
+    #[test]
+    fn ctrl_c_clears_line_buf() {
+        let mut buf = String::new();
+        let map = secrets(&[("hunter2", "VK:LOCAL:fff")]);
+        check_stdin_for_secrets(b"hunter2", &mut buf, &map);
+        assert_eq!(buf, "hunter2");
+        check_stdin_for_secrets(b"\x03", &mut buf, &map); // Ctrl+C
+        assert_eq!(buf, "");
+        // Enter after Ctrl+C — safe
+        assert_eq!(check_stdin_for_secrets(b"ls\r", &mut buf, &map), StdinGuardResult::Forward);
+    }
+
+    #[test]
+    fn ctrl_u_clears_line_buf() {
+        let mut buf = String::new();
+        let map = secrets(&[("hunter2", "VK:LOCAL:ggg")]);
+        check_stdin_for_secrets(b"hunter2", &mut buf, &map);
+        check_stdin_for_secrets(b"\x15", &mut buf, &map); // Ctrl+U
+        assert_eq!(buf, "");
+    }
+
+    // --- Edge cases ---
+
+    #[test]
+    fn empty_secret_ignored() {
+        let mut buf = String::new();
+        let map = secrets(&[("", "VK:LOCAL:hhh")]);
+        let result = check_stdin_for_secrets(b"anything\r", &mut buf, &map);
+        assert_eq!(result, StdinGuardResult::Forward);
+    }
+
+    #[test]
+    fn empty_input_forwarded() {
+        let mut buf = String::new();
+        let map = secrets(&[("secret", "VK:LOCAL:iii")]);
+        let result = check_stdin_for_secrets(b"\r", &mut buf, &map);
+        assert_eq!(result, StdinGuardResult::Forward);
+    }
+
+    #[test]
+    fn newline_also_triggers_check() {
+        let mut buf = String::new();
+        let map = secrets(&[("secret", "VK:LOCAL:jjj")]);
+        let result = check_stdin_for_secrets(b"secret\n", &mut buf, &map);
+        assert_eq!(result, StdinGuardResult::Blocked);
+    }
+
+    #[test]
+    fn multiple_secrets_any_match_blocks() {
+        let mut buf = String::new();
+        let map = secrets(&[
+            ("password1", "VK:LOCAL:k1"),
+            ("password2", "VK:LOCAL:k2"),
+        ]);
+        let result = check_stdin_for_secrets(b"echo password2\r", &mut buf, &map);
+        assert_eq!(result, StdinGuardResult::Blocked);
+    }
+
+    #[test]
+    fn paste_with_secret_and_enter() {
+        let mut buf = String::new();
+        let map = secrets(&[("SuperSecret", "VK:LOCAL:lll")]);
+        // Pasted all at once
+        let result = check_stdin_for_secrets(b"curl -H 'Auth: SuperSecret' http://x\r", &mut buf, &map);
+        assert_eq!(result, StdinGuardResult::Blocked);
+    }
+
+    #[test]
+    fn escape_sequences_not_accumulated() {
+        let mut buf = String::new();
+        let map = secrets(&[("secret", "VK:LOCAL:mmm")]);
+        // Up arrow escape sequence \x1b[A — \x1b is < ' ' so excluded
+        check_stdin_for_secrets(b"\x1b[A", &mut buf, &map);
+        assert_eq!(buf, "[A"); // only printable parts
+    }
+
+    #[test]
+    fn line_buf_resets_after_safe_enter() {
+        let mut buf = String::new();
+        let map = secrets(&[("secret", "VK:LOCAL:nnn")]);
+        check_stdin_for_secrets(b"safe command\r", &mut buf, &map);
+        assert_eq!(buf, ""); // cleared after enter
+        // Next line with secret
+        let result = check_stdin_for_secrets(b"secret\r", &mut buf, &map);
+        assert_eq!(result, StdinGuardResult::Blocked);
+    }
+
+    #[test]
+    fn binary_data_forwarded_safely() {
+        let mut buf = String::new();
+        let map = secrets(&[("secret", "VK:LOCAL:ooo")]);
+        // Invalid UTF-8
+        let result = check_stdin_for_secrets(&[0xFF, 0xFE, 0x0D], &mut buf, &map);
+        assert_eq!(result, StdinGuardResult::Forward);
     }
 }
