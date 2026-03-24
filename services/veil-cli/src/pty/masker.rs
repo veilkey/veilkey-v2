@@ -1696,6 +1696,216 @@ mod tests {
         assert!(!visible.contains("VK:LOCVK:"), "no partial refs: {}", visible);
     }
 
+    // ── Cross-chunk edge cases ─────────────────────────────────────
+
+    #[test]
+    fn cross_chunk_secret_at_exact_tail_end() {
+        // Secret ends exactly where tail ends — no cross-chunk
+        let map = mk(&[("abc", "VK:LOCAL:x1")]);
+        assert!(find_cross_chunk_mask("xyzabc", "", &map).is_none());
+    }
+
+    #[test]
+    fn cross_chunk_secret_starts_at_tail_start() {
+        // Secret starts at very beginning of tail
+        let map = mk(&[("abcdef", "VK:LOCAL:x2")]);
+        let r = find_cross_chunk_mask("abcde", "f", &map);
+        assert!(r.is_some());
+    }
+
+    #[test]
+    fn cross_chunk_multiple_secrets_overlap_same_boundary() {
+        // Two secrets overlap at the same boundary — longest wins
+        let map = mk(&[
+            ("abcdef", "VK:LOCAL:long"),
+            ("cdef", "VK:LOCAL:short"),
+        ]);
+        let r = find_cross_chunk_mask("abcde", "f", &map);
+        assert!(r.is_some());
+        let visible = strip_ansi(&r.unwrap().output);
+        assert!(visible.contains("VK:LOCAL:long"), "longest must win");
+    }
+
+    #[test]
+    fn cross_chunk_new_text_has_trailing_content() {
+        // new_text has extra chars after the secret portion
+        let map = mk(&[("secret!", "VK:LOCAL:x3")]);
+        let r = find_cross_chunk_mask("prompt secret", "! more text", &map);
+        assert!(r.is_some());
+        let out = r.unwrap().output;
+        assert!(out.contains(" more text"), "trailing text must be preserved");
+    }
+
+    #[test]
+    fn cross_chunk_erase_count_1_char_tail() {
+        let map = mk(&[("xyz", "VK:LOCAL:x4")]);
+        let r = find_cross_chunk_mask("x", "yz", &map);
+        assert!(r.is_some());
+        let out = r.unwrap().output;
+        assert!(out.contains("\x1b[1D"), "must move cursor left 1");
+    }
+
+    #[test]
+    fn cross_chunk_erase_count_10_char_tail() {
+        let map = mk(&[("0123456789ab", "VK:LOCAL:x5")]);
+        let r = find_cross_chunk_mask("0123456789", "ab", &map);
+        assert!(r.is_some());
+        let out = r.unwrap().output;
+        assert!(out.contains("\x1b[10D"), "must move cursor left 10");
+    }
+
+    #[test]
+    fn cross_chunk_unicode_secret() {
+        // Secret contains unicode (rare but must not panic)
+        let map = mk(&[("비밀번호123", "VK:LOCAL:kr1")]);
+        let r = find_cross_chunk_mask("비밀번호1", "23", &map);
+        assert!(r.is_some());
+    }
+
+    #[test]
+    fn cross_chunk_tail_with_ansi_in_plain_tail() {
+        // If plain_tail somehow has ANSI (shouldn't normally), must not corrupt
+        let map = mk(&[("secret99", "VK:LOCAL:x6")]);
+        let r = find_cross_chunk_mask("some \x1b[31mred\x1b[0m secret9", "9", &map);
+        assert!(r.is_some());
+    }
+
+    #[test]
+    fn cross_chunk_special_chars_in_secret() {
+        let map = mk(&[("p@$$w0rd!", "VK:LOCAL:sp1")]);
+        let r = find_cross_chunk_mask("typed p@$$w0rd", "!", &map);
+        assert!(r.is_some());
+    }
+
+    #[test]
+    fn cross_chunk_newline_in_new_text() {
+        // Enter char in new_text after secret suffix
+        let map = mk(&[("mypass", "VK:LOCAL:nl1")]);
+        let r = find_cross_chunk_mask("mypas", "s\r\n", &map);
+        assert!(r.is_some());
+        let out = r.unwrap().output;
+        assert!(out.contains("\r\n"), "newline must be preserved");
+    }
+
+    // ── Chunked echo: all chunk sizes 1..N ──────────────────────────
+
+    #[test]
+    fn chunked_all_sizes_no_corruption() {
+        let secret = "Ghdrhkdgh1@";
+        let map = mk(&[(secret, "VK:LOCAL:6da25530")]);
+        for chunk_sz in 1..=secret.len() + 2 {
+            let (output, _) = simulate_chunked_echo(
+                "(VEIL) root$ ", &format!("{}\r", secret), chunk_sz, &map,
+            );
+            let visible = strip_ansi(&output);
+            assert!(
+                !visible.contains("VK:LOCVK:"),
+                "chunk_sz={}: corrupted partial refs: {}", chunk_sz, visible
+            );
+        }
+    }
+
+    #[test]
+    fn chunked_all_sizes_second_secret() {
+        let secret = "Fkslrhenfk1@";
+        let map = mk(&[(secret, "VK:LOCAL:abc12345")]);
+        for chunk_sz in 1..=secret.len() + 2 {
+            let (output, _) = simulate_chunked_echo(
+                "(VEIL) root$ ", &format!("{}\r", secret), chunk_sz, &map,
+            );
+            let visible = strip_ansi(&output);
+            assert!(
+                !visible.contains("VK:LOCVK:"),
+                "chunk_sz={}: corrupted: {}", chunk_sz, visible
+            );
+        }
+    }
+
+    #[test]
+    fn chunked_repeated_10_times_all_sizes() {
+        let secret = "TestPass99!";
+        let map = mk(&[(secret, "VK:LOCAL:rep10")]);
+        for chunk_sz in [1, 2, 3, 4, 7] {
+            let mut tail = String::new();
+            for attempt in 0..10 {
+                tail.push_str("$ ");
+                let (output, _) = simulate_chunked_echo(
+                    &tail, &format!("{}\r", secret), chunk_sz, &map,
+                );
+                let visible = strip_ansi(&output);
+                assert!(
+                    !visible.contains("VK:LOCVK:"),
+                    "chunk={} attempt={}: {}", chunk_sz, attempt, visible
+                );
+                tail.push_str(&format!("{}\nbash: {}: cmd not found\n", secret, secret));
+                if tail.len() > 2048 {
+                    let s = tail.ceil_char_boundary(tail.len() - 2048);
+                    tail = tail[s..].to_string();
+                }
+            }
+        }
+    }
+
+    // ── Stdin guard integration ─────────────────────────────────────
+
+    #[test]
+    fn stdin_guard_blocks_secret_with_env_prefix() {
+        use super::super::session::{check_stdin_for_secrets, StdinGuardResult};
+        let map = mk(&[("SuperSecret", "VK:LOCAL:env1")]);
+        let mut buf = String::new();
+        let r = check_stdin_for_secrets(b"export X=SuperSecret\r", &mut buf, &map);
+        assert_eq!(r, StdinGuardResult::Blocked);
+    }
+
+    #[test]
+    fn stdin_guard_blocks_secret_in_curl() {
+        use super::super::session::{check_stdin_for_secrets, StdinGuardResult};
+        let map = mk(&[("Bearer tok123", "VK:LOCAL:curl1")]);
+        let mut buf = String::new();
+        let r = check_stdin_for_secrets(
+            b"curl -H 'Authorization: Bearer tok123' http://x\r", &mut buf, &map,
+        );
+        assert_eq!(r, StdinGuardResult::Blocked);
+    }
+
+    #[test]
+    fn stdin_guard_safe_after_backspace_correction() {
+        use super::super::session::{check_stdin_for_secrets, StdinGuardResult};
+        let map = mk(&[("secret", "VK:LOCAL:bs1")]);
+        let mut buf = String::new();
+        // Type "secret" then backspace all and type "safe"
+        check_stdin_for_secrets(b"secret", &mut buf, &map);
+        check_stdin_for_secrets(b"\x7f\x7f\x7f\x7f\x7f\x7f", &mut buf, &map);
+        assert_eq!(buf, "");
+        let r = check_stdin_for_secrets(b"safe\r", &mut buf, &map);
+        assert_eq!(r, StdinGuardResult::Forward);
+    }
+
+    #[test]
+    fn stdin_guard_blocks_on_second_line() {
+        use super::super::session::{check_stdin_for_secrets, StdinGuardResult};
+        let map = mk(&[("hunter2", "VK:LOCAL:l2")]);
+        let mut buf = String::new();
+        // First line: safe
+        let r1 = check_stdin_for_secrets(b"echo hello\r", &mut buf, &map);
+        assert_eq!(r1, StdinGuardResult::Forward);
+        // Second line: secret
+        let r2 = check_stdin_for_secrets(b"echo hunter2\r", &mut buf, &map);
+        assert_eq!(r2, StdinGuardResult::Blocked);
+    }
+
+    #[test]
+    fn stdin_guard_line_buf_size_bounded() {
+        use super::super::session::{check_stdin_for_secrets, StdinGuardResult};
+        let map = mk(&[("x", "VK:LOCAL:big")]);
+        let mut buf = String::new();
+        // Send 10K chars without enter — line_buf grows but function doesn't panic
+        let big_input: Vec<u8> = vec![b'A'; 10000];
+        let r = check_stdin_for_secrets(&big_input, &mut buf, &map);
+        assert_eq!(r, StdinGuardResult::Forward);
+        assert_eq!(buf.len(), 10000);
+    }
+
     // ══════════════════════════════════════════════════════════════════
     // SECURITY ROUND 2: VE, recent_input, tail, unicode, formats
     // ══════════════════════════════════════════════════════════════════
