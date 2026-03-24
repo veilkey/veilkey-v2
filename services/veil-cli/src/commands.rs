@@ -123,11 +123,14 @@ pub fn cmd_exec(args: &[String], api_url: &str, log_path: &str, patterns_file: O
         detector.register_known(plaintext, vk_ref);
     }
 
+    let cfg2 = load_config(patterns_file).ok();
+    let mask_pairs_clone = mask_pairs.clone();
+
     let mut child = match process::Command::new(&resolved[0])
         .args(&resolved[1..])
         .stdin(process::Stdio::inherit())
         .stdout(process::Stdio::piped())
-        .stderr(process::Stdio::inherit())
+        .stderr(process::Stdio::piped())
         .spawn()
     {
         Ok(c) => c,
@@ -137,8 +140,44 @@ pub fn cmd_exec(args: &[String], api_url: &str, log_path: &str, patterns_file: O
         }
     };
 
+    // Mask stderr in a separate thread
+    let stderr_handle = child.stderr.take().map(|stderr| {
+        let api = api_url.to_string();
+        let lp = log_path.to_string();
+        std::thread::spawn(move || {
+            if let Some(c2) = cfg2 {
+                let cl2 = VeilKeyClient::new(&api);
+                let lg2 = SessionLogger::new(&lp);
+                let mut det2 = SecretDetector::new(&c2, &cl2, &lg2, false);
+                for (p, v) in &mask_pairs_clone {
+                    det2.register_known(p, v);
+                }
+                let reader = io::BufReader::new(stderr);
+                for line in reader.lines() {
+                    match line {
+                        Ok(l) => eprintln!("{}", det2.process_line(&l)),
+                        Err(_) => break,
+                    }
+                }
+            } else {
+                // Fallback: pass through unmasked
+                let reader = io::BufReader::new(stderr);
+                for line in reader.lines() {
+                    match line {
+                        Ok(l) => eprintln!("{}", l),
+                        Err(_) => break,
+                    }
+                }
+            }
+        })
+    });
+
     if let Some(stdout) = child.stdout.take() {
         process_stream(&mut detector, stdout);
+    }
+
+    if let Some(h) = stderr_handle {
+        let _ = h.join();
     }
 
     let exit_code = match child.wait() {
