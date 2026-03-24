@@ -143,13 +143,16 @@ pub fn mask_output(
     }
 
     // Cross-chunk mask_map: secrets echoed char-by-char span tail + new_text.
-    // When found, backspace over the already-emitted tail chars and print the VK ref.
+    // Only search the boundary region to avoid matching stale secrets in old tail.
     let tail_len = plain_tail.len();
     for (plaintext, vk_ref) in mask_map.iter() {
         if plaintext.is_empty() || plaintext.len() < 3 {
             continue;
         }
-        if let Some(pos) = combined.find(plaintext.as_str()) {
+        let search_start = tail_len.saturating_sub(plaintext.len() - 1);
+        let boundary = &combined[search_start..];
+        if let Some(rel_pos) = boundary.find(plaintext.as_str()) {
+            let pos = search_start + rel_pos;
             let end = pos + plaintext.len();
             if pos < tail_len && end > tail_len {
                 let tail_part = &combined[pos..tail_len];
@@ -923,12 +926,20 @@ mod tests {
 
     // ── Cross-chunk boundary secrets (mask_output) ──────────────────
 
+    fn init_rustls() {
+        use std::sync::Once;
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        });
+    }
+
     fn mask_output_simple(
         data: &str,
         mask_map: &[(String, String)],
         plain_tail: &str,
     ) -> (String, String) {
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        init_rustls();
         let (bytes, tail) = mask_output(
             data.as_bytes(),
             mask_map,
