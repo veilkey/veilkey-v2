@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"crypto/sha256"
 	cryptorand "crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -174,8 +173,7 @@ func handleInstallInit(w http.ResponseWriter, r *http.Request, database *db.DB, 
 	// Delete the unencrypted setup DB and create a new encrypted one
 	_ = database.Close()
 	_ = os.Remove(dbPath)
-	dbKeyHash := sha256.Sum256(kek)
-	_ = os.Setenv("VEILKEY_DB_KEY", fmt.Sprintf("%x", dbKeyHash))
+	_ = os.Setenv("VEILKEY_DB_KEY", api.DeriveDBKeyFromKEK(kek))
 	database, dbErr := db.New(dbPath)
 	if dbErr != nil {
 		log.Printf("install: failed to create encrypted database: %v", dbErr)
