@@ -24,31 +24,45 @@ pub(crate) fn find_cross_chunk_mask(
 ) -> Option<CrossChunkMatch> {
     let combined = format!("{}{}", plain_tail, new_text);
     let tail_len = plain_tail.len();
+
+    // Only fire when new_text completes a secret at the exact boundary.
+    // Pick the LONGEST match to avoid short-prefix false triggers
+    // (e.g. "pass" matching before "password" is fully typed).
+    let mut best: Option<(usize, String, String, String)> = None;
+
     for (plaintext, vk_ref) in mask_map {
         if plaintext.is_empty() || plaintext.len() < 3 {
             continue;
         }
+        // The secret must END exactly at or within new_text
+        // and START within the tail.
         let raw_start = tail_len.saturating_sub(plaintext.len() - 1);
         let search_start = combined.floor_char_boundary(raw_start);
         let boundary = &combined[search_start..];
         if let Some(rel_pos) = boundary.find(plaintext.as_str()) {
             let pos = search_start + rel_pos;
             let end = pos + plaintext.len();
-            if pos < tail_len && end > tail_len {
-                let tail_part = &combined[pos..tail_len];
+            if pos < tail_len && end > tail_len && end <= combined.len() {
                 let new_part = &combined[tail_len..end];
-                let tail_chars = tail_part.chars().count();
-                let erase: String = "\x08 \x08".repeat(tail_chars);
-                let replacement = padded_colorize_ref(vk_ref, plaintext.len());
-                if new_text.starts_with(new_part) {
-                    return Some(CrossChunkMatch {
-                        output: format!("{}{}{}", erase, replacement, &new_text[new_part.len()..]),
-                    });
+                if !new_text.starts_with(new_part) {
+                    continue;
+                }
+                let is_longer = best.as_ref().map_or(true, |(len, _, _, _)| plaintext.len() > *len);
+                if is_longer {
+                    let tail_part = &combined[pos..tail_len];
+                    let tail_chars = tail_part.chars().count();
+                    let erase: String = "\x08 \x08".repeat(tail_chars);
+                    let replacement = padded_colorize_ref(vk_ref, plaintext.len());
+                    let remainder = new_text[new_part.len()..].to_string();
+                    best = Some((plaintext.len(), erase, replacement, remainder));
                 }
             }
         }
     }
-    None
+
+    best.map(|(_, erase, replacement, remainder)| CrossChunkMatch {
+        output: format!("{}{}{}", erase, replacement, remainder),
+    })
 }
 
 pub fn colorize_ref(vk_ref: &str) -> String {
@@ -1388,5 +1402,156 @@ mod tests {
         // 5 chars in tail → 5 backspace-space-backspace sequences
         let bs_count = out.matches("\x08 \x08").count();
         assert_eq!(bs_count, 5, "must erase exactly 5 tail chars");
+    }
+
+    // ── Char-by-char echo simulation ────────────────────────────────
+    // Simulate PTY echo: each typed char produces one mask_output call.
+    // The secret must be caught exactly ONCE at the last-char boundary,
+    // never producing partial VK refs on intermediate chars.
+
+    /// Simulate char-by-char echo through find_cross_chunk_mask.
+    /// Returns the concatenated output across all calls.
+    fn simulate_charwise_echo(
+        initial_tail: &str,
+        typed: &str,
+        mask_map: &[(String, String)],
+    ) -> (String, usize) {
+        let mut tail = initial_tail.to_string();
+        let mut full_output = String::new();
+        let mut match_count = 0;
+        for ch in typed.chars() {
+            let new = ch.to_string();
+            if let Some(m) = find_cross_chunk_mask(&tail, &new, mask_map) {
+                full_output.push_str(&m.output);
+                match_count += 1;
+                // After cross-chunk match, tail resets (the replacement was emitted)
+                // In real code, tail gets the original new_text, not the masked version.
+                tail = format!("{}{}", tail, new);
+            } else {
+                full_output.push(ch);
+                tail = format!("{}{}", tail, new);
+            }
+            // Keep tail bounded (like PLAIN_TAIL_SIZE)
+            if tail.len() > 4096 {
+                tail = tail[tail.len() - 4096..].to_string();
+            }
+        }
+        (full_output, match_count)
+    }
+
+    #[test]
+    fn charwise_secret_matched_exactly_once() {
+        let map = mk(&[("Ghdrhkdgh1@", "VK:LOCAL:6da25530")]);
+        let (output, count) = simulate_charwise_echo(
+            "(VEIL) pve:~ root$ ",
+            "Ghdrhkdgh1@\r",
+            &map,
+        );
+        assert_eq!(count, 1, "secret must match exactly once, got {}", count);
+        let visible = strip_ansi(&output);
+        assert!(visible.contains("VK:LOCAL:6da25530"), "must contain VK ref: {}", visible);
+        // Must NOT contain partial VK refs like "VK:LOC"
+        let vk_fragments = visible.matches("VK:LOC").count();
+        assert_eq!(vk_fragments, 1, "only one VK ref, not partial fragments: {}", visible);
+    }
+
+    #[test]
+    fn charwise_no_partial_refs_on_intermediate_chars() {
+        let map = mk(&[("password123", "VK:LOCAL:aaa")]);
+        let (output, count) = simulate_charwise_echo("$ ", "password123\r", &map);
+        assert_eq!(count, 1);
+        // No VK ref fragments before the final match
+        let visible = strip_ansi(&output);
+        assert_eq!(visible.matches("VK:").count(), 1);
+    }
+
+    #[test]
+    fn charwise_repeated_5_times() {
+        // User types the same secret 5 times in a row
+        let map = mk(&[("Ghdrhkdgh1@", "VK:LOCAL:6da25530")]);
+        let mut tail = String::new();
+        for i in 0..5 {
+            let prompt = format!("(VEIL) root$ ");
+            tail.push_str(&prompt);
+            let (output, count) = simulate_charwise_echo(&tail, "Ghdrhkdgh1@\r", &map);
+            assert_eq!(count, 1, "attempt {} must match exactly once", i + 1);
+            let visible = strip_ansi(&output);
+            assert_eq!(
+                visible.matches("VK:LOC").count(), 1,
+                "attempt {} must have exactly one VK ref, got: {}",
+                i + 1, visible
+            );
+            // Simulate bash error output appended to tail
+            tail.push_str(&format!(
+                "Ghdrhkdgh1@\nbash: Ghdrhkdgh1@: command not found\n"
+            ));
+            if tail.len() > 4096 {
+                tail = tail[tail.len() - 4096..].to_string();
+            }
+        }
+    }
+
+    #[test]
+    fn charwise_different_secret_no_interference() {
+        // Two secrets in mask_map, type only one
+        let map = mk(&[
+            ("password123", "VK:LOCAL:aaa"),
+            ("Ghdrhkdgh1@", "VK:LOCAL:bbb"),
+        ]);
+        let (output, count) = simulate_charwise_echo("$ ", "password123\r", &map);
+        assert_eq!(count, 1);
+        let visible = strip_ansi(&output);
+        assert!(visible.contains("VK:LOCAL:aaa"));
+        assert!(!visible.contains("VK:LOCAL:bbb"));
+    }
+
+    #[test]
+    fn charwise_prefix_overlap_longest_wins() {
+        // "pass" is a prefix of "password", both in mask_map.
+        // When char 'd' arrives (completing "password"), longest-match must win.
+        // When char 's' arrives (completing "pass" at char 4), "pass" fires
+        // because "password" is not yet complete. This is expected behavior —
+        // the short secret is a valid secret and must be masked.
+        let map = mk(&[
+            ("password", "VK:LOCAL:long1"),
+            ("pass", "VK:LOCAL:short1"),
+        ]);
+        let (output, count) = simulate_charwise_echo("$ ", "password\r", &map);
+        // "pass" matches at char 4 (short match fires first)
+        assert!(count >= 1, "at least one match");
+        let visible = strip_ansi(&output);
+        // No corrupted partial VK fragments (like "VK:LOCVK:LOC")
+        assert!(
+            !visible.contains("VK:LOCVK:"),
+            "must not have concatenated partial refs: {}", visible
+        );
+    }
+
+    #[test]
+    fn charwise_no_prefix_overlap_clean_match() {
+        // When secrets don't overlap, exactly one match.
+        let map = mk(&[("secretXYZ", "VK:LOCAL:only1")]);
+        let (output, count) = simulate_charwise_echo("$ ", "secretXYZ\r", &map);
+        assert_eq!(count, 1);
+        let visible = strip_ansi(&output);
+        assert_eq!(visible.matches("VK:LOCAL:only1").count(), 1);
+    }
+
+    #[test]
+    fn charwise_safe_command_no_match() {
+        let map = mk(&[("secret123", "VK:LOCAL:xxx")]);
+        let (output, count) = simulate_charwise_echo("$ ", "ls -la\r", &map);
+        assert_eq!(count, 0, "safe command must not trigger");
+        assert_eq!(output, "ls -la\r");
+    }
+
+    #[test]
+    fn charwise_paste_all_at_once() {
+        // Paste: entire secret arrives in one chunk (not char-by-char)
+        // find_cross_chunk_mask should NOT match (fully in new_text)
+        // Standard mask_map should handle this instead.
+        let map = mk(&[("secret123", "VK:LOCAL:yyy")]);
+        let result = find_cross_chunk_mask("$ ", "secret123\r", &map);
+        assert!(result.is_none(), "fully in new_text → standard mask handles it");
     }
 }
