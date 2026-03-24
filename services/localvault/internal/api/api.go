@@ -240,7 +240,15 @@ func (s *Server) Unlock(kek []byte) error {
 
 	database, err := db.New(s.dbPath)
 	if err != nil {
-		return fmt.Errorf("invalid password (cannot open database)")
+		// Attempt plaintext → encrypted migration (#360)
+		if migErr := db.MigrateToEncrypted(s.dbPath, dbKey); migErr != nil {
+			log.Printf("Unlock: encrypted open failed, migration also failed: %v", migErr)
+			return fmt.Errorf("invalid password (cannot open database)")
+		}
+		database, err = db.New(s.dbPath)
+		if err != nil {
+			return fmt.Errorf("invalid password (cannot open database after migration)")
+		}
 	}
 
 	// 3. Verify KEK by decrypting DEK
