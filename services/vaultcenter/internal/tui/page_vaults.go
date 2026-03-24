@@ -594,7 +594,10 @@ func (m vaultsModel) viewList(width int) string {
 
 func (m vaultsModel) viewSecrets(width int) string {
 	var b strings.Builder
-	name := str(m.detailVault, "vault_name")
+	name := str(m.detailVault, "display_name")
+	if name == "" {
+		name = str(m.detailVault, "vault_name")
+	}
 	if name == "" {
 		name = str(m.detailVault, "vault_hash")
 	}
@@ -645,7 +648,10 @@ func (m vaultsModel) viewSecrets(width int) string {
 
 func (m vaultsModel) viewSecretCreate() string {
 	var b strings.Builder
-	vaultName := str(m.detailVault, "vault_name")
+	vaultName := str(m.detailVault, "display_name")
+	if vaultName == "" {
+		vaultName = str(m.detailVault, "vault_name")
+	}
 	if m.editingSecret {
 		b.WriteString(styleHeader.Render(fmt.Sprintf("  %s — Edit: %s", vaultName, m.editSecretName)))
 	} else {

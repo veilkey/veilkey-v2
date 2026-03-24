@@ -107,6 +107,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case loginSuccessMsg:
 		m.status = "ready"
+		m.err = nil
 		return m.switchPage(pageKeycenter)
 
 	case loginFailMsg:
@@ -198,6 +199,9 @@ func (m Model) switchPage(p page) (Model, tea.Cmd) {
 	case pageAudit:
 		m.audit = newAuditModel()
 		return m, loadAuditCmd(m.client)
+	case pagePlugins:
+		m.plugins = newPluginsModel()
+		return m, fetchPluginsCmd(m.client)
 	case pageSettings:
 		m.settings = newSettingsModel()
 		return m, loadSettingsCmd(m.client)

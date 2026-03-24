@@ -15,7 +15,6 @@ const (
 	kcList kcView = iota
 	kcDetail
 	kcCreate
-	kcConfirm
 	kcPromote
 )
 
@@ -109,8 +108,6 @@ func (m keycenterModel) update(msg tea.Msg, c *Client) (keycenterModel, tea.Cmd)
 			return m.updateDetail(msg, c)
 		case kcCreate:
 			return m.updateCreate(msg, c)
-		case kcConfirm:
-			return m.updateConfirm(msg, c)
 		}
 	}
 
@@ -155,8 +152,9 @@ func (m keycenterModel) updateList(msg tea.KeyMsg, c *Client) (keycenterModel, t
 		m.valueInput.Blur()
 	case "d":
 		if len(m.refs) > 0 {
-			m.detailRef = m.refs[m.cursor]
-			m.subview = kcConfirm
+			return m, func() tea.Msg {
+				return errMsg{fmt.Errorf("temp refs expire automatically — manual delete not supported")}
+			}
 		}
 	case "r":
 		m.loading = true
@@ -243,29 +241,12 @@ func (m keycenterModel) updateCreate(msg tea.KeyMsg, c *Client) (keycenterModel,
 	return m, nil
 }
 
-func (m keycenterModel) updateConfirm(msg tea.KeyMsg, c *Client) (keycenterModel, tea.Cmd) {
-	switch msg.String() {
-	case "y":
-		// Temp refs expire automatically; no delete API exists.
-		// Return to list with info message.
-		m.subview = kcList
-		return m, func() tea.Msg {
-			return errMsg{fmt.Errorf("temp refs expire automatically — manual delete not supported")}
-		}
-	case "n", "esc":
-		m.subview = kcList
-	}
-	return m, nil
-}
-
 func (m keycenterModel) view(width int) string {
 	switch m.subview {
 	case kcDetail:
 		return m.viewDetail()
 	case kcCreate:
 		return m.viewCreate()
-	case kcConfirm:
-		return m.viewConfirm()
 	case kcPromote:
 		return m.viewPromote(width)
 	default:
@@ -314,7 +295,7 @@ func (m keycenterModel) viewList(width int) string {
 		}
 	}
 	b.WriteString("\n")
-	b.WriteString(styleDim.Render("  j/k move  enter detail  n new  d delete  r refresh"))
+	b.WriteString(styleDim.Render("  j/k move  enter detail  n new  r refresh"))
 	return b.String()
 }
 
@@ -367,7 +348,10 @@ func (m keycenterModel) viewPromote(width int) string {
 
 	b.WriteString(styleDim.Render("  Select target vault:") + "\n\n")
 	for i, v := range m.vaults {
-		name := str(v, "vault_name")
+		name := str(v, "display_name")
+		if name == "" {
+			name = str(v, "vault_name")
+		}
 		if name == "" {
 			name = str(v, "vault_hash")
 		}
@@ -394,12 +378,3 @@ func (m keycenterModel) viewCreate() string {
 	return b.String()
 }
 
-func (m keycenterModel) viewConfirm() string {
-	var b strings.Builder
-	b.WriteString(styleError.Render("  ⚠ Delete ref?"))
-	b.WriteString("\n\n")
-	b.WriteString("  " + styleValue.Render(m.detailRef.RefCanonical))
-	b.WriteString("\n\n")
-	b.WriteString(styleDim.Render("  y confirm  n cancel"))
-	return b.String()
-}
