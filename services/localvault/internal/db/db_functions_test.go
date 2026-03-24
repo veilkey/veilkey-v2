@@ -151,13 +151,13 @@ func TestCleanupExpiredTestFunctions(t *testing.T) {
 		Update("created_at", time.Now().Add(-2*time.Hour))
 
 	// 아직 유효한 TEST 함수
-	d.SaveFunction(&Function{
+	_ = d.SaveFunction(&Function{
 		Name: "new-test", Scope: "TEST", VaultHash: "v",
 		FunctionHash: "h2", Command: "echo",
 	})
 
 	// LOCAL 함수 (cleanup 대상 아님)
-	d.SaveFunction(&Function{
+	_ = d.SaveFunction(&Function{
 		Name: "local-fn", Scope: "LOCAL", VaultHash: "v",
 		FunctionHash: "h3", Command: "echo",
 	})
@@ -191,7 +191,7 @@ func TestCountFunctions(t *testing.T) {
 		t.Errorf("initial count = %d, want 0", count)
 	}
 
-	d.SaveFunction(&Function{
+	_ = d.SaveFunction(&Function{
 		Name: "fn1", Scope: "LOCAL", VaultHash: "v",
 		FunctionHash: "h1", Command: "echo",
 	})
@@ -203,7 +203,7 @@ func TestCountFunctions(t *testing.T) {
 
 func TestFunctionLogs(t *testing.T) {
 	d := newTestDB(t)
-	d.SaveFunction(&Function{
+	_ = d.SaveFunction(&Function{
 		Name: "log-fn", Scope: "LOCAL", VaultHash: "v",
 		FunctionHash: "hlog", Command: "echo",
 	})
