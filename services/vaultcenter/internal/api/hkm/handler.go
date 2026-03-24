@@ -77,7 +77,7 @@ func (h *Handler) Register(
 ) {
 	ready := requireReadyForOps
 	trusted := requireTrustedIP
-	adminAuth := requireAdminAuth
+	_ = requireAdminAuth // resolve/mask-map은 trustedIP로 전환됨
 
 	// Parent API (called by root/parent to manage this node's children)
 	mux.HandleFunc("POST /api/register", trusted(ready(h.handleRegister)))
@@ -87,8 +87,8 @@ func (h *Handler) Register(
 	mux.HandleFunc("DELETE /api/children/{node_id}", trusted(ready(h.handleDeleteChild)))
 	mux.HandleFunc("GET /api/registry", ready(h.handleListRegistry))
 
-	// Resolve scoped VK ref → plaintext value — requires admin session
-	mux.HandleFunc("GET /api/resolve/{ref}", adminAuth(ready(h.handleResolveSecret)))
+	// Resolve scoped VK ref → plaintext value — trusted IP + unlocked
+	mux.HandleFunc("GET /api/resolve/{ref}", trusted(ready(h.handleResolveSecret)))
 
 	// Child heartbeat (report URL)
 	mux.HandleFunc("POST /api/heartbeat", trusted(ready(h.handleHeartbeat)))
@@ -99,8 +99,8 @@ func (h *Handler) Register(
 	// Key rotation (root triggers full tree rotation)
 	mux.HandleFunc("POST /api/federation/rotate", trusted(ready(h.handleFederatedRotate)))
 
-	// Mask map for veil-cli PTY masking — requires admin session
-	mux.HandleFunc("GET /api/mask-map", adminAuth(trusted(ready(h.handleMaskMap))))
+	// Mask map for veil-cli PTY masking — trusted IP + unlocked
+	mux.HandleFunc("GET /api/mask-map", trusted(ready(h.handleMaskMap)))
 
 	// Agent management (Hub-only decryption)
 	agentAuth := h.requireAgentAuth
