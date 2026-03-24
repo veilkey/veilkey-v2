@@ -100,7 +100,8 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
         }
     };
     // 2. Resolve VK refs in environment variables
-    let vk_re = regex::Regex::new(crate::detector::VEILKEY_RE_STR).unwrap();
+    let vk_re = regex::Regex::new(crate::detector::VEILKEY_RE_STR)
+        .expect("BUG: VEILKEY_RE_STR is not a valid regex");
     let mut child_env: Vec<(String, String)> = Vec::new();
     for (key, value) in std::env::vars() {
         if vk_re.is_match(&value) {
@@ -249,23 +250,43 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
                         break;
                     }
                     let data = &buf[..n as usize];
-                    // Track user input (exclude terminal response sequences)
-                    if let Ok(s) = std::str::from_utf8(data) {
-                        // Filter out escape sequences from input tracking
-                        let filtered: String = s
-                            .chars()
-                            .filter(|&c| c >= ' ' || c == '\n' || c == '\r' || c == '\t')
-                            .collect();
-                        if !filtered.is_empty() {
-                            let mut tracker = input_tracker.lock().unwrap();
-                            tracker.push_str(&filtered);
-                            if tracker.len() > 4096 {
-                                let start = tracker.len() - 4096;
-                                let start = tracker.ceil_char_boundary(start);
-                                *tracker = tracker[start..].to_string();
+
+                    // Check ECHO flag on PTY master fd (reflects slave termios on Linux).
+                    // When ECHO is off (e.g. sudo/ssh password prompt), don't add typed
+                    // characters to recent_input — this prevents the masking-skip logic
+                    // from treating passwords as "user-typed commands" and allows them
+                    // to be masked if they later appear in output.
+                    let echo_on = unsafe {
+                        let mut termios: libc::termios = std::mem::zeroed();
+                        if libc::tcgetattr(master_wr, &mut termios) == 0 {
+                            (termios.c_lflag & libc::ECHO) != 0
+                        } else {
+                            true // safe default: assume ECHO on if tcgetattr fails
+                        }
+                    };
+
+                    // Track user input only when ECHO is on (exclude terminal response sequences)
+                    if echo_on {
+                        if let Ok(s) = std::str::from_utf8(data) {
+                            let filtered: String = s
+                                .chars()
+                                .filter(|&c| c >= ' ' || c == '\n' || c == '\r' || c == '\t')
+                                .collect();
+                            if !filtered.is_empty() {
+                                let mut tracker = input_tracker.lock().unwrap();
+                                tracker.push_str(&filtered);
+                                if tracker.len() > 4096 {
+                                    let start = tracker.len() - 4096;
+                                    let start = tracker.ceil_char_boundary(start);
+                                    *tracker = tracker[start..].to_string();
+                                }
                             }
                         }
                     }
+                    // When ECHO is off: don't add to recent_input — passwords typed
+                    // during ECHO-off are implicitly registered as potential secrets
+                    // since they won't appear in recent_input for masking-skip.
+
                     // Always forward raw data to PTY (including escape sequences)
                     unsafe {
                         write_all_fd(master_wr, data);
