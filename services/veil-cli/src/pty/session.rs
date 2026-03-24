@@ -4,7 +4,7 @@ use nix::unistd::{execvp, fork, ForkResult};
 use std::ffi::CString;
 use std::io;
 use std::os::fd::{AsRawFd, RawFd};
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 /// Read from fd, retrying on EINTR. Returns bytes read, or <= 0 on EOF/error.
@@ -41,6 +41,10 @@ use super::masker;
 use super::sync as mask_sync;
 
 static MASTER_FD: AtomicI32 = AtomicI32::new(-1);
+/// Panic hook state for terminal restoration.
+static PANIC_STDIN_FD: AtomicI32 = AtomicI32::new(-1);
+static PANIC_HAS_TERMIOS: AtomicBool = AtomicBool::new(false);
+static mut PANIC_TERMIOS: libc::termios = unsafe { std::mem::zeroed() };
 
 extern "C" fn handle_sigwinch(_: libc::c_int) {
     let fd = MASTER_FD.load(Ordering::Relaxed);
@@ -198,6 +202,22 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
             }
 
             if has_termios {
+                // Save termios and install panic hook before entering raw mode
+                unsafe { PANIC_TERMIOS = old_termios; }
+                PANIC_STDIN_FD.store(stdin_fd, Ordering::Release);
+                PANIC_HAS_TERMIOS.store(true, Ordering::Release);
+
+                let prev_hook = std::panic::take_hook();
+                std::panic::set_hook(Box::new(move |info| {
+                    if PANIC_HAS_TERMIOS.load(Ordering::Acquire) {
+                        let fd = PANIC_STDIN_FD.load(Ordering::Acquire);
+                        if fd >= 0 {
+                            unsafe { libc::tcsetattr(fd, libc::TCSANOW, &raw const PANIC_TERMIOS); }
+                        }
+                    }
+                    prev_hook(info);
+                }));
+
                 unsafe {
                     let mut raw = old_termios;
                     libc::cfmakeraw(&mut raw);
