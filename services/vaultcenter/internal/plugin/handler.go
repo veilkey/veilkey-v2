@@ -217,9 +217,11 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hooks, _ := inst.Hooks(ctx)
-	hookName := ""
-	if len(hooks) > 0 {
-		hookName = hooks[0].Name
+	sortedHooks, sortErr := SortHooks(hooks)
+	if sortErr != nil {
+		log.Printf("plugin sync hook sort %s: %v", name, sortErr)
+		respondError(w, http.StatusInternalServerError, "hook dependency cycle detected")
+		return
 	}
 	agentURL, err := h.sync.FindAgentURL(vault)
 	if err != nil {
@@ -227,14 +229,17 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadGateway, "vault not reachable")
 		return
 	}
-	step := map[string]any{"name": "plugin-sync", "format": "raw", "target_path": paths[0], "content": output}
-	if hookName != "" {
-		step["hook"] = hookName
+	// Build steps: one content step + sorted hooks
+	steps := []any{map[string]any{"name": "plugin-sync", "format": "raw", "target_path": paths[0], "content": output}}
+	var hookNames []string
+	for _, h := range sortedHooks {
+		steps = append(steps, map[string]any{"name": h.Name, "hook": h.Name})
+		hookNames = append(hookNames, h.Name)
 	}
-	payload, _ := json.Marshal(map[string]any{"name": "plugin-sync", "steps": []any{step}})
-	req, _ := http.NewRequest("POST", strings.TrimRight(agentURL, "/")+"/api/bulk-apply/execute", bytes.NewReader(payload))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := h.sync.HTTPClient().Do(req)
+	payload, _ := json.Marshal(map[string]any{"name": "plugin-sync", "steps": steps})
+	syncReq, _ := http.NewRequest("POST", strings.TrimRight(agentURL, "/")+"/api/bulk-apply/execute", bytes.NewReader(payload))
+	syncReq.Header.Set("Content-Type", "application/json")
+	resp, err := h.sync.HTTPClient().Do(syncReq)
 	if err != nil {
 		log.Printf("plugin sync push %s: %v", vault, err)
 		respondError(w, http.StatusBadGateway, "push to vault failed")
@@ -250,7 +255,7 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(respBody, &result)
 	respondJSON(w, http.StatusOK, map[string]any{
 		"status": "synced", "plugin": name, "vault": vault,
-		"target_path": paths[0], "hook": hookName, "result": result,
+		"target_path": paths[0], "hooks": hookNames, "result": result,
 	})
 }
 
