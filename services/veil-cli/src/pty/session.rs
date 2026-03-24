@@ -6,7 +6,32 @@ use std::io;
 use std::os::fd::{AsRawFd, RawFd};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
+
+/// Read from fd, retrying on EINTR. Returns bytes read, or <= 0 on EOF/error.
+unsafe fn read_eintr(fd: RawFd, buf: &mut [u8]) -> isize {
+    loop {
+        let n = libc::read(fd, buf.as_mut_ptr() as _, buf.len());
+        if n == -1 && *libc::__errno_location() == libc::EINTR {
+            continue;
+        }
+        return n;
+    }
+}
+
+/// Write all bytes to fd, handling partial writes and EINTR.
+unsafe fn write_all_fd(fd: RawFd, buf: &[u8]) {
+    let mut offset = 0;
+    while offset < buf.len() {
+        let n = libc::write(fd, buf[offset..].as_ptr() as _, buf.len() - offset);
+        if n == -1 {
+            if *libc::__errno_location() == libc::EINTR {
+                continue;
+            }
+            break;
+        }
+        offset += n as usize;
+    }
+}
 
 use crate::api::VeilKeyClient;
 use crate::config::{load_config, CompiledPattern};
@@ -199,7 +224,7 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
             std::thread::spawn(move || {
                 let mut buf = [0u8; 4096];
                 loop {
-                    let n = unsafe { libc::read(stdin_fd, buf.as_mut_ptr() as _, buf.len()) };
+                    let n = unsafe { read_eintr(stdin_fd, &mut buf) };
                     if n <= 0 {
                         break;
                     }
@@ -223,7 +248,7 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
                     }
                     // Always forward raw data to PTY (including escape sequences)
                     unsafe {
-                        libc::write(master_wr, data.as_ptr() as _, n as _);
+                        write_all_fd(master_wr, data);
                     }
                 }
             });
@@ -241,7 +266,7 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
 
             let mut buf = [0u8; 32768];
             loop {
-                let n = unsafe { libc::read(master_fd, buf.as_mut_ptr() as _, buf.len()) };
+                let n = unsafe { read_eintr(master_fd, &mut buf) };
                 if n <= 0 {
                     break;
                 }
@@ -253,7 +278,7 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
                 if in_alt_screen {
                     // Alt-screen active — pass through unmasked (TUI apps break with masking)
                     unsafe {
-                        libc::write(stdout_fd, chunk.as_ptr() as _, chunk.len());
+                        write_all_fd(stdout_fd, chunk);
                     }
                     continue;
                 }
@@ -271,7 +296,7 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
                 plain_tail = new_tail;
 
                 unsafe {
-                    libc::write(stdout_fd, masked.as_ptr() as _, masked.len());
+                    write_all_fd(stdout_fd, &masked);
                 }
             }
 
