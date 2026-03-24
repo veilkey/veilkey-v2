@@ -41,6 +41,7 @@ pub fn padded_colorize_ref(vk_ref: &str, original_len: usize) -> String {
 pub fn mask_output(
     data: &[u8],
     mask_map: &[(String, String)],
+    ve_map: &[(String, String)],
     patterns: &[CompiledPattern],
     client: &VeilKeyClient,
     recent_input: &str,
@@ -107,6 +108,12 @@ pub fn mask_output(
                     s = s.replace(secret, &padded_colorize_ref(&redacted, secret.len()));
                 }
             }
+        }
+    }
+
+    for (plaintext, ve_ref) in ve_map {
+        if !plaintext.is_empty() && s.contains(plaintext.as_str()) {
+            s = s.replace(plaintext.as_str(), &colorize_ve_ref(plaintext, ve_ref));
         }
     }
 

@@ -119,6 +119,14 @@ impl<'a> SecretDetector<'a> {
         self.load_watchlist();
     }
 
+    /// Register a known plaintext→VK mapping so it gets masked in output.
+    pub fn register_known(&mut self, plaintext: &str, vk_ref: &str) {
+        self.watchlist.push(WatchEntry {
+            value: plaintext.to_string(),
+            vk: vk_ref.to_string(),
+        });
+    }
+
     fn is_excluded(&self, value: &str) -> bool {
         if self.veilkey_re.is_match(value) {
             return true;
