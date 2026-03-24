@@ -648,7 +648,10 @@ func (m vaultsModel) viewSecrets(width int) string {
 
 func (m vaultsModel) viewSecretCreate() string {
 	var b strings.Builder
-	vaultName := str(m.detailVault, "vault_name")
+	vaultName := str(m.detailVault, "display_name")
+	if vaultName == "" {
+		vaultName = str(m.detailVault, "vault_name")
+	}
 	if m.editingSecret {
 		b.WriteString(styleHeader.Render(fmt.Sprintf("  %s — Edit: %s", vaultName, m.editSecretName)))
 	} else {
