@@ -14,7 +14,10 @@ const RESET: &str = "\x1b[0m";
 pub fn colorize_ref(vk_ref: &str) -> String {
     if vk_ref.contains(":TEMP:") {
         format!("{}{}{}{}", BOLD, RED, vk_ref, RESET)
-    } else if vk_ref.contains(":LOCAL:") || vk_ref.starts_with("VK:") || vk_ref.chars().all(|c| c.is_ascii_hexdigit() || c == ' ') {
+    } else if vk_ref.contains(":LOCAL:")
+        || vk_ref.starts_with("VK:")
+        || vk_ref.chars().all(|c| c.is_ascii_hexdigit() || c == ' ')
+    {
         format!("{}{}{}{}", BOLD, CYAN, vk_ref, RESET)
     } else {
         vk_ref.to_string()
@@ -28,23 +31,39 @@ pub fn colorize_ve_ref(original: &str, _ve_ref: &str) -> String {
 
 /// Same-width VK ref: adapts format to EXACTLY match original secret width.
 pub fn padded_colorize_ref(vk_ref: &str, original_len: usize) -> String {
-    if original_len == 0 { return String::new(); }
+    if original_len == 0 {
+        return String::new();
+    }
     let full_len = vk_ref.chars().count();
     let hash = vk_ref.rsplit(':').next().unwrap_or(vk_ref);
     let display = if full_len <= original_len {
         let pad = original_len - full_len;
-        if pad > 0 { format!("{}{}", vk_ref, " ".repeat(pad)) } else { vk_ref.to_string() }
+        if pad > 0 {
+            format!("{}{}", vk_ref, " ".repeat(pad))
+        } else {
+            vk_ref.to_string()
+        }
     } else {
         let compact = format!("VK:{}", hash);
         let compact_len = compact.chars().count();
         if compact_len <= original_len {
             let pad = original_len - compact_len;
-            if pad > 0 { format!("{}{}", compact, " ".repeat(pad)) } else { compact }
+            if pad > 0 {
+                format!("{}{}", compact, " ".repeat(pad))
+            } else {
+                compact
+            }
         } else if original_len >= 3 {
             let h: String = hash.chars().take(original_len).collect();
             let hlen = h.chars().count();
-            if hlen < original_len { format!("{}{}", h, " ".repeat(original_len - hlen)) } else { h }
-        } else { "*".repeat(original_len) }
+            if hlen < original_len {
+                format!("{}{}", h, " ".repeat(original_len - hlen))
+            } else {
+                h
+            }
+        } else {
+            "*".repeat(original_len)
+        }
     };
     colorize_ref(&display)
 }
@@ -352,7 +371,7 @@ pub(crate) fn find_cross_chunk_mask(
                 }
                 let is_longer = best
                     .as_ref()
-                    .map_or(true, |(len, _, _, _)| plaintext.len() > *len);
+                    .is_none_or(|(len, _, _, _)| plaintext.len() > *len);
                 if is_longer {
                     let tail_part = &combined[pos..tail_len];
                     let tail_chars = tail_part.chars().count();
@@ -689,7 +708,12 @@ mod tests {
                 );
             } else {
                 // Same-width: result width == input width
-                assert_eq!(result.len(), input.len(), "same-width mismatch for secret_len={}", secret_len);
+                assert_eq!(
+                    result.len(),
+                    input.len(),
+                    "same-width mismatch for secret_len={}",
+                    secret_len
+                );
             }
         }
     }
@@ -815,10 +839,7 @@ mod tests {
             let (new_s, _) = ansi_aware_replace(&s, plaintext, &repl);
             s = new_s;
         }
-        assert!(
-            !s.contains("\r\x1b[2K"),
-            "line-clear must not be present"
-        );
+        assert!(!s.contains("\r\x1b[2K"), "line-clear must not be present");
         // Prompt-style prefix must survive
         assert!(strip_ansi(&s).contains("line1="));
         assert!(strip_ansi(&s).contains("line2="));
@@ -959,7 +980,10 @@ mod tests {
                 let mut s = chunk.to_string();
                 for (plaintext, vk_ref) in &map {
                     if !plaintext.is_empty() && s.contains(plaintext.as_str()) {
-                        s = s.replace(plaintext.as_str(), &strip_ansi(&padded_colorize_ref(vk_ref, plaintext.len())));
+                        s = s.replace(
+                            plaintext.as_str(),
+                            &strip_ansi(&padded_colorize_ref(vk_ref, plaintext.len())),
+                        );
                     }
                 }
                 collected.push_str(&s);
@@ -971,7 +995,11 @@ mod tests {
         }
         // The secret should not appear in collected output
         // (some intermediate chars may leak in charwise, but cross-chunk catches the split)
-        assert!(!collected.contains(secret), "secret must not appear in full: {}", collected);
+        assert!(
+            !collected.contains(secret),
+            "secret must not appear in full: {}",
+            collected
+        );
     }
 
     // ── mask_output integration tests ─────────────────────────────
@@ -989,15 +1017,8 @@ mod tests {
     ) -> (String, String) {
         init_crypto();
         let client = VeilKeyClient::new("http://localhost:0");
-        let (bytes, new_tail) = mask_output(
-            data.as_bytes(),
-            mask_map,
-            ve_map,
-            &[],
-            &client,
-            "",
-            tail,
-        );
+        let (bytes, new_tail) =
+            mask_output(data.as_bytes(), mask_map, ve_map, &[], &client, "", tail);
         (String::from_utf8_lossy(&bytes).to_string(), new_tail)
     }
 
@@ -1054,12 +1075,7 @@ mod tests {
         // When the secret was recently typed as input, masking is skipped
         // (to avoid masking what the user intentionally typed)
         let map = vec![("typed-secret-12".to_string(), "VK:LOCAL:skip1".to_string())];
-        let (output, _) = mask_with_input(
-            "typed-secret-12",
-            &map,
-            "typed-secret-12",
-            "",
-        );
+        let (output, _) = mask_with_input("typed-secret-12", &map, "typed-secret-12", "");
         let visible = strip_ansi(&output);
         // The mask_map replacement still happens because recent_input only
         // affects pattern-detected secrets, not mask_map entries
@@ -1078,7 +1094,10 @@ mod tests {
 
     #[test]
     fn test_mask_output_no_false_positive() {
-        let map = vec![("not-in-output-at-all".to_string(), "VK:LOCAL:fp".to_string())];
+        let map = vec![(
+            "not-in-output-at-all".to_string(),
+            "VK:LOCAL:fp".to_string(),
+        )];
         let (output, _) = mask_with_ve("completely normal text", &map, &[], "");
         assert_eq!(output, "completely normal text");
     }
@@ -1093,22 +1112,66 @@ mod same_width_tests {
         re.replace_all(s, "").to_string()
     }
     fn vw(vk_ref: &str, len: usize) -> usize {
-        strip_ansi(&padded_colorize_ref(vk_ref, len)).chars().count()
+        strip_ansi(&padded_colorize_ref(vk_ref, len))
+            .chars()
+            .count()
     }
     fn mk(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
-        pairs.iter().map(|(s, r)| (s.to_string(), r.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(s, r)| (s.to_string(), r.to_string()))
+            .collect()
     }
 
     // ── Same-width guarantee ────────────────────────────────────
-    #[test] fn sw_full_17()   { assert_eq!(vw("VK:LOCAL:6da25530", 17), 17); }
-    #[test] fn sw_compact_11() { assert_eq!(vw("VK:LOCAL:6da25530", 11), 11); assert_eq!(strip_ansi(&padded_colorize_ref("VK:LOCAL:6da25530", 11)), "VK:6da25530"); }
-    #[test] fn sw_hash_8()    { assert_eq!(vw("VK:LOCAL:6da25530", 8), 8); }
-    #[test] fn sw_padded_9()  { assert_eq!(vw("VK:LOCAL:6da25530", 9), 9); }
-    #[test] fn sw_stars_2()   { assert_eq!(vw("VK:LOCAL:6da25530", 2), 2); assert_eq!(strip_ansi(&padded_colorize_ref("VK:LOCAL:6da25530", 2)), "**"); }
-    #[test] fn sw_star_1()    { assert_eq!(vw("VK:LOCAL:6da25530", 1), 1); }
-    #[test] fn sw_zero()      { assert_eq!(padded_colorize_ref("VK:LOCAL:6da25530", 0), ""); }
-    #[test] fn sw_all_1_50()  { for l in 1..=50 { assert_eq!(vw("VK:LOCAL:6da25530", l), l, "len={}", l); } }
-    #[test] fn sw_temp_1_50() { for l in 1..=50 { assert_eq!(vw("VK:TEMP:abc12345", l), l, "len={}", l); } }
+    #[test]
+    fn sw_full_17() {
+        assert_eq!(vw("VK:LOCAL:6da25530", 17), 17);
+    }
+    #[test]
+    fn sw_compact_11() {
+        assert_eq!(vw("VK:LOCAL:6da25530", 11), 11);
+        assert_eq!(
+            strip_ansi(&padded_colorize_ref("VK:LOCAL:6da25530", 11)),
+            "VK:6da25530"
+        );
+    }
+    #[test]
+    fn sw_hash_8() {
+        assert_eq!(vw("VK:LOCAL:6da25530", 8), 8);
+    }
+    #[test]
+    fn sw_padded_9() {
+        assert_eq!(vw("VK:LOCAL:6da25530", 9), 9);
+    }
+    #[test]
+    fn sw_stars_2() {
+        assert_eq!(vw("VK:LOCAL:6da25530", 2), 2);
+        assert_eq!(
+            strip_ansi(&padded_colorize_ref("VK:LOCAL:6da25530", 2)),
+            "**"
+        );
+    }
+    #[test]
+    fn sw_star_1() {
+        assert_eq!(vw("VK:LOCAL:6da25530", 1), 1);
+    }
+    #[test]
+    fn sw_zero() {
+        assert_eq!(padded_colorize_ref("VK:LOCAL:6da25530", 0), "");
+    }
+    #[test]
+    fn sw_all_1_50() {
+        for l in 1..=50 {
+            assert_eq!(vw("VK:LOCAL:6da25530", l), l, "len={}", l);
+        }
+    }
+    #[test]
+    fn sw_temp_1_50() {
+        for l in 1..=50 {
+            assert_eq!(vw("VK:TEMP:abc12345", l), l, "len={}", l);
+        }
+    }
 
     // ── Cross-chunk erase + same-width ──────────────────────────
     #[test]
@@ -1126,9 +1189,21 @@ mod same_width_tests {
     }
 
     // ── Arrow key safety ────────────────────────────────────────
-    #[test] fn cc_skip_escape()    { let m = mk(&[("s99", "VK:LOCAL:x")]); assert!(find_cross_chunk_mask("s9", "9\x1b[C", &m).is_none()); }
-    #[test] fn cc_skip_down_arrow() { let m = mk(&[("Ghdrhkdgh1@", "VK:LOCAL:6da25530")]); assert!(find_cross_chunk_mask("tail", "\x1b[B\x1b[2K", &m).is_none()); }
-    #[test] fn cc_fires_on_cr()    { let m = mk(&[("s99", "VK:LOCAL:y")]); assert!(find_cross_chunk_mask("s9", "9\r", &m).is_some()); }
+    #[test]
+    fn cc_skip_escape() {
+        let m = mk(&[("s99", "VK:LOCAL:x")]);
+        assert!(find_cross_chunk_mask("s9", "9\x1b[C", &m).is_none());
+    }
+    #[test]
+    fn cc_skip_down_arrow() {
+        let m = mk(&[("Ghdrhkdgh1@", "VK:LOCAL:6da25530")]);
+        assert!(find_cross_chunk_mask("tail", "\x1b[B\x1b[2K", &m).is_none());
+    }
+    #[test]
+    fn cc_fires_on_cr() {
+        let m = mk(&[("s99", "VK:LOCAL:y")]);
+        assert!(find_cross_chunk_mask("s9", "9\r", &m).is_some());
+    }
 
     // ── Repeated invocations ────────────────────────────────────
     #[test]
@@ -1140,64 +1215,110 @@ mod same_width_tests {
             let r = find_cross_chunk_mask(&format!("{}Ghdrhkdgh1", tail), "@\r", &map);
             assert!(r.is_some(), "#{}", i);
             tail.push_str("Ghdrhkdgh1@\nbash: VK:6da25530: not found\n");
-            if tail.len() > 4096 { tail = tail[tail.len()-4096..].to_string(); }
+            if tail.len() > 4096 {
+                tail = tail[tail.len() - 4096..].to_string();
+            }
         }
     }
 
     // ── 103 secrets ─────────────────────────────────────────────
     #[test]
     fn cc_103_secrets() {
-        let mut map: Vec<(String, String)> = (0..102).map(|i| (format!("other_{:04}", i), format!("VK:LOCAL:{:08x}", i))).collect();
+        let mut map: Vec<(String, String)> = (0..102)
+            .map(|i| (format!("other_{:04}", i), format!("VK:LOCAL:{:08x}", i)))
+            .collect();
         map.push(("Ghdrhkdgh1@".into(), "VK:LOCAL:6da25530".into()));
         let r = find_cross_chunk_mask("$ Ghdrhkdgh1", "@", &map);
         assert!(r.is_some());
     }
 
     // ── Security ────────────────────────────────────────────────
-    #[test] fn sec_no_plaintext()  { let m = mk(&[("Ghdrhkdgh1@", "VK:LOCAL:6da25530")]); let r = find_cross_chunk_mask("$ Ghdrhkdgh1", "@\r", &m).unwrap(); assert!(!r.output.contains("Ghdrhkdgh1@")); }
-    #[test] fn sec_empty_map()     { assert!(find_cross_chunk_mask("x", "y", &[]).is_none()); }
-    #[test] fn sec_long_tail()     { let m = mk(&[("needle", "VK:LOCAL:n")]); let t = format!("{}needl", "x".repeat(50000)); assert!(find_cross_chunk_mask(&t, "e", &m).is_some()); }
-    #[test] fn sec_unicode()       { let m = mk(&[("비밀abc", "VK:LOCAL:k")]); assert!(find_cross_chunk_mask("비밀ab", "c", &m).is_some()); }
-    #[test] fn sec_special_chars() { let m = mk(&[("p@$$!", "VK:LOCAL:s")]); assert!(find_cross_chunk_mask("p@$$", "!", &m).is_some()); }
+    #[test]
+    fn sec_no_plaintext() {
+        let m = mk(&[("Ghdrhkdgh1@", "VK:LOCAL:6da25530")]);
+        let r = find_cross_chunk_mask("$ Ghdrhkdgh1", "@\r", &m).unwrap();
+        assert!(!r.output.contains("Ghdrhkdgh1@"));
+    }
+    #[test]
+    fn sec_empty_map() {
+        assert!(find_cross_chunk_mask("x", "y", &[]).is_none());
+    }
+    #[test]
+    fn sec_long_tail() {
+        let m = mk(&[("needle", "VK:LOCAL:n")]);
+        let t = format!("{}needl", "x".repeat(50000));
+        assert!(find_cross_chunk_mask(&t, "e", &m).is_some());
+    }
+    #[test]
+    fn sec_unicode() {
+        let m = mk(&[("비밀abc", "VK:LOCAL:k")]);
+        assert!(find_cross_chunk_mask("비밀ab", "c", &m).is_some());
+    }
+    #[test]
+    fn sec_special_chars() {
+        let m = mk(&[("p@$$!", "VK:LOCAL:s")]);
+        assert!(find_cross_chunk_mask("p@$$", "!", &m).is_some());
+    }
 
     // ── Stdin guard ─────────────────────────────────────────────
     #[test]
     fn sg_blocks_env() {
         use crate::pty::session::{check_stdin_for_secrets, StdinGuardResult};
-        let m = mk(&[("SuperSecret", "VK:LOCAL:e")]); let mut b = String::new();
-        assert_eq!(check_stdin_for_secrets(b"export X=SuperSecret\r", &mut b, &m), StdinGuardResult::Blocked);
+        let m = mk(&[("SuperSecret", "VK:LOCAL:e")]);
+        let mut b = String::new();
+        assert_eq!(
+            check_stdin_for_secrets(b"export X=SuperSecret\r", &mut b, &m),
+            StdinGuardResult::Blocked
+        );
     }
     #[test]
     fn sg_multi_chunk() {
         use crate::pty::session::{check_stdin_for_secrets, StdinGuardResult};
-        let m = mk(&[("pass123", "VK:LOCAL:p")]); let mut b = String::new();
+        let m = mk(&[("pass123", "VK:LOCAL:p")]);
+        let mut b = String::new();
         check_stdin_for_secrets(b"pass", &mut b, &m);
-        assert_eq!(check_stdin_for_secrets(b"123\r", &mut b, &m), StdinGuardResult::Blocked);
+        assert_eq!(
+            check_stdin_for_secrets(b"123\r", &mut b, &m),
+            StdinGuardResult::Blocked
+        );
     }
     #[test]
     fn sg_safe_after_ctrl_c() {
         use crate::pty::session::{check_stdin_for_secrets, StdinGuardResult};
-        let m = mk(&[("secret", "VK:LOCAL:c")]); let mut b = String::new();
+        let m = mk(&[("secret", "VK:LOCAL:c")]);
+        let mut b = String::new();
         check_stdin_for_secrets(b"secret", &mut b, &m);
         check_stdin_for_secrets(b"\x03", &mut b, &m);
-        assert_eq!(check_stdin_for_secrets(b"ls\r", &mut b, &m), StdinGuardResult::Forward);
+        assert_eq!(
+            check_stdin_for_secrets(b"ls\r", &mut b, &m),
+            StdinGuardResult::Forward
+        );
     }
     #[test]
     fn sg_empty_enter() {
         use crate::pty::session::{check_stdin_for_secrets, StdinGuardResult};
-        let m = mk(&[("s", "VK:LOCAL:x")]); let mut b = String::new();
-        assert_eq!(check_stdin_for_secrets(b"\r", &mut b, &m), StdinGuardResult::Forward);
+        let m = mk(&[("s", "VK:LOCAL:x")]);
+        let mut b = String::new();
+        assert_eq!(
+            check_stdin_for_secrets(b"\r", &mut b, &m),
+            StdinGuardResult::Forward
+        );
     }
     #[test]
     fn sg_binary_no_panic() {
         use crate::pty::session::{check_stdin_for_secrets, StdinGuardResult};
-        let m = mk(&[("s", "VK:LOCAL:x")]); let mut b = String::new();
-        assert_eq!(check_stdin_for_secrets(&[0xFF, 0xFE, 0x0D], &mut b, &m), StdinGuardResult::Forward);
+        let m = mk(&[("s", "VK:LOCAL:x")]);
+        let mut b = String::new();
+        assert_eq!(
+            check_stdin_for_secrets(&[0xFF, 0xFE, 0x0D], &mut b, &m),
+            StdinGuardResult::Forward
+        );
     }
     #[test]
     fn sg_line_buf_capped() {
         use crate::pty::session::{check_stdin_for_secrets, MAX_LINE_BUF};
-        let m = mk(&[("x", "VK:LOCAL:x")]); let mut b = String::new();
+        let m = mk(&[("x", "VK:LOCAL:x")]);
+        let mut b = String::new();
         check_stdin_for_secrets(&vec![b'A'; 100_000], &mut b, &m);
         assert!(b.len() <= MAX_LINE_BUF);
     }
@@ -1235,8 +1356,10 @@ mod domain_invariant_tests {
             if plaintext.is_empty() {
                 continue;
             }
-            let repl =
-                padded_colorize_ref(vk_ref, unicode_width::UnicodeWidthStr::width(plaintext.as_str()));
+            let repl = padded_colorize_ref(
+                vk_ref,
+                unicode_width::UnicodeWidthStr::width(plaintext.as_str()),
+            );
             let (new_s, _) = ansi_aware_replace(&s, plaintext, &repl);
             s = new_s;
         }
@@ -1325,7 +1448,10 @@ mod domain_invariant_tests {
     fn domain_masking_secret_in_curl_command() {
         // Secret in curl -H header must be masked.
         let secret = "Bearer eyJhbGciOiJIUzI1NiJ9";
-        let input = format!("curl -H 'Authorization: {}' https://api.example.com", secret);
+        let input = format!(
+            "curl -H 'Authorization: {}' https://api.example.com",
+            secret
+        );
         let map = mk(&[(secret, "VK:LOCAL:curl0001")]);
         let result = simulate_mask(&input, &map);
         assert!(
@@ -1507,7 +1633,9 @@ mod domain_invariant_tests {
                 result.is_some(),
                 "SECURITY: cross-chunk split at byte {} not detected! \
                  tail=[{}] new=[{}] — secret would leak in plaintext",
-                split_at, tail, new_text
+                split_at,
+                tail,
+                new_text
             );
         }
     }
@@ -1525,7 +1653,9 @@ mod domain_invariant_tests {
                 result.is_some(),
                 "SECURITY: cross-chunk with context not detected at split={}: \
                  tail=[{}] new=[{}]",
-                split_at, tail, new_text
+                split_at,
+                tail,
+                new_text
             );
         }
     }
@@ -1546,7 +1676,9 @@ mod domain_invariant_tests {
                 result.is_some(),
                 "SECURITY: cross-chunk special chars not detected at split={}: \
                  tail=[{}] new=[{}]",
-                split_at, tail, new_text
+                split_at,
+                tail,
+                new_text
             );
         }
     }
@@ -1567,7 +1699,9 @@ mod domain_invariant_tests {
                 result.is_some(),
                 "SECURITY: cross-chunk unicode not detected at split={}: \
                  tail=[{}] new=[{}]",
-                split_at, tail, new_text
+                split_at,
+                tail,
+                new_text
             );
         }
     }
@@ -1600,7 +1734,7 @@ mod domain_invariant_tests {
         let input = format!("TOKEN={}", secret);
         let (output_bytes, _) = mask_output(
             input.as_bytes(),
-            &[],  // no mask_map — secret is only pattern-detected
+            &[], // no mask_map — secret is only pattern-detected
             &[],
             &[pattern],
             &client,
@@ -1618,7 +1752,9 @@ mod domain_invariant_tests {
         // compacts "[REDACTED:test_api_key]" to fit the secret width. Verify
         // the output contains a REDACTED or VK-style marker (not plaintext).
         assert!(
-            visible.contains("REDACTED") || visible.contains("VK:") || visible.contains("test_api_key"),
+            visible.contains("REDACTED")
+                || visible.contains("VK:")
+                || visible.contains("test_api_key"),
             "SECURITY: no redaction indicator when API is down. output=[{}]",
             visible
         );
@@ -1706,8 +1842,7 @@ mod domain_invariant_tests {
         // Secrets containing spaces must be detected.
         let secrets = mk(&[("my secret phrase", "VK:LOCAL:sgspc001")]);
         let mut buf = String::new();
-        let result =
-            check_stdin_for_secrets(b"echo my secret phrase\r", &mut buf, &secrets);
+        let result = check_stdin_for_secrets(b"echo my secret phrase\r", &mut buf, &secrets);
         assert_eq!(
             result,
             StdinGuardResult::Blocked,

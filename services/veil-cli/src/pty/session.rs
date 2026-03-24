@@ -37,8 +37,8 @@ unsafe fn write_all_fd(fd: RawFd, buf: &[u8]) {
 /// Result of processing stdin input for the secret guard.
 #[derive(Debug, PartialEq)]
 pub(crate) enum StdinGuardResult {
-    Forward,  // safe to forward data to PTY
-    Blocked,  // secret detected — do NOT forward
+    Forward, // safe to forward data to PTY
+    Blocked, // secret detected — do NOT forward
 }
 
 /// Max line_buf size to prevent DoS from input without Enter.
@@ -58,9 +58,9 @@ pub(crate) fn check_stdin_for_secrets(
     for ch in s.chars() {
         if ch == '\r' || ch == '\n' {
             if !line_buf.is_empty() {
-                let found = secrets.iter().any(|(secret, _)| {
-                    !secret.is_empty() && line_buf.contains(secret.as_str())
-                });
+                let found = secrets
+                    .iter()
+                    .any(|(secret, _)| !secret.is_empty() && line_buf.contains(secret.as_str()));
                 if found {
                     line_buf.clear();
                     return StdinGuardResult::Blocked;
@@ -278,7 +278,9 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
 
             if has_termios {
                 // Save termios and install panic hook before entering raw mode
-                unsafe { PANIC_TERMIOS = old_termios; }
+                unsafe {
+                    PANIC_TERMIOS = old_termios;
+                }
                 PANIC_STDIN_FD.store(stdin_fd, Ordering::Release);
                 PANIC_HAS_TERMIOS.store(true, Ordering::Release);
 
@@ -287,7 +289,9 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
                     if PANIC_HAS_TERMIOS.load(Ordering::Acquire) {
                         let fd = PANIC_STDIN_FD.load(Ordering::Acquire);
                         if fd >= 0 {
-                            unsafe { libc::tcsetattr(fd, libc::TCSANOW, &raw const PANIC_TERMIOS); }
+                            unsafe {
+                                libc::tcsetattr(fd, libc::TCSANOW, &raw const PANIC_TERMIOS);
+                            }
                         }
                     }
                     prev_hook(info);
@@ -414,9 +418,7 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
                     if ready <= 0 || total >= buf.len() {
                         break;
                     }
-                    let extra = unsafe {
-                        read_eintr(master_fd, &mut buf[total..])
-                    };
+                    let extra = unsafe { read_eintr(master_fd, &mut buf[total..]) };
                     if extra <= 0 {
                         break;
                     }
@@ -493,7 +495,10 @@ mod tests {
     use super::*;
 
     fn secrets(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
-        pairs.iter().map(|(s, r)| (s.to_string(), r.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(s, r)| (s.to_string(), r.to_string()))
+            .collect()
     }
 
     // --- Basic detection ---
@@ -538,13 +543,22 @@ mod tests {
         let mut buf = String::new();
         let map = secrets(&[("password123", "VK:LOCAL:ddd")]);
         // Chunk 1: partial
-        assert_eq!(check_stdin_for_secrets(b"pass", &mut buf, &map), StdinGuardResult::Forward);
+        assert_eq!(
+            check_stdin_for_secrets(b"pass", &mut buf, &map),
+            StdinGuardResult::Forward
+        );
         assert_eq!(buf, "pass");
         // Chunk 2: more
-        assert_eq!(check_stdin_for_secrets(b"word123", &mut buf, &map), StdinGuardResult::Forward);
+        assert_eq!(
+            check_stdin_for_secrets(b"word123", &mut buf, &map),
+            StdinGuardResult::Forward
+        );
         assert_eq!(buf, "password123");
         // Chunk 3: enter
-        assert_eq!(check_stdin_for_secrets(b"\r", &mut buf, &map), StdinGuardResult::Blocked);
+        assert_eq!(
+            check_stdin_for_secrets(b"\r", &mut buf, &map),
+            StdinGuardResult::Blocked
+        );
     }
 
     // --- Editing keys ---
@@ -557,7 +571,10 @@ mod tests {
         check_stdin_for_secrets(b"secretx\x7f", &mut buf, &map);
         assert_eq!(buf, "secret");
         // Enter should match
-        assert_eq!(check_stdin_for_secrets(b"\r", &mut buf, &map), StdinGuardResult::Blocked);
+        assert_eq!(
+            check_stdin_for_secrets(b"\r", &mut buf, &map),
+            StdinGuardResult::Blocked
+        );
     }
 
     #[test]
@@ -569,7 +586,10 @@ mod tests {
         check_stdin_for_secrets(b"\x03", &mut buf, &map); // Ctrl+C
         assert_eq!(buf, "");
         // Enter after Ctrl+C — safe
-        assert_eq!(check_stdin_for_secrets(b"ls\r", &mut buf, &map), StdinGuardResult::Forward);
+        assert_eq!(
+            check_stdin_for_secrets(b"ls\r", &mut buf, &map),
+            StdinGuardResult::Forward
+        );
     }
 
     #[test]
@@ -610,10 +630,7 @@ mod tests {
     #[test]
     fn multiple_secrets_any_match_blocks() {
         let mut buf = String::new();
-        let map = secrets(&[
-            ("password1", "VK:LOCAL:k1"),
-            ("password2", "VK:LOCAL:k2"),
-        ]);
+        let map = secrets(&[("password1", "VK:LOCAL:k1"), ("password2", "VK:LOCAL:k2")]);
         let result = check_stdin_for_secrets(b"echo password2\r", &mut buf, &map);
         assert_eq!(result, StdinGuardResult::Blocked);
     }
@@ -623,7 +640,8 @@ mod tests {
         let mut buf = String::new();
         let map = secrets(&[("SuperSecret", "VK:LOCAL:lll")]);
         // Pasted all at once
-        let result = check_stdin_for_secrets(b"curl -H 'Auth: SuperSecret' http://x\r", &mut buf, &map);
+        let result =
+            check_stdin_for_secrets(b"curl -H 'Auth: SuperSecret' http://x\r", &mut buf, &map);
         assert_eq!(result, StdinGuardResult::Blocked);
     }
 
@@ -642,7 +660,7 @@ mod tests {
         let map = secrets(&[("secret", "VK:LOCAL:nnn")]);
         check_stdin_for_secrets(b"safe command\r", &mut buf, &map);
         assert_eq!(buf, ""); // cleared after enter
-        // Next line with secret
+                             // Next line with secret
         let result = check_stdin_for_secrets(b"secret\r", &mut buf, &map);
         assert_eq!(result, StdinGuardResult::Blocked);
     }
@@ -844,7 +862,11 @@ mod tests {
         let mut input: Vec<u8> = vec![b'x'; 100_000];
         input.extend_from_slice(b"needle99\r");
         let result = check_stdin_for_secrets(&input, &mut buf, &map);
-        assert_eq!(result, StdinGuardResult::Blocked, "secret after overflow must still be caught");
+        assert_eq!(
+            result,
+            StdinGuardResult::Blocked,
+            "secret after overflow must still be caught"
+        );
     }
 
     // ══════════════════════════════════════════════════════════════

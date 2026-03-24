@@ -120,9 +120,7 @@ impl VeilKeyClient {
             Err(ureq::Error::Status(429, _)) => {
                 Err("too many attempts — try again later".to_string())
             }
-            Err(ureq::Error::Status(code, _)) => {
-                Err(format!("login failed (HTTP {})", code))
-            }
+            Err(ureq::Error::Status(code, _)) => Err(format!("login failed (HTTP {})", code)),
             Err(_) => Err("cannot reach VeilKey server".to_string()),
         }
     }
@@ -354,7 +352,10 @@ impl VeilKeyClient {
     pub fn is_locked(&self) -> bool {
         let url = format!("{}/api/mask-map", self.base_url);
         matches!(
-            self.agent.get(&url).timeout(std::time::Duration::from_secs(5)).call(),
+            self.agent
+                .get(&url)
+                .timeout(std::time::Duration::from_secs(5))
+                .call(),
             Err(ureq::Error::Status(503, _))
         )
     }
@@ -363,7 +364,12 @@ impl VeilKeyClient {
     pub fn unlock(&self, password: &str) -> Result<(), String> {
         let url = format!("{}/api/unlock", self.base_url);
         let body = json_password_body(password);
-        match self.agent.post(&url).set("Content-Type", "application/json").send_string(&body) {
+        match self
+            .agent
+            .post(&url)
+            .set("Content-Type", "application/json")
+            .send_string(&body)
+        {
             Ok(resp) => {
                 let result: serde_json::Value = resp.into_json().unwrap_or_default();
                 let status = result["status"].as_str().unwrap_or("");
@@ -721,8 +727,8 @@ mod tests {
     fn defense_json_password_nested_escape() {
         let password = r#"\"},{"admin":true"#;
         let body = super::json_password_body(password);
-        let parsed: serde_json::Value = serde_json::from_str(&body)
-            .expect("nested escape must produce valid JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&body).expect("nested escape must produce valid JSON");
         assert_eq!(
             parsed["password"].as_str().unwrap(),
             password,
@@ -740,8 +746,8 @@ mod tests {
         // \u0022 is a JSON unicode escape for double-quote
         let password = r#"\u0022,\u0022admin\u0022:true"#;
         let body = super::json_password_body(password);
-        let parsed: serde_json::Value = serde_json::from_str(&body)
-            .expect("unicode escape injection must produce valid JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&body).expect("unicode escape injection must produce valid JSON");
         assert_eq!(
             parsed["password"].as_str().unwrap(),
             password,
@@ -758,8 +764,8 @@ mod tests {
         // 1MB password — verify no panic
         let password: String = "A".repeat(1_000_000);
         let body = super::json_password_body(&password);
-        let parsed: serde_json::Value = serde_json::from_str(&body)
-            .expect("very long password must produce valid JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&body).expect("very long password must produce valid JSON");
         assert_eq!(
             parsed["password"].as_str().unwrap().len(),
             1_000_000,
@@ -772,8 +778,8 @@ mod tests {
         // Binary-ish data with control characters
         let password = "pass\x01\x02\x03\x04\x05\x06\x07";
         let body = super::json_password_body(password);
-        let parsed: serde_json::Value = serde_json::from_str(&body)
-            .expect("binary data in password must produce valid JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&body).expect("binary data in password must produce valid JSON");
         // The control chars should be escaped as \u00xx
         let recovered = parsed["password"].as_str().unwrap();
         assert_eq!(
@@ -788,8 +794,8 @@ mod tests {
         // Null byte in password
         let password = "pass\x00word";
         let body = super::json_password_body(password);
-        let parsed: serde_json::Value = serde_json::from_str(&body)
-            .expect("null byte in password must produce valid JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&body).expect("null byte in password must produce valid JSON");
         let recovered = parsed["password"].as_str().unwrap();
         assert_eq!(
             recovered, password,
@@ -801,8 +807,8 @@ mod tests {
     fn defense_json_password_all_special_chars() {
         let password = "\"\\/{}\n\r\t";
         let body = super::json_password_body(password);
-        let parsed: serde_json::Value = serde_json::from_str(&body)
-            .expect("special chars must produce valid JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&body).expect("special chars must produce valid JSON");
         assert_eq!(
             parsed["password"].as_str().unwrap(),
             password,
@@ -813,8 +819,8 @@ mod tests {
     #[test]
     fn defense_json_password_empty() {
         let body = super::json_password_body("");
-        let parsed: serde_json::Value = serde_json::from_str(&body)
-            .expect("empty password must produce valid JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&body).expect("empty password must produce valid JSON");
         assert_eq!(parsed["password"].as_str().unwrap(), "");
     }
 
@@ -823,16 +829,13 @@ mod tests {
         // Attempt to create a completely new JSON structure
         let password = r#""},"new_key":"value","x":{"password":"#;
         let body = super::json_password_body(password);
-        let parsed: serde_json::Value = serde_json::from_str(&body)
-            .expect("structural injection must produce valid JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&body).expect("structural injection must produce valid JSON");
         assert!(
             parsed.get("new_key").is_none(),
             "structural injection must not create new keys"
         );
-        assert_eq!(
-            parsed["password"].as_str().unwrap(),
-            password,
-        );
+        assert_eq!(parsed["password"].as_str().unwrap(), password,);
     }
 
     // ── Defense: resolve_candidates ──────────────────────────────────

@@ -361,7 +361,10 @@ mod tests {
         let mut cfg = empty_config();
         cfg.patterns.push(CompiledPattern {
             name: "generic_secret".to_string(),
-            regex: Regex::new(r#"(?i)(?:secret|token|key|password)\s*[=:]\s*['"]?([A-Za-z0-9_\-.+/=]{8,})"#).unwrap(),
+            regex: Regex::new(
+                r#"(?i)(?:secret|token|key|password)\s*[=:]\s*['"]?([A-Za-z0-9_\-.+/=]{8,})"#,
+            )
+            .unwrap(),
             confidence: 80,
             group: 1,
         });
