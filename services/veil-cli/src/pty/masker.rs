@@ -980,6 +980,10 @@ mod tests {
 
     // ── mask_output integration tests ─────────────────────────────
 
+    fn init_crypto() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+
     /// Helper: call mask_output with only mask_map (no patterns, no VE, no API)
     fn mask_with_ve(
         data: &str,
@@ -987,7 +991,7 @@ mod tests {
         ve_map: &[(String, String)],
         tail: &str,
     ) -> (String, String) {
-        // Create a dummy client that won't be called (no patterns)
+        init_crypto();
         let client = VeilKeyClient::new("http://localhost:0");
         let (bytes, new_tail) = mask_output(
             data.as_bytes(),
@@ -1008,6 +1012,7 @@ mod tests {
         recent_input: &str,
         tail: &str,
     ) -> (String, String) {
+        init_crypto();
         let client = VeilKeyClient::new("http://localhost:0");
         let (bytes, new_tail) = mask_output(
             data.as_bytes(),
