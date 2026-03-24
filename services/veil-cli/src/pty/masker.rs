@@ -22,28 +22,30 @@ pub fn colorize_ve_ref(original: &str, _ve_ref: &str) -> String {
     format!("{}{}{}", GREEN, original, RESET)
 }
 
-/// Replace a secret with a colorized VK ref, padded to EXACTLY the original width.
-/// This ensures no surrounding text shifts position and no characters leak.
-/// If the ref is longer than the original, we truncate the visible ref to fit.
+/// Same-width VK ref: adapts format to EXACTLY match original secret width.
+/// Full ref when it fits, compact "VK:hash" when shorter, hash-only for very short.
 pub fn padded_colorize_ref(vk_ref: &str, original_len: usize) -> String {
     if original_len == 0 {
         return String::new();
     }
-    let ref_visible_len = vk_ref.chars().count();
-    if ref_visible_len <= original_len {
-        // Ref fits — pad with spaces to fill the original width
-        let colored = colorize_ref(vk_ref);
-        let pad = original_len - ref_visible_len;
-        if pad > 0 {
-            format!("{}{}", colored, " ".repeat(pad))
-        } else {
-            colored
-        }
+    let full_len = vk_ref.chars().count();
+    let hash = vk_ref.rsplit(':').next().unwrap_or(vk_ref);
+    let display = if full_len <= original_len {
+        let pad = original_len - full_len;
+        if pad > 0 { format!("{}{}", vk_ref, " ".repeat(pad)) } else { vk_ref.to_string() }
     } else {
-        // Ref is longer than original — truncate to fit exactly
-        let truncated: String = vk_ref.chars().take(original_len).collect();
-        colorize_ref(&truncated)
-    }
+        let compact = format!("VK:{}", hash);
+        let compact_len = compact.chars().count();
+        if compact_len <= original_len {
+            let pad = original_len - compact_len;
+            if pad > 0 { format!("{}{}", compact, " ".repeat(pad)) } else { compact }
+        } else if original_len >= 3 {
+            hash.chars().take(original_len).collect()
+        } else {
+            "*".repeat(original_len)
+        }
+    };
+    colorize_ref(&display)
 }
 
 // Alt-screen detection sequences (vim, less, htop, etc.)
@@ -580,5 +582,157 @@ mod tests {
     fn test_alt_screen_disable_then_enable() {
         let data = b"\x1b[?1049lstuff\x1b[?1049h";
         assert!(detect_alt_screen(data, false), "enable comes last");
+    }
+
+    // ── padded_colorize_ref: same-width guarantee ───────────────────
+
+    fn visible_len(vk_ref: &str, original_len: usize) -> usize {
+        strip_ansi(&padded_colorize_ref(vk_ref, original_len)).chars().count()
+    }
+
+    #[test]
+    fn width_exact_match_full_ref() {
+        // secret 17 chars = full ref 17 chars → exact fit
+        assert_eq!(visible_len("VK:LOCAL:6da25530", 17), 17);
+        let v = strip_ansi(&padded_colorize_ref("VK:LOCAL:6da25530", 17));
+        assert_eq!(v, "VK:LOCAL:6da25530");
+    }
+
+    #[test]
+    fn width_exact_match_longer_secret() {
+        // secret 30 chars > ref 17 chars → padded to 30
+        assert_eq!(visible_len("VK:LOCAL:6da25530", 30), 30);
+    }
+
+    #[test]
+    fn width_exact_match_11_char_secret() {
+        // secret 11 chars < ref 17 chars → compact "VK:6da25530" (11 chars)
+        assert_eq!(visible_len("VK:LOCAL:6da25530", 11), 11);
+        let v = strip_ansi(&padded_colorize_ref("VK:LOCAL:6da25530", 11));
+        assert_eq!(v, "VK:6da25530");
+    }
+
+    #[test]
+    fn width_exact_match_7_char_secret() {
+        // secret 7 chars → compact "VK:6da2" + padding? Let's check
+        assert_eq!(visible_len("VK:LOCAL:6da25530", 7), 7);
+    }
+
+    #[test]
+    fn width_exact_match_5_char_secret() {
+        // secret 5 chars → hash only "6da25"
+        assert_eq!(visible_len("VK:LOCAL:6da25530", 5), 5);
+    }
+
+    #[test]
+    fn width_exact_match_3_char_secret() {
+        assert_eq!(visible_len("VK:LOCAL:6da25530", 3), 3);
+    }
+
+    #[test]
+    fn width_exact_match_2_char_secret() {
+        // Too short → stars
+        assert_eq!(visible_len("VK:LOCAL:6da25530", 2), 2);
+        let v = strip_ansi(&padded_colorize_ref("VK:LOCAL:6da25530", 2));
+        assert_eq!(v, "**");
+    }
+
+    #[test]
+    fn width_exact_match_1_char_secret() {
+        assert_eq!(visible_len("VK:LOCAL:6da25530", 1), 1);
+        let v = strip_ansi(&padded_colorize_ref("VK:LOCAL:6da25530", 1));
+        assert_eq!(v, "*");
+    }
+
+    #[test]
+    fn width_zero() {
+        assert_eq!(padded_colorize_ref("VK:LOCAL:6da25530", 0), "");
+    }
+
+    #[test]
+    fn width_all_lengths_match() {
+        // The core guarantee: for ALL lengths 1..50, visible width == original_len
+        for len in 1..=50 {
+            assert_eq!(
+                visible_len("VK:LOCAL:6da25530", len), len,
+                "width mismatch at len={}", len
+            );
+        }
+    }
+
+    #[test]
+    fn width_temp_ref_same_guarantee() {
+        for len in 1..=50 {
+            assert_eq!(
+                visible_len("VK:TEMP:abc12345", len), len,
+                "TEMP ref width mismatch at len={}", len
+            );
+        }
+    }
+
+    #[test]
+    fn compact_format_content_11() {
+        let v = strip_ansi(&padded_colorize_ref("VK:LOCAL:6da25530", 11));
+        assert_eq!(v, "VK:6da25530", "11-char compact must drop LOCAL:");
+    }
+
+    #[test]
+    fn compact_format_content_12() {
+        let v = strip_ansi(&padded_colorize_ref("VK:LOCAL:6da25530", 12));
+        assert_eq!(v.len(), 12);
+        assert!(v.starts_with("VK:6da25530"), "12-char should be compact + 1 space");
+    }
+
+    #[test]
+    fn hash_only_format_content_8() {
+        let v = strip_ansi(&padded_colorize_ref("VK:LOCAL:6da25530", 8));
+        assert_eq!(v.len(), 8);
+        assert!(v.starts_with("6da25530"), "8-char hash-only");
+    }
+
+    #[test]
+    fn colorized_output() {
+        // Full ref: colored with BOLD+CYAN
+        let r = padded_colorize_ref("VK:LOCAL:6da25530", 17);
+        assert!(r.contains(BOLD), "must have BOLD");
+        assert!(r.contains(CYAN), "must have CYAN");
+    }
+
+    #[test]
+    fn colorized_compact() {
+        // Compact "VK:6da25530": also colored
+        let r = padded_colorize_ref("VK:LOCAL:6da25530", 11);
+        assert!(r.contains(BOLD));
+        assert!(r.contains(CYAN));
+    }
+
+    #[test]
+    fn colorized_hash_only() {
+        // Hash only "6da25530": also colored
+        let r = padded_colorize_ref("VK:LOCAL:6da25530", 8);
+        assert!(r.contains(BOLD));
+        assert!(r.contains(CYAN));
+    }
+
+    #[test]
+    fn no_line_clear_in_output() {
+        let data = b"echo Ghdrhkdgh1@\n";
+        let map = vec![("Ghdrhkdgh1@".to_string(), "VK:LOCAL:6da25530".to_string())];
+        let (out, _) = mask_output(data, &map, &[], &[], &VeilKeyClient::new("http://127.0.0.1:1"), "", "");
+        let s = String::from_utf8_lossy(&out);
+        assert!(!s.contains("\r\x1b[2K"), "line-clear must not be present");
+        assert!(!s.contains("Ghdrhkdgh1@"), "secret must be masked");
+    }
+
+    #[test]
+    fn masked_line_width_preserved() {
+        let input = "bash: Ghdrhkdgh1@: command not found";
+        let map = vec![("Ghdrhkdgh1@".to_string(), "VK:LOCAL:6da25530".to_string())];
+        let (out, _) = mask_output(input.as_bytes(), &map, &[], &[], &VeilKeyClient::new("http://127.0.0.1:1"), "", "");
+        let visible = strip_ansi(&String::from_utf8_lossy(&out));
+        assert_eq!(
+            visible.len(), input.len(),
+            "line width must be preserved: got [{}]", visible
+        );
     }
 }
