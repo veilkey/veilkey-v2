@@ -166,16 +166,15 @@ func writeAtomically(path string, content []byte) error {
 	return os.Rename(tmpName, path)
 }
 
-func validateBulkApplyStep(step bulkApplyStep) error {
+func validateBulkApplyStep(step bulkApplyStep, registry *FormatRegistry) error {
 	if strings.TrimSpace(step.Name) == "" {
 		return fmt.Errorf("step name is required")
 	}
 	if !isAllowedBulkApplyTarget(step.TargetPath) {
 		return fmt.Errorf("target path is not allowed: %s", step.TargetPath)
 	}
-	switch strings.TrimSpace(step.Format) {
-	case "env", "json", "json_merge", "raw":
-	default:
+	provider, ok := registry.Get(strings.TrimSpace(step.Format))
+	if !ok {
 		return fmt.Errorf("unsupported format: %s", step.Format)
 	}
 	if strings.TrimSpace(step.Content) == "" {
@@ -188,12 +187,8 @@ func validateBulkApplyStep(step bulkApplyStep) error {
 	if _, err := os.Stat(parent); err != nil {
 		return fmt.Errorf("parent path not found: %s", parent)
 	}
-	switch strings.TrimSpace(step.Format) {
-	case "json", "json_merge":
-		var payload map[string]any
-		if err := json.Unmarshal([]byte(step.Content), &payload); err != nil {
-			return fmt.Errorf("invalid json content: %w", err)
-		}
+	if err := provider.Validate(step.Content); err != nil {
+		return err
 	}
 	if hook := strings.TrimSpace(step.Hook); hook != "" {
 		if _, ok := getAllowedBulkApplyHook(hook); !ok {
@@ -220,7 +215,7 @@ func (h *Handler) handleBulkApplyPrecheck(w http.ResponseWriter, r *http.Request
 	}
 	checks := make([]map[string]any, 0, len(req.Steps))
 	for _, step := range req.Steps {
-		err := validateBulkApplyStep(step)
+		err := validateBulkApplyStep(step, h.registry)
 		status := "ok"
 		message := "ready"
 		if err != nil {
@@ -248,34 +243,12 @@ func (h *Handler) handleBulkApplyPrecheck(w http.ResponseWriter, r *http.Request
 	})
 }
 
-func applyBulkApplyStep(step bulkApplyStep) error {
-	switch strings.TrimSpace(step.Format) {
-	case "env", "raw", "json":
-		return writeAtomically(step.TargetPath, []byte(step.Content))
-	case "json_merge":
-		var current map[string]any
-		if raw, err := os.ReadFile(step.TargetPath); err == nil && len(raw) > 0 {
-			if err := json.Unmarshal(raw, &current); err != nil {
-				return fmt.Errorf("failed to parse existing json: %w", err)
-			}
-		}
-		if current == nil {
-			current = map[string]any{}
-		}
-		var patch map[string]any
-		if err := json.Unmarshal([]byte(step.Content), &patch); err != nil {
-			return fmt.Errorf("invalid merge json: %w", err)
-		}
-		merged := recursiveJSONMerge(current, patch)
-		rendered, err := json.MarshalIndent(merged, "", "    ")
-		if err != nil {
-			return err
-		}
-		rendered = append(rendered, '\n')
-		return writeAtomically(step.TargetPath, rendered)
-	default:
+func applyBulkApplyStep(step bulkApplyStep, registry *FormatRegistry) error {
+	provider, ok := registry.Get(strings.TrimSpace(step.Format))
+	if !ok {
 		return fmt.Errorf("unsupported format: %s", step.Format)
 	}
+	return provider.Apply(step.TargetPath, step.Content)
 }
 
 func runAllowedHook(name string) (string, error) {
@@ -334,16 +307,12 @@ func orderedHooks(steps []bulkApplyStep) []string {
 	return hooks
 }
 
-func postchecksForStep(step bulkApplyStep) []string {
-	checks := []string{}
-	switch strings.TrimSpace(step.Format) {
-	case "json":
-		checks = append(checks, "json_parse")
-	case "json_merge":
-		checks = append(checks, "json_parse", "json_merge_verify")
-	case "raw", "env":
-		checks = append(checks, "file_written")
-	default:
+func postchecksForStep(step bulkApplyStep, registry *FormatRegistry) []string {
+	var checks []string
+	provider, ok := registry.Get(strings.TrimSpace(step.Format))
+	if ok {
+		checks = append(checks, provider.Postchecks()...)
+	} else {
 		checks = append(checks, "file_written")
 	}
 	switch strings.TrimSpace(step.TargetPath) {
@@ -491,7 +460,7 @@ func (h *Handler) handleBulkApplyExecute(w http.ResponseWriter, r *http.Request)
 	hooks := orderedHooks(req.Steps)
 	// Phase 1: Validate ALL steps before any writes (rollback-free guarantee)
 	for _, step := range req.Steps {
-		if err := validateBulkApplyStep(step); err != nil {
+		if err := validateBulkApplyStep(step, h.registry); err != nil {
 			respondJSON(w, 409, map[string]any{
 				"workflow":     req.Name,
 				"status":       "precheck_failed",
@@ -506,7 +475,7 @@ func (h *Handler) handleBulkApplyExecute(w http.ResponseWriter, r *http.Request)
 	}
 	// Phase 2: Execute all steps (all validated above)
 	for _, step := range req.Steps {
-		if err := applyBulkApplyStep(step); err != nil {
+		if err := applyBulkApplyStep(step, h.registry); err != nil {
 			respondJSON(w, 500, map[string]any{
 				"workflow":     req.Name,
 				"status":       "apply_failed",
@@ -524,8 +493,8 @@ func (h *Handler) handleBulkApplyExecute(w http.ResponseWriter, r *http.Request)
 			"target":     step.TargetPath,
 			"postchecks": []map[string]any{},
 		}
-		checkRows := make([]map[string]any, 0, len(postchecksForStep(step)))
-		for _, checkName := range postchecksForStep(step) {
+		checkRows := make([]map[string]any, 0, len(postchecksForStep(step, h.registry)))
+		for _, checkName := range postchecksForStep(step, h.registry) {
 			checkRow, err := runPostcheck(step, checkName)
 			checkRows = append(checkRows, checkRow)
 			if err != nil {

@@ -4,11 +4,15 @@ import "net/http"
 
 // Handler owns all bulk-apply HTTP handlers.
 // It has no external dependencies — bulk-apply operates on the local filesystem.
-type Handler struct{}
+type Handler struct {
+	registry *FormatRegistry
+}
 
 // NewHandler creates a bulk Handler.
 func NewHandler() *Handler {
-	return &Handler{}
+	return &Handler{
+		registry: NewFormatRegistry(),
+	}
 }
 
 // Register mounts all bulk-apply routes onto mux.
