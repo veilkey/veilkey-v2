@@ -200,21 +200,10 @@ pub fn mask_output(
         }
     }
 
-    // Line-clear on lines that had secrets replaced
-    if output_had_replacement {
-        let mut cleared = String::new();
-        for (i, line) in output.split('\n').enumerate() {
-            if i > 0 {
-                cleared.push('\n');
-            }
-            let has_our_ansi = line.contains("\x1b[1m\x1b[36m") || line.contains("\x1b[1m\x1b[31m");
-            if has_our_ansi {
-                cleared.push_str("\r\x1b[2K");
-            }
-            cleared.push_str(line);
-        }
-        output = cleared;
-    }
+    // Note: line-clear (\r\x1b[2K) was previously used here to redraw lines
+    // after secret replacement, but padded_colorize_ref already ensures the
+    // replacement has the same visible width as the original text. Line-clear
+    // caused prompts to be erased when readline redraws (e.g. history recall).
 
     // Update plain tail — keep last PLAIN_TAIL_SIZE bytes of the ORIGINAL new text
     // (not the masked version, so future matching works on plaintext)
