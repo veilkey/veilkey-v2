@@ -31,6 +31,7 @@ fn print_usage() {
   veilkey list                      List detected VeilKey entries
   veilkey paste-mode [mode]         Get or set pasted temp issuance mode
   veilkey clear                     Clear session log
+  veilkey traefik <sub>              Manage Traefik config (init|status|destroy)
   veilkey status                    Show status
   veilkey version                   Show version
 
@@ -177,6 +178,7 @@ fn main() {
         "clear" => commands::cmd_clear(&log_path),
         "status" => commands::cmd_status(&api_url, &log_path, patterns_file.as_deref(), VERSION),
         "version" => println!("veilkey {}", VERSION),
+        "traefik" => commands::cmd_traefik(&cmd_args, &api_url, &log_path, patterns_file.as_deref()),
         "help" | "-h" | "--help" => print_usage(),
         unknown => {
             eprintln!("Unknown command: {}", unknown);
