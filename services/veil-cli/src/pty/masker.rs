@@ -98,6 +98,8 @@ pub fn mask_output(
         return (Vec::new(), plain_tail.to_string());
     }
 
+    // Line-clear removed: \r\x1b[2K erases the entire line including the
+    // shell prompt, breaking readline redraws on arrow keys / history recall.
     let combined = format!("{}{}", plain_tail, new_text);
 
     // Pre-scan: detect secrets on combined (tail+new) buffer.
