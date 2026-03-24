@@ -4,8 +4,7 @@ use crate::config::CompiledPattern;
 const BOLD: &str = "\x1b[1m";
 const CYAN: &str = "\x1b[36m";
 const RED: &str = "\x1b[31m";
-const DIM: &str = "\x1b[2m";
-const MAGENTA: &str = "\x1b[35m";
+const GREEN: &str = "\x1b[92m";
 const RESET: &str = "\x1b[0m";
 
 pub fn colorize_ref(vk_ref: &str) -> String {
@@ -18,10 +17,9 @@ pub fn colorize_ref(vk_ref: &str) -> String {
     }
 }
 
-/// VE ref: show original value with ref tag appended in a distinct color.
-/// e.g. "soulflow-lv" → "soulflow-lv(VE:LOCAL:VAULT_NAME)" with tag dimmed magenta.
-pub fn colorize_ve_ref(original: &str, ve_ref: &str) -> String {
-    format!("{}{}{}({}){}", original, DIM, MAGENTA, ve_ref, RESET)
+/// VE: colorize original value in green — same text, different color.
+pub fn colorize_ve_ref(original: &str, _ve_ref: &str) -> String {
+    format!("{}{}{}", GREEN, original, RESET)
 }
 
 pub fn padded_colorize_ref(vk_ref: &str, original_len: usize) -> String {
