@@ -60,7 +60,8 @@ impl<'a> SecretDetector<'a> {
         logger: &'a SessionLogger,
         scan_only: bool,
     ) -> Self {
-        let veilkey_re = Regex::new(VEILKEY_RE_STR).unwrap();
+        let veilkey_re = Regex::new(VEILKEY_RE_STR)
+            .expect("BUG: VEILKEY_RE_STR is not a valid regex");
         let mut det = Self {
             config,
             client,

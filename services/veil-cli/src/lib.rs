@@ -198,4 +198,65 @@ mod tests {
         assert!(parse_shell_export("").is_none());
         assert!(parse_shell_export("   ").is_none());
     }
+
+    // ── Security: parse_shell_export injection ──────────────────────
+
+    #[test]
+    fn test_parse_export_value_with_semicolon() {
+        // Semicolon in value must not be treated as command separator
+        let (k, v) = parse_shell_export("export CMD='val; rm -rf /'").unwrap();
+        assert_eq!(k, "CMD");
+        assert_eq!(v, "val; rm -rf /");
+    }
+
+    #[test]
+    fn test_parse_export_value_with_backticks() {
+        let (k, v) = parse_shell_export("export X='$(whoami)'").unwrap();
+        assert_eq!(k, "X");
+        assert_eq!(v, "$(whoami)");
+    }
+
+    #[test]
+    fn test_parse_export_value_with_newline_literal() {
+        let (k, v) = parse_shell_export(r"export X=line1\nline2").unwrap();
+        assert_eq!(k, "X");
+        assert_eq!(v, r"line1\nline2");
+    }
+
+    #[test]
+    fn test_parse_export_empty_key() {
+        assert!(parse_shell_export("=value").is_none());
+        assert!(parse_shell_export("export =value").is_none());
+    }
+
+    #[test]
+    fn test_parse_export_no_equals() {
+        assert!(parse_shell_export("export FOO").is_none());
+    }
+
+    #[test]
+    fn test_parse_export_equals_in_value() {
+        let (k, v) = parse_shell_export("export URL='host=a&pass=b'").unwrap();
+        assert_eq!(k, "URL");
+        assert_eq!(v, "host=a&pass=b");
+    }
+
+    #[test]
+    fn test_trim_quotes_mismatched() {
+        // Mismatched quotes — should NOT strip
+        assert_eq!(trim_wrapping_quotes("\"hello'"), "\"hello'");
+        assert_eq!(trim_wrapping_quotes("'hello\""), "'hello\"");
+    }
+
+    #[test]
+    fn test_trim_quotes_empty() {
+        assert_eq!(trim_wrapping_quotes(""), "");
+        assert_eq!(trim_wrapping_quotes("\"\""), "");
+        assert_eq!(trim_wrapping_quotes("''"), "");
+    }
+
+    #[test]
+    fn test_trim_quotes_only_quotes() {
+        assert_eq!(trim_wrapping_quotes("\"'\""), "'");
+    }
 }

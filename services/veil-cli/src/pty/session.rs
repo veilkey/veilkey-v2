@@ -411,7 +411,34 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
                 if n <= 0 {
                     break;
                 }
-                let chunk = &buf[..n as usize];
+                // Coalesce: wait briefly and drain any additional pending data.
+                // This merges char-by-char echo into larger chunks so mask_map
+                // can match full secrets instead of seeing individual characters.
+                let mut total = n as usize;
+                std::thread::sleep(std::time::Duration::from_millis(5));
+                loop {
+                    let mut poll_fd = libc::pollfd {
+                        fd: master_fd,
+                        events: libc::POLLIN,
+                        revents: 0,
+                    };
+                    let ready = unsafe { libc::poll(&mut poll_fd, 1, 0) };
+                    if ready <= 0 || total >= buf.len() {
+                        break;
+                    }
+                    let extra = unsafe {
+                        libc::read(
+                            master_fd,
+                            buf[total..].as_mut_ptr() as _,
+                            buf.len() - total,
+                        )
+                    };
+                    if extra <= 0 {
+                        break;
+                    }
+                    total += extra as usize;
+                }
+                let chunk = &buf[..total];
 
                 // Track alt-screen state (vim, less, htop, etc.)
                 in_alt_screen = masker::detect_alt_screen(chunk, in_alt_screen);

@@ -89,27 +89,25 @@ pub fn colorize_ve_ref(original: &str, _ve_ref: &str) -> String {
     format!("{}{}{}", GREEN, original, RESET)
 }
 
-/// Replace a secret with a colorized VK ref, sized to EXACTLY match original width.
-/// If the ref is shorter, pad with spaces. If longer, truncate the ref.
-/// This is critical — mismatched width breaks readline cursor tracking and
-/// leaves VK:LOC fragments when the terminal redraws (arrow keys, etc).
+/// Replace a secret with a colorized VK ref.
+/// If the ref is shorter than the original, pad with spaces.
+/// If the ref is longer, show the full ref — output lines (bash errors, command
+/// output) are complete lines where width mismatch doesn't affect readline.
 pub fn padded_colorize_ref(vk_ref: &str, original_len: usize) -> String {
     if original_len == 0 {
         return String::new();
     }
     let ref_visible_len = vk_ref.chars().count();
+    let colored = colorize_ref(vk_ref);
     if ref_visible_len <= original_len {
         let pad = original_len - ref_visible_len;
-        let colored = colorize_ref(vk_ref);
         if pad > 0 {
             format!("{}{}", colored, " ".repeat(pad))
         } else {
             colored
         }
     } else {
-        // Ref is longer — truncate to fit original width exactly
-        let truncated: String = vk_ref.chars().take(original_len).collect();
-        colorize_ref(&truncated)
+        colored
     }
 }
 
@@ -339,11 +337,11 @@ mod tests {
 
     #[test]
     fn test_pad_ref_longer_than_secret() {
-        // ref 17 chars, secret 10 chars → truncated to exactly 10 chars
+        // ref 17 chars, secret 10 chars → full ref shown (no truncation)
         let result = padded_colorize_ref("VK:LOCAL:6da25530", 10);
         let visible = strip_ansi(&result);
-        assert_eq!(visible.chars().count(), 10);
-        assert_eq!(visible, "VK:LOCAL:6");
+        assert_eq!(visible.chars().count(), 17);
+        assert_eq!(visible, "VK:LOCAL:6da25530");
     }
 
     #[test]
@@ -357,11 +355,11 @@ mod tests {
 
     #[test]
     fn test_pad_very_short_secret() {
-        // secret 3 chars → ref truncated to exactly 3 chars
+        // secret 3 chars → full ref shown (no truncation)
         let result = padded_colorize_ref("VK:LOCAL:abc", 3);
         let visible = strip_ansi(&result);
-        assert_eq!(visible.chars().count(), 3);
-        assert_eq!(visible, "VK:");
+        assert_eq!(visible.chars().count(), 12); // full ref length
+        assert_eq!(visible, "VK:LOCAL:abc");
     }
 
     #[test]
@@ -374,11 +372,11 @@ mod tests {
 
     #[test]
     fn test_pad_single_char_secret() {
-        // secret 1 char → ref truncated to exactly 1 char
+        // secret 1 char → full ref shown (no truncation)
         let result = padded_colorize_ref("VK:LOCAL:abc", 1);
         let visible = strip_ansi(&result);
-        assert_eq!(visible.chars().count(), 1);
-        assert_eq!(visible, "V");
+        assert_eq!(visible.chars().count(), 12); // full ref length
+        assert_eq!(visible, "VK:LOCAL:abc");
     }
 
     #[test]
@@ -400,37 +398,56 @@ mod tests {
 
     #[test]
     fn test_ref_truncated_to_exact_width_all_lengths() {
-        // For every secret length 1..30, visible width must equal secret_len
+        // For every secret length 1..30, check width behavior
         let vk_ref = "VK:LOCAL:6da25530"; // 17 chars
+        let ref_len = vk_ref.chars().count();
         for secret_len in 1..=30 {
             let result = padded_colorize_ref(vk_ref, secret_len);
             let visible = strip_ansi(&result);
-            assert_eq!(
-                visible.chars().count(), secret_len,
-                "width mismatch at secret_len={}: got [{}] ({})",
-                secret_len, visible, visible.chars().count()
-            );
-            // When secret_len >= ref_len, full ref is present
-            if secret_len >= vk_ref.chars().count() {
-                assert!(visible.contains(vk_ref));
+            if secret_len >= ref_len {
+                // ref shorter/equal: padded to secret_len
+                assert_eq!(
+                    visible.chars().count(), secret_len,
+                    "width mismatch at secret_len={}: got [{}] ({})",
+                    secret_len, visible, visible.chars().count()
+                );
+            } else {
+                // ref longer: full ref shown, width = ref_len
+                assert_eq!(
+                    visible.chars().count(), ref_len,
+                    "width mismatch at secret_len={}: got [{}] ({})",
+                    secret_len, visible, visible.chars().count()
+                );
             }
+            // Full ref is always present (no truncation)
+            assert!(visible.contains(vk_ref));
         }
     }
 
     #[test]
     fn test_ref_truncated_to_exact_width_temp_ref() {
         let vk_ref = "VK:TEMP:abc12345def67890"; // 24 chars
+        let ref_len = vk_ref.chars().count();
         for secret_len in 1..=30 {
             let result = padded_colorize_ref(vk_ref, secret_len);
             let visible = strip_ansi(&result);
-            assert_eq!(
-                visible.chars().count(), secret_len,
-                "TEMP width mismatch at secret_len={}: got [{}] ({})",
-                secret_len, visible, visible.chars().count()
-            );
-            if secret_len >= vk_ref.chars().count() {
-                assert!(visible.contains(vk_ref));
+            if secret_len >= ref_len {
+                // ref shorter/equal: padded to secret_len
+                assert_eq!(
+                    visible.chars().count(), secret_len,
+                    "TEMP width mismatch at secret_len={}: got [{}] ({})",
+                    secret_len, visible, visible.chars().count()
+                );
+            } else {
+                // ref longer: full ref shown, width = ref_len
+                assert_eq!(
+                    visible.chars().count(), ref_len,
+                    "TEMP width mismatch at secret_len={}: got [{}] ({})",
+                    secret_len, visible, visible.chars().count()
+                );
             }
+            // Full ref is always present (no truncation)
+            assert!(visible.contains(vk_ref));
         }
     }
 
@@ -468,18 +485,19 @@ mod tests {
 
     #[test]
     fn test_ref_integrity_in_masked_output_short_secret() {
-        // Real-world case: password shorter than ref → ref truncated to password length
+        // Real-world case: password shorter than ref → full ref shown (wider output)
         let input = "pass=hunter2"; // "hunter2" is 7 chars
         let mask_map = vec![("hunter2".to_string(), "VK:LOCAL:6da25530".to_string())];
         let result = simulate_mask(input, &mask_map);
         assert!(!result.contains("hunter2"), "secret leaked");
-        // ref truncated to 7 chars: "VK:LOCA"
+        // Full ref shown: "VK:LOCAL:6da25530"
         assert!(
-            result.contains("VK:LOCA"),
-            "truncated ref must appear in output, got: [{}]",
+            result.contains("VK:LOCAL:6da25530"),
+            "full ref must appear in output, got: [{}]",
             result
         );
-        assert_eq!(result.len(), input.len(), "width preserved with truncation");
+        // Output is wider than input when ref is longer than secret
+        assert!(result.len() >= input.len(), "result must not be shorter");
     }
 
     #[test]
@@ -507,7 +525,7 @@ mod tests {
 
     #[test]
     fn test_multiple_short_secrets_all_refs_truncated() {
-        // Multiple secrets shorter than their refs → refs truncated to secret length
+        // Multiple secrets shorter than their refs → full refs shown (wider output)
         let input = "a=pw1 b=pw2 c=pw3"; // each secret is 3 chars
         let mask_map = vec![
             ("pw1".to_string(), "VK:LOCAL:aaaa1111".to_string()),
@@ -517,23 +535,25 @@ mod tests {
         let result = simulate_mask(input, &mask_map);
         assert!(!result.contains("pw1") && !result.contains("pw2") && !result.contains("pw3"),
             "secrets leaked");
-        // Each 17-char ref truncated to 3 chars: "VK:"
-        assert_eq!(result.matches("VK:").count(), 3, "expected 3 truncated refs, got: [{}]", result);
-        assert_eq!(result.len(), input.len(), "width preserved");
+        // Full refs shown
+        assert!(result.contains("VK:LOCAL:aaaa1111"), "first full ref must appear, got: [{}]", result);
+        assert!(result.contains("VK:LOCAL:bbbb2222"), "second full ref must appear, got: [{}]", result);
+        assert!(result.contains("VK:LOCAL:cccc3333"), "third full ref must appear, got: [{}]", result);
+        assert!(result.len() >= input.len(), "result must not be shorter");
     }
 
     #[test]
     fn test_real_world_password_ghdrhkdgh1() {
-        // Exact scenario: Ghdrhkdgh1@ (11 chars) → VK:LOCAL:6da25530 (17 chars) → truncated to 11
+        // Exact scenario: Ghdrhkdgh1@ (11 chars) → VK:LOCAL:6da25530 (17 chars) → full ref shown
         let input = "Ghdrhkdgh1@";
         let mask_map = vec![("Ghdrhkdgh1@".to_string(), "VK:LOCAL:6da25530".to_string())];
         let result = simulate_mask(input, &mask_map);
         assert!(!result.contains("Ghdrhkdgh1@"), "password leaked");
-        // Truncated to 11 chars: "VK:LOCAL:6d"
-        assert_eq!(result.chars().count(), 11, "width preserved");
+        // Full ref shown (wider than original)
+        assert_eq!(result.chars().count(), 17, "width = ref length");
         assert!(
-            result.contains("VK:LOCAL:6d"),
-            "truncated ref must appear, got: [{}]",
+            result.contains("VK:LOCAL:6da25530"),
+            "full ref must appear, got: [{}]",
             result
         );
     }
@@ -545,8 +565,8 @@ mod tests {
         let mask_map = vec![("Ghdrhkdgh1@".to_string(), "VK:LOCAL:6da25530".to_string())];
         let result = simulate_mask(input, &mask_map);
         assert!(!result.contains("Ghdrhkdgh1@"), "password leaked in error msg");
-        // Truncated to 11 chars: "VK:LOCAL:6d"
-        assert!(result.contains("VK:LOCAL:6d"), "truncated ref must appear in error msg");
+        // Full ref shown: "VK:LOCAL:6da25530"
+        assert!(result.contains("VK:LOCAL:6da25530"), "full ref must appear in error msg");
         assert!(result.contains("bash: "), "prefix must survive");
         assert!(result.contains(": command not found"), "suffix must survive");
     }
@@ -758,13 +778,24 @@ mod tests {
             let input = format!("prefix:{}:suffix", secret);
             let mask_map = vec![(secret.clone(), ref_str.to_string())];
             let result = simulate_mask(&input, &mask_map);
-            // Width always preserved — truncation or padding ensures exact match
-            assert_eq!(
-                result.len(),
-                input.len(),
-                "width mismatch for secret_len={}: input=[{}] result=[{}]",
-                secret_len, input, result
-            );
+            if secret_len >= ref_len {
+                // ref shorter/equal: width preserved exactly
+                assert_eq!(
+                    result.len(),
+                    input.len(),
+                    "width mismatch for secret_len={}: input=[{}] result=[{}]",
+                    secret_len, input, result
+                );
+            } else {
+                // ref longer: output is wider (full ref shown, no truncation)
+                let expected_len = input.len() - secret_len + ref_len;
+                assert_eq!(
+                    result.len(),
+                    expected_len,
+                    "width mismatch for secret_len={}: input=[{}] result=[{}]",
+                    secret_len, input, result
+                );
+            }
             assert!(
                 !result.contains(&secret),
                 "secret leaked for len={}",

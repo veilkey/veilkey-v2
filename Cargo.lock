@@ -1077,6 +1077,7 @@ dependencies = [
  "toml",
  "ureq",
  "urlencoding",
+ "zeroize",
 ]
 
 [[package]]

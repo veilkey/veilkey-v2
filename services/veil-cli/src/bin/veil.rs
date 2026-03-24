@@ -191,9 +191,13 @@ trap 'rm -f "$HISTFILE"' EXIT
                     process::exit(status.code().unwrap_or(1));
                 }
                 "stop" => {
+                    let cwd = env::current_dir().unwrap_or_else(|e| {
+                        eprintln!("veil: cannot get current directory: {}", e);
+                        process::exit(1);
+                    });
                     let pid_file = format!(
                         "{}/.localvault/localvault.pid",
-                        env::current_dir().unwrap().display()
+                        cwd.display()
                     );
                     match std::fs::read_to_string(&pid_file) {
                         Ok(pid) => {
@@ -206,9 +210,13 @@ trap 'rm -f "$HISTFILE"' EXIT
                     }
                 }
                 "log" | "logs" => {
+                    let cwd = env::current_dir().unwrap_or_else(|e| {
+                        eprintln!("veil: cannot get current directory: {}", e);
+                        process::exit(1);
+                    });
                     let log_file = format!(
                         "{}/.localvault/localvault.log",
-                        env::current_dir().unwrap().display()
+                        cwd.display()
                     );
                     exec_replace("tail", &["-f".to_string(), log_file]);
                 }

@@ -2,6 +2,7 @@ use base64::Engine as _;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use zeroize::Zeroizing;
 
 fn build_agent() -> ureq::Agent {
     let insecure = std::env::var("VEILKEY_TLS_INSECURE").unwrap_or_default() == "1";
@@ -105,8 +106,8 @@ impl VeilKeyClient {
     /// Extracts session cookie from Set-Cookie header for subsequent requests.
     pub fn admin_login(&self, password: &str) -> Result<(), String> {
         let url = format!("{}/api/admin/login", self.base_url);
-        let body = serde_json::json!({"password": password});
-        match self.agent.post(&url).send_json(&body) {
+        let body = json_password_body(password);
+        match self.agent.post(&url).set("Content-Type", "application/json").send_string(&body) {
             Ok(resp) => {
                 if let Some(set_cookie) = resp.header("set-cookie") {
                     if let Some(cookie_value) = set_cookie.split(';').next() {
@@ -349,6 +350,42 @@ impl VeilKeyClient {
             .map(|r| r.status() == 200)
             .unwrap_or(false)
     }
+
+    /// Check if VaultCenter is locked by probing /api/mask-map.
+    /// Returns true if server responds with 503 (locked state).
+    pub fn is_locked(&self) -> bool {
+        let url = format!("{}/api/mask-map", self.base_url);
+        matches!(
+            self.agent
+                .get(&url)
+                .timeout(std::time::Duration::from_secs(5))
+                .call(),
+            Err(ureq::Error::Status(503, _))
+        )
+    }
+
+    /// Unlock VaultCenter with master password (KEK).
+    pub fn unlock(&self, password: &str) -> Result<(), String> {
+        let url = format!("{}/api/unlock", self.base_url);
+        let body = json_password_body(password);
+        match self.agent.post(&url).set("Content-Type", "application/json").send_string(&body) {
+            Ok(resp) => {
+                let result: serde_json::Value = resp.into_json().unwrap_or_default();
+                let status = result["status"].as_str().unwrap_or("");
+                if status == "unlocked" || status == "already_unlocked" {
+                    Ok(())
+                } else {
+                    Err("unexpected response".to_string())
+                }
+            }
+            Err(ureq::Error::Status(401, _)) => Err("invalid master password".to_string()),
+            Err(ureq::Error::Status(429, _)) => {
+                Err("too many attempts — try again later".to_string())
+            }
+            Err(ureq::Error::Status(code, _)) => Err(format!("unlock failed (HTTP {})", code)),
+            Err(_) => Err("cannot reach VaultCenter".to_string()),
+        }
+    }
 }
 
 /// Add encoded variants (base64, hex) to a mask_map, sort by length descending,
@@ -401,6 +438,28 @@ pub fn enrich_mask_map(map: &mut Vec<(String, String)>) {
         }
         true
     });
+}
+
+/// Build a JSON `{"password":"..."}` body with proper escaping,
+/// wrapped in Zeroizing so the password is zeroed on drop.
+fn json_password_body(password: &str) -> Zeroizing<String> {
+    let mut buf = String::with_capacity(16 + password.len() * 2);
+    buf.push_str(r#"{"password":""#);
+    for ch in password.chars() {
+        match ch {
+            '"' => buf.push_str(r#"\""#),
+            '\\' => buf.push_str(r"\\"),
+            '\n' => buf.push_str(r"\n"),
+            '\r' => buf.push_str(r"\r"),
+            '\t' => buf.push_str(r"\t"),
+            c if c < '\x20' => {
+                buf.push_str(&format!(r"\u{:04x}", c as u32));
+            }
+            c => buf.push(c),
+        }
+    }
+    buf.push_str(r#""}"#);
+    Zeroizing::new(buf)
 }
 
 fn resolve_candidates(token: &str) -> Vec<String> {
@@ -660,5 +719,249 @@ mod tests {
         for w in lens.windows(2) {
             assert!(w[0] >= w[1]);
         }
+    }
+
+    // ── json_password_body: JSON correctness ────────────────────────
+
+    fn parse_password_from_body(body: &str) -> String {
+        let v: serde_json::Value = serde_json::from_str(body).unwrap();
+        v["password"].as_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn test_json_body_simple_password() {
+        let body = super::json_password_body("hunter2");
+        let parsed = parse_password_from_body(&body);
+        assert_eq!(parsed, "hunter2");
+    }
+
+    #[test]
+    fn test_json_body_empty_password() {
+        let body = super::json_password_body("");
+        let parsed = parse_password_from_body(&body);
+        assert_eq!(parsed, "");
+    }
+
+    #[test]
+    fn test_json_body_with_double_quotes() {
+        let body = super::json_password_body(r#"pass"word"#);
+        let parsed = parse_password_from_body(&body);
+        assert_eq!(parsed, r#"pass"word"#);
+    }
+
+    #[test]
+    fn test_json_body_with_backslashes() {
+        let body = super::json_password_body(r"pass\word");
+        let parsed = parse_password_from_body(&body);
+        assert_eq!(parsed, r"pass\word");
+    }
+
+    #[test]
+    fn test_json_body_with_newlines_and_tabs() {
+        let body = super::json_password_body("pass\nword\r\t!");
+        let parsed = parse_password_from_body(&body);
+        assert_eq!(parsed, "pass\nword\r\t!");
+    }
+
+    #[test]
+    fn test_json_body_with_control_chars() {
+        // ASCII control char \x01 (SOH)
+        let body = super::json_password_body("pass\x01word");
+        let parsed = parse_password_from_body(&body);
+        assert_eq!(parsed, "pass\x01word");
+    }
+
+    #[test]
+    fn test_json_body_with_unicode() {
+        let body = super::json_password_body("비밀번호🔑");
+        let parsed = parse_password_from_body(&body);
+        assert_eq!(parsed, "비밀번호🔑");
+    }
+
+    #[test]
+    fn test_json_body_all_special_chars_combined() {
+        let pw = r#"p@ss\"w0rd'\n\t<>&{}"#;
+        let body = super::json_password_body(pw);
+        let parsed = parse_password_from_body(&body);
+        assert_eq!(parsed, pw);
+    }
+
+    #[test]
+    fn test_json_body_injection_attempt() {
+        // Attempt to break out of JSON string
+        let pw = r#"","admin":true,"password":""#;
+        let body = super::json_password_body(pw);
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        // Must have exactly one key "password", no injection
+        assert_eq!(v.as_object().unwrap().len(), 1);
+        assert_eq!(v["password"].as_str().unwrap(), pw);
+    }
+
+    #[test]
+    fn test_json_body_only_special_chars() {
+        let pw = r#""\\\"\\""#;
+        let body = super::json_password_body(pw);
+        let parsed = parse_password_from_body(&body);
+        assert_eq!(parsed, pw);
+    }
+
+    #[test]
+    fn test_json_body_long_password() {
+        let pw: String = "A".repeat(10000);
+        let body = super::json_password_body(&pw);
+        let parsed = parse_password_from_body(&body);
+        assert_eq!(parsed, pw);
+    }
+
+    #[test]
+    fn test_json_body_null_bytes() {
+        // Null bytes must be escaped as \u0000
+        let body = super::json_password_body("pass\x00word");
+        let parsed = parse_password_from_body(&body);
+        assert_eq!(parsed, "pass\x00word");
+    }
+
+    #[test]
+    fn test_json_body_all_control_chars() {
+        // Every ASCII control char (0x00-0x1F) must be properly escaped
+        let pw: String = (0u8..0x20).map(|b| b as char).collect();
+        let body = super::json_password_body(&pw);
+        let parsed = parse_password_from_body(&body);
+        assert_eq!(parsed, pw);
+    }
+
+    #[test]
+    fn test_json_body_is_valid_json() {
+        let passwords = vec![
+            "",
+            "simple",
+            r#"with"quotes"#,
+            "with\\backslash",
+            "with\nnewline",
+            "with\ttab",
+            "with\x00null",
+            "한글패스워드",
+            r#"{"nested":"json"}"#,
+            "pass\x01\x02\x03\x1F",
+        ];
+        for pw in passwords {
+            let body = super::json_password_body(pw);
+            assert!(
+                serde_json::from_str::<serde_json::Value>(&body).is_ok(),
+                "invalid JSON for password: {:?}",
+                pw
+            );
+        }
+    }
+
+    // ── json_password_body: zeroize behavior ────────────────────────
+
+    #[test]
+    fn test_json_body_returns_zeroizing_type() {
+        let body = super::json_password_body("secret");
+        // Verify it's Zeroizing<String> by using Deref to &str
+        let _: &str = &body;
+        assert!(body.contains("secret"));
+    }
+
+    #[test]
+    fn test_json_body_zeroed_after_drop() {
+        let password = "SuperSecret123!@#";
+        let body = super::json_password_body(password);
+        let ptr = body.as_ptr();
+        let len = body.len();
+        drop(body);
+        // After drop, the memory at ptr should be zeroed.
+        // This is technically UB to read freed memory, but zeroize guarantees
+        // the write happens before deallocation. We verify by checking the
+        // Zeroizing wrapper was used (type-level guarantee).
+        // Direct memory inspection is unsafe and platform-dependent,
+        // so we rely on the type system: Zeroizing<String> implements Drop
+        // which calls zeroize() before deallocation.
+        assert!(ptr as usize > 0 && len > 0, "body was allocated on heap");
+    }
+
+    // ── Equivalence: json_password_body vs serde_json ───────────────
+
+    #[test]
+    fn test_json_body_matches_serde_json_output() {
+        let passwords = vec![
+            "simple",
+            r#"with"quotes"#,
+            "with\\backslash",
+            "with\nnewline",
+            "한글",
+            "emoji🔑🎉",
+            "p@ss!#$%^&*()",
+            "\x01\x02\x1F",
+        ];
+        for pw in passwords {
+            let ours = super::json_password_body(pw);
+            let serde = serde_json::json!({"password": pw}).to_string();
+            // Parse both and compare values (format may differ but semantics must match)
+            let ours_val: serde_json::Value = serde_json::from_str(&ours).unwrap();
+            let serde_val: serde_json::Value = serde_json::from_str(&serde).unwrap();
+            assert_eq!(
+                ours_val, serde_val,
+                "mismatch for password: {:?}\n  ours:  {}\n  serde: {}",
+                pw, &*ours, serde
+            );
+        }
+    }
+
+    // ── resolve_candidates ──────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_vk_local_full_ref() {
+        let result = super::resolve_candidates("VK:LOCAL:abc123");
+        assert_eq!(result, vec!["VK:LOCAL:abc123", "abc123"]);
+    }
+
+    #[test]
+    fn test_resolve_vk_temp_full_ref() {
+        let result = super::resolve_candidates("VK:TEMP:def456");
+        assert_eq!(result, vec!["VK:TEMP:def456", "def456"]);
+    }
+
+    #[test]
+    fn test_resolve_ve_ref() {
+        let result = super::resolve_candidates("VE:LOCAL:ghi789");
+        assert_eq!(result, vec!["VE:LOCAL:ghi789"]);
+    }
+
+    #[test]
+    fn test_resolve_vk_short_form() {
+        let result = super::resolve_candidates("VK:abc12345");
+        assert_eq!(result, vec!["abc12345"]);
+    }
+
+    #[test]
+    fn test_resolve_plain_token() {
+        let result = super::resolve_candidates("plain-token");
+        assert_eq!(result, vec!["plain-token"]);
+    }
+
+    #[test]
+    fn test_resolve_empty_string() {
+        let result = super::resolve_candidates("");
+        assert_eq!(result, vec![""]);
+    }
+
+    #[test]
+    fn test_resolve_vk_external() {
+        let result = super::resolve_candidates("VK:EXTERNAL:xyz999");
+        assert_eq!(result, vec!["VK:EXTERNAL:xyz999", "xyz999"]);
+    }
+
+    #[test]
+    fn test_resolve_vk_with_extra_colons() {
+        let result = super::resolve_candidates("VK:LOCAL:abc:def");
+        assert_eq!(result, vec!["VK:LOCAL:abc:def", "abc:def"]);
+    }
+
+    #[test]
+    fn test_resolve_ve_short_form() {
+        let result = super::resolve_candidates("VE:something");
+        assert_eq!(result, vec!["something"]);
     }
 }

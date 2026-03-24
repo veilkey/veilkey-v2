@@ -108,7 +108,8 @@ fn handle_connection(mut stream: TcpStream, allow_set: &HashSet<String>) -> io::
             format!("{}:{}", target, default_https_port())
         };
         match TcpStream::connect(&addr) {
-            Err(_) => {
+            Err(e) => {
+                eprintln!("proxy: CONNECT to {} failed: {}", addr, e);
                 let _ = stream.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n");
             }
             Ok(upstream) => {
@@ -162,7 +163,8 @@ fn handle_connection(mut stream: TcpStream, allow_set: &HashSet<String>) -> io::
         };
 
         match TcpStream::connect(&addr) {
-            Err(_) => {
+            Err(e) => {
+                eprintln!("proxy: connect to {} failed: {}", addr, e);
                 let _ = stream.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n");
             }
             Ok(mut upstream) => {
