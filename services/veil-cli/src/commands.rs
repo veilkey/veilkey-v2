@@ -68,34 +68,7 @@ pub fn cmd_wrap(args: &[String], api_url: &str, log_path: &str, patterns_file: O
     process::exit(exit_code);
 }
 
-pub fn cmd_resolve(hash: &str, api_url: &str) {
-    // Block non-TTY execution to prevent AI tools from reading plaintext via pipe
-    if unsafe { libc::isatty(1) } == 0 {
-        eprintln!("[veilkey] resolve is only available in interactive terminal");
-        process::exit(1);
-    }
-    // Require admin password — resolve returns plaintext, server also requires admin session
-    let password = rpassword::prompt_password("[veilkey] admin password: ").unwrap_or_default();
-    if password.is_empty() {
-        eprintln!("[veilkey] password is required");
-        process::exit(1);
-    }
-    let client = VeilKeyClient::new(api_url);
-    if let Err(e) = client.admin_login(&password) {
-        eprintln!("[veilkey] authentication failed: {}", e);
-        process::exit(1);
-    }
-    match client.resolve(hash) {
-        Ok(v) => print!("{}", v),
-        Err(e) => {
-            eprintln!("[veilkey] resolve failed");
-            let _ = e;
-            process::exit(1);
-        }
-    }
-}
-
-pub fn cmd_exec(args: &[String], api_url: &str) {
+pub fn cmd_exec(args: &[String], api_url: &str, log_path: &str, patterns_file: Option<&str>) {
     if args.is_empty() {
         eprintln!("Usage: veilkey exec <command...>");
         process::exit(1);
@@ -103,13 +76,18 @@ pub fn cmd_exec(args: &[String], api_url: &str) {
     let client = VeilKeyClient::new(api_url);
     let vk_re = regex::Regex::new(crate::detector::VEILKEY_RE_STR).unwrap();
 
+    let mut mask_pairs: Vec<(String, String)> = Vec::new();
+
     let resolved: Vec<String> = args
         .iter()
         .map(|arg| {
             vk_re
                 .replace_all(arg, |caps: &regex::Captures| {
                     match client.resolve(&caps[0]) {
-                        Ok(v) => v,
+                        Ok(v) => {
+                            mask_pairs.push((v.clone(), caps[0].to_string()));
+                            v
+                        }
                         Err(e) => {
                             eprintln!("WARNING: resolve {} failed: {}", &caps[0], e);
                             caps[0].to_string()
@@ -120,17 +98,54 @@ pub fn cmd_exec(args: &[String], api_url: &str) {
         })
         .collect();
 
-    let status = process::Command::new(&resolved[0])
+    // Mask stdout to prevent resolved plaintext from leaking to terminal
+    let cfg = match load_config(patterns_file) {
+        Ok(c) => c,
+        Err(_) => {
+            // Fallback: run without masking rather than blocking execution
+            let status = process::Command::new(&resolved[0])
+                .args(&resolved[1..])
+                .stdin(process::Stdio::inherit())
+                .stdout(process::Stdio::inherit())
+                .stderr(process::Stdio::inherit())
+                .status();
+            match status {
+                Ok(s) => process::exit(s.code().unwrap_or(1)),
+                Err(_) => process::exit(1),
+            }
+        }
+    };
+
+    let logger = SessionLogger::new(log_path);
+    let mut detector = SecretDetector::new(&cfg, &client, &logger, false);
+
+    for (plaintext, vk_ref) in &mask_pairs {
+        detector.register_known(plaintext, vk_ref);
+    }
+
+    let mut child = match process::Command::new(&resolved[0])
         .args(&resolved[1..])
         .stdin(process::Stdio::inherit())
-        .stdout(process::Stdio::inherit())
+        .stdout(process::Stdio::piped())
         .stderr(process::Stdio::inherit())
-        .status();
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("ERROR: {}", e);
+            process::exit(1);
+        }
+    };
 
-    match status {
-        Ok(s) => process::exit(s.code().unwrap_or(1)),
-        Err(_) => process::exit(1),
+    if let Some(stdout) = child.stdout.take() {
+        process_stream(&mut detector, stdout);
     }
+
+    let exit_code = match child.wait() {
+        Ok(status) => status.code().unwrap_or(1),
+        Err(_) => 1,
+    };
+    process::exit(exit_code);
 }
 
 pub fn cmd_scan(
