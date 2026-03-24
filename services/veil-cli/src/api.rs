@@ -165,10 +165,14 @@ impl VeilKeyClient {
         }
 
         let body = serde_json::json!({ "plaintext": value });
-        let resp = self
+        let mut req = self
             .agent
             .post(&format!("{}/api/encrypt", self.base_url))
-            .set("Content-Type", "application/json")
+            .set("Content-Type", "application/json");
+        if let Some(cookie) = self.cookie_header() {
+            req = req.set("Cookie", &cookie);
+        }
+        let resp = req
             .send_json(&body)
             .map_err(|e| format!("API request failed: {}", e))?;
 
