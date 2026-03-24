@@ -107,9 +107,8 @@ pub fn padded_colorize_ref(vk_ref: &str, original_len: usize) -> String {
             colored
         }
     } else {
-        // Ref is longer than original — truncate to fit exactly
-        let truncated: String = vk_ref.chars().take(original_len).collect();
-        colorize_ref(&truncated)
+        // Ref is longer than original — show full ref as-is (no truncation)
+        colored
     }
 }
 
@@ -434,37 +433,22 @@ mod tests {
             let result = padded_colorize_ref(vk_ref, secret_len);
             let visible = strip_ansi(&result);
             if secret_len >= ref_len {
-<<<<<<< Updated upstream
                 // ref shorter/equal: padded to secret_len
-=======
->>>>>>> Stashed changes
                 assert_eq!(
                     visible.chars().count(), secret_len,
                     "TEMP width mismatch at secret_len={}: got [{}] ({})",
                     secret_len, visible, visible.chars().count()
                 );
-<<<<<<< Updated upstream
-            } else {
-                // ref longer: full ref shown, width = ref_len
-                assert_eq!(
-                    visible.chars().count(), ref_len,
-                    "TEMP width mismatch at secret_len={}: got [{}] ({})",
-                    secret_len, visible, visible.chars().count()
-                );
-=======
                 assert!(visible.contains(vk_ref));
             } else {
-                // ref longer → full ref shown as-is
+                // ref longer: full ref shown as-is
                 assert!(
                     visible.chars().count() >= secret_len,
                     "TEMP visible should be >= secret_len at secret_len={}: got [{}] ({})",
                     secret_len, visible, visible.chars().count()
                 );
                 assert_eq!(visible, vk_ref);
->>>>>>> Stashed changes
             }
-            // Full ref is always present (no truncation)
-            assert!(visible.contains(vk_ref));
         }
     }
 
@@ -502,31 +486,18 @@ mod tests {
 
     #[test]
     fn test_ref_integrity_in_masked_output_short_secret() {
-<<<<<<< Updated upstream
-        // Real-world case: password shorter than ref → full ref shown (wider output)
-=======
         // Real-world case: password shorter than ref → full ref shown
->>>>>>> Stashed changes
         let input = "pass=hunter2"; // "hunter2" is 7 chars
         let mask_map = vec![("hunter2".to_string(), "VK:LOCAL:6da25530".to_string())];
         let result = simulate_mask(input, &mask_map);
         assert!(!result.contains("hunter2"), "secret leaked");
-<<<<<<< Updated upstream
-        // Full ref shown: "VK:LOCAL:6da25530"
-=======
         // Full ref shown (no truncation)
->>>>>>> Stashed changes
         assert!(
             result.contains("VK:LOCAL:6da25530"),
             "full ref must appear in output, got: [{}]",
             result
         );
-<<<<<<< Updated upstream
-        // Output is wider than input when ref is longer than secret
-        assert!(result.len() >= input.len(), "result must not be shorter");
-=======
         assert!(result.len() >= input.len(), "width should be >= original");
->>>>>>> Stashed changes
     }
 
     #[test]
