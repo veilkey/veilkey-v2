@@ -65,8 +65,9 @@ var (
 )
 
 func truncate(s string, maxLen int) string {
-	if maxLen < 3 || len(s) <= maxLen {
+	runes := []rune(s)
+	if maxLen < 3 || len(runes) <= maxLen {
 		return s
 	}
-	return s[:maxLen-2] + ".."
+	return string(runes[:maxLen-2]) + ".."
 }
