@@ -335,6 +335,55 @@ impl VeilKeyClient {
         Some(result)
     }
 
+    /// List all global functions.
+    pub fn function_list(&self) -> Result<Vec<serde_json::Value>, String> {
+        let url = format!("{}/api/functions/global", self.base_url);
+        let mut req = self.agent.get(&url);
+        if let Some(cookie) = self.cookie_header() {
+            req = req.set("Cookie", &cookie);
+        }
+        let resp = req
+            .call()
+            .map_err(|e| format!("function list failed: {}", e))?;
+        let result: serde_json::Value = resp
+            .into_json()
+            .map_err(|e| format!("function list decode failed: {}", e))?;
+        let functions = result["functions"].as_array().cloned().unwrap_or_default();
+        Ok(functions)
+    }
+
+    /// Create a global function by name.
+    pub fn function_add(&self, name: &str) -> Result<(), String> {
+        let url = format!("{}/api/functions/global", self.base_url);
+        let body = serde_json::json!({ "name": name });
+        let mut req = self
+            .agent
+            .post(&url)
+            .set("Content-Type", "application/json");
+        if let Some(cookie) = self.cookie_header() {
+            req = req.set("Cookie", &cookie);
+        }
+        req.send_json(&body)
+            .map_err(|e| format!("function add failed: {}", e))?;
+        Ok(())
+    }
+
+    /// Delete a global function by name.
+    pub fn function_remove(&self, name: &str) -> Result<(), String> {
+        let url = format!(
+            "{}/api/functions/global/{}",
+            self.base_url,
+            urlencoding::encode(name)
+        );
+        let mut req = self.agent.delete(&url);
+        if let Some(cookie) = self.cookie_header() {
+            req = req.set("Cookie", &cookie);
+        }
+        req.call()
+            .map_err(|e| format!("function remove failed: {}", e))?;
+        Ok(())
+    }
+
     pub fn health_check(&self) -> bool {
         let secs = std::env::var("VEILKEY_HEALTH_TIMEOUT")
             .ok()

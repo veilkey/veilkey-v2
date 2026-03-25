@@ -3,14 +3,16 @@
 ## Quick Usage
 
 ```bash
-veil                          # Enter protected shell
-veil status                   # Check connection
-veil resolve VK:LOCAL:xxx     # Decrypt a reference (requires admin password)
-veil exec echo VK:LOCAL:xxx   # Run command with real values
-veil scan file.env            # Find secrets in files
+veil                            # Enter protected shell
+veil status                     # Check connection
+veil exec echo VK:LOCAL:xxx     # Run command with real values
+veil scan file.env              # Find secrets in files
+
+veilkey create [value]          # Create a temp ref (VK:TEMP:xxx)
+veilkey resolve VK:LOCAL:xxx    # Decrypt a reference
 ```
 
-`veil` is a shorthand for `veilkey-cli wrap-pty`. All commands below also work via `veilkey-cli` directly.
+`veil` is a shorthand for `veilkey wrap-pty`. All commands below also work via `veilkey` directly.
 
 ## Usage via Docker
 
@@ -20,11 +22,11 @@ The veil container is included in docker-compose:
 # Enter protected session
 docker compose exec -it \
   -e DB_PASSWORD=VK:LOCAL:xxxx \
-  veil veilkey-cli wrap-pty bash
+  veil veilkey wrap-pty bash
 
 # Single command
-docker compose exec veil veilkey-cli status
-docker compose exec veil veilkey-cli resolve VK:LOCAL:xxxx
+docker compose exec veil veilkey status
+docker compose exec veil veilkey resolve VK:LOCAL:xxxx
 ```
 
 ## Configuration
@@ -49,13 +51,13 @@ Detect secrets in files or stdin. No API connection required.
 
 ```bash
 # Scan a file
-veilkey-cli scan .env
+veilkey scan .env
 
 # Scan stdin
-cat config.yaml | veilkey-cli scan -
+cat config.yaml | veilkey scan -
 
 # Scan multiple files
-veilkey-cli scan .env config.yaml secrets.json
+veilkey scan .env config.yaml secrets.json
 ```
 
 Output shows each detection with pattern name, confidence score, and matched value.
@@ -73,10 +75,10 @@ Replace detected secrets with `VK:` tokens. Requires API connection.
 
 ```bash
 # Filter a file
-veilkey-cli filter .env
+veilkey filter .env
 
 # Filter stdin
-echo "TOKEN=ghp_abc123..." | veilkey-cli filter -
+echo "TOKEN=ghp_abc123..." | veilkey filter -
 # Output: TOKEN=VK:LOCAL:a1b2c3d4
 ```
 
@@ -87,8 +89,8 @@ The original plaintext is encrypted and stored. The output contains only the `VK
 Execute a command with automatic output masking. Any secret that appears in stdout/stderr is replaced with its `VK:` reference.
 
 ```bash
-veilkey-cli wrap ./deploy.sh
-veilkey-cli wrap env | grep SECRET
+veilkey wrap ./deploy.sh
+veilkey wrap env | grep SECRET
 ```
 
 ### wrap-pty
@@ -96,7 +98,7 @@ veilkey-cli wrap env | grep SECRET
 Allocates a PTY with **bidirectional masking**:
 
 ```bash
-veilkey-cli wrap-pty bash
+veilkey wrap-pty bash
 ```
 
 **Bidirectional masking:**
@@ -118,7 +120,7 @@ Resolve `VK:` tokens in environment variables before executing a command. The in
 ```bash
 # .env contains: API_KEY=VK:LOCAL:a1b2c3d4
 export $(cat .env | xargs)
-veilkey-cli exec ./my-app
+veilkey exec ./my-app
 # my-app sees the real API_KEY value in its environment
 ```
 
@@ -127,7 +129,7 @@ veilkey-cli exec ./my-app
 Decrypt a single `VK:` token. Requires interactive terminal (TTY) and admin password:
 
 ```bash
-veilkey-cli resolve VK:LOCAL:a1b2c3d4
+veilkey resolve VK:LOCAL:a1b2c3d4
 # Prompts for admin password, then outputs plaintext
 ```
 
@@ -138,9 +140,9 @@ veilkey-cli resolve VK:LOCAL:a1b2c3d4
 Manage function wrappers — shell functions that auto-resolve secrets:
 
 ```bash
-veilkey-cli function list
-veilkey-cli function add my-tool
-veilkey-cli function remove my-tool
+veilkey function list
+veilkey function add my-tool
+veilkey function remove my-tool
 ```
 
 ### list
@@ -148,7 +150,7 @@ veilkey-cli function remove my-tool
 Show secrets detected in the current session:
 
 ```bash
-veilkey-cli list
+veilkey list
 ```
 
 ### status
@@ -156,7 +158,7 @@ veilkey-cli list
 Show CLI version, API connection, and pattern count:
 
 ```bash
-veilkey-cli status
+veilkey status
 ```
 
 ### clear
@@ -164,7 +166,7 @@ veilkey-cli status
 Clear the current session's detected secrets:
 
 ```bash
-veilkey-cli clear
+veilkey clear
 ```
 
 ## Project Config
