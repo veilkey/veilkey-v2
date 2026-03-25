@@ -156,6 +156,12 @@ func (d *DB) ListRefs() ([]TokenRef, error) {
 	return refs, err
 }
 
+func (d *DB) ListRefsByScope(scope RefScope) ([]TokenRef, error) {
+	var refs []TokenRef
+	err := d.conn.Where("ref_scope = ?", scope).Order("created_at DESC").Find(&refs).Error
+	return refs, err
+}
+
 func (d *DB) ListRefsByVersion(version int) ([]TokenRef, error) {
 	var refs []TokenRef
 	err := d.conn.Where("version = ?", version).Find(&refs).Error
