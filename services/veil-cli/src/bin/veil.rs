@@ -84,8 +84,6 @@ fn load_env_file(path: &str) {
 }
 
 fn main() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
     // Auto-load .veilkey/env from current or parent dirs
     // Clear legacy env vars first so .veilkey/env takes precedence
     auto_load_env();
@@ -239,51 +237,10 @@ trap 'rm -f "$HISTFILE"' EXIT
             }
         }
         "create" => {
-            // vk create [value] — create a temp ref and print it
-            let api_url = env::var("VEILKEY_API")
-                .or_else(|_| env::var("VEILKEY_LOCALVAULT_URL"))
-                .unwrap_or_else(|_| {
-                    eprintln!("VEILKEY_API or VEILKEY_LOCALVAULT_URL is required");
-                    process::exit(1);
-                });
-
-            let value = if args.len() > 1 {
-                args[1..].join(" ")
-            } else {
-                // Interactive: prompt for value (hidden input)
-                eprint!("Secret value: ");
-                rpassword::read_password().unwrap_or_else(|e| {
-                    eprintln!("Failed to read input: {}", e);
-                    process::exit(1);
-                })
-            };
-
-            let value = value.trim();
-            if value.is_empty() {
-                eprintln!("Value cannot be empty");
-                process::exit(1);
-            }
-
-            // Login + issue
-            let password = env::var("VEILKEY_PASSWORD").unwrap_or_else(|_| {
-                rpassword::prompt_password("VeilKey password: ").unwrap_or_default()
-            });
-
-            let client = veil_cli_rs::api::VeilKeyClient::new(&api_url);
-            if let Err(e) = client.admin_login(&password) {
-                eprintln!("[veilkey] login failed: {}", e);
-                process::exit(1);
-            }
-
-            match client.issue(value) {
-                Ok(vk_ref) => {
-                    println!("{}", vk_ref);
-                }
-                Err(e) => {
-                    eprintln!("[veilkey] create failed: {}", e);
-                    process::exit(1);
-                }
-            }
+            // Forward to veilkey-cli create
+            let mut full = vec!["create".to_string()];
+            full.extend_from_slice(&args[1..]);
+            exec_replace(&cli_bin, &full);
         }
         "help" | "-h" | "--help" => {
             println!("Usage:");

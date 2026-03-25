@@ -4,6 +4,7 @@
 
 ```bash
 veil                          # Enter protected shell
+veil create [value]           # Create a temp ref (VK:TEMP:xxx)
 veil status                   # Check connection
 veil resolve VK:LOCAL:xxx     # Decrypt a reference (requires admin password)
 veil exec echo VK:LOCAL:xxx   # Run command with real values

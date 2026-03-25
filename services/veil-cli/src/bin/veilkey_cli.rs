@@ -176,6 +176,38 @@ fn main() {
         "paste-mode" => commands::cmd_paste_mode(&cmd_args),
         "clear" => commands::cmd_clear(&log_path),
         "status" => commands::cmd_status(&api_url, &log_path, patterns_file.as_deref(), VERSION),
+        "create" => {
+            // veilkey create [value] — create a temp ref and print it
+            let value = if !cmd_args.is_empty() {
+                cmd_args.join(" ")
+            } else {
+                eprint!("Secret value: ");
+                rpassword::read_password().unwrap_or_else(|e| {
+                    eprintln!("Failed to read input: {}", e);
+                    process::exit(1);
+                })
+            };
+            let value = value.trim().to_string();
+            if value.is_empty() {
+                eprintln!("Value cannot be empty");
+                process::exit(1);
+            }
+            let password = std::env::var("VEILKEY_PASSWORD").unwrap_or_else(|_| {
+                rpassword::prompt_password("VeilKey password: ").unwrap_or_default()
+            });
+            let client = veil_cli_rs::api::VeilKeyClient::new(&api_url);
+            if let Err(e) = client.admin_login(&password) {
+                eprintln!("[veilkey] login failed: {}", e);
+                process::exit(1);
+            }
+            match client.issue(&value) {
+                Ok(vk_ref) => println!("{}", vk_ref),
+                Err(e) => {
+                    eprintln!("[veilkey] create failed: {}", e);
+                    process::exit(1);
+                }
+            }
+        }
         "version" => println!("veilkey {}", VERSION),
         "help" | "-h" | "--help" => print_usage(),
         unknown => {
