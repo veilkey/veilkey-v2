@@ -23,15 +23,10 @@ type sshKeyItem struct {
 	CreatedAt string `json:"created_at"`
 }
 
-type sshKeysLoadedMsg struct {
-	keys []sshKeyItem
-}
-
+type sshKeysLoadedMsg struct{ keys []sshKeyItem }
 type sshKeyDeletedMsg struct{}
 
-func newSSHModel() sshModel {
-	return sshModel{}
-}
+func newSSHModel() sshModel { return sshModel{} }
 
 func loadSSHKeysCmd(c *Client) tea.Cmd {
 	return func() tea.Msg {
@@ -103,49 +98,44 @@ func (m sshModel) update(msg tea.Msg, c *Client) (sshModel, tea.Cmd) {
 
 func (m sshModel) view(width int) string {
 	var b strings.Builder
-
-	title := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("15")).
-		Render(T("ssh.title"))
+	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Render(T("ssh.title"))
 	b.WriteString(title + "\n\n")
-
 	if m.err != "" {
 		b.WriteString(styleError.Render("Error: "+m.err) + "\n")
 	}
-
 	if !m.loaded {
 		b.WriteString("  " + T("common.loading") + "\n")
 		return b.String()
 	}
-
 	if len(m.keys) == 0 {
-		b.WriteString("  " + T("ssh.empty") + "\n")
-		b.WriteString("\n  " + T("ssh.add_hint") + "\n")
+		b.WriteString("  " + T("ssh.empty") + "\n\n  " + T("ssh.add_hint") + "\n")
 		return b.String()
 	}
-
 	header := fmt.Sprintf("  %-24s %-10s %-20s", "REF", "STATUS", "CREATED")
 	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(header) + "\n")
-	b.WriteString("  " + strings.Repeat("\u2500", min(width-4, 56)) + "\n")
-
+	sepLen := width - 4
+	if sepLen > 56 {
+		sepLen = 56
+	}
+	if sepLen < 0 {
+		sepLen = 0
+	}
+	b.WriteString("  " + strings.Repeat("\u2500", sepLen) + "\n")
 	for i, key := range m.keys {
 		prefix := "  "
 		if i == m.cursor {
 			prefix = "> "
 		}
-		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+		ss := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 		if key.Status != "active" {
-			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+			ss = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 		}
-		line := fmt.Sprintf("%s%-24s %s  %-20s",
-			prefix, key.Ref, statusStyle.Render(fmt.Sprintf("%-8s", key.Status)), key.CreatedAt)
+		line := fmt.Sprintf("%s%-24s %s  %-20s", prefix, key.Ref, ss.Render(fmt.Sprintf("%-8s", key.Status)), key.CreatedAt)
 		if i == m.cursor {
 			line = lipgloss.NewStyle().Bold(true).Render(line)
 		}
 		b.WriteString(line + "\n")
 	}
-
 	b.WriteString("\n")
 	if m.confirm {
 		ref := ""
@@ -154,8 +144,7 @@ func (m sshModel) view(width int) string {
 		}
 		b.WriteString("  " + styleError.Render(fmt.Sprintf(T("ssh.confirm_delete"), ref)) + "\n")
 	} else {
-		help := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-		b.WriteString("  " + help.Render(T("ssh.help")) + "\n")
+		b.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(T("ssh.help")) + "\n")
 	}
 	return b.String()
 }
