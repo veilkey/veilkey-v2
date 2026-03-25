@@ -3111,6 +3111,14 @@ async function handleAction(action, dataset) {
             await loadFunctions();
             return syncPageData();
         }
+        if (action === 'refresh-ssh') {
+            await loadSSHKeys();
+            return render();
+        }
+        if (action === 'delete-ssh-key') {
+            await deleteSSHKey(dataset.ref);
+            return;
+        }
         if (action === 'refresh-plugins') {
             await loadPlugins();
             return render();
