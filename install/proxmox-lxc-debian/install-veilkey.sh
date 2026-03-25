@@ -10,8 +10,8 @@ set -euo pipefail
 # Options (env vars):
 #   CTID=110                          Container ID (default: next available)
 #   CT_HOSTNAME=veilkey               Hostname (default: veilkey)
-#   CT_IP=10.50.0.110/16              IP address (required)
-#   CT_GW=10.50.0.1                   Gateway (required)
+#   CT_IP=<IP>/<MASK>                 IP address (required)
+#   CT_GW=<GATEWAY>                   Gateway (required)
 #   CT_BRIDGE=vmbr1                   Network bridge (default: vmbr1)
 #   CT_PASSWORD=                      Root password (prompted if not set)
 #   CT_MEMORY=2048                    Memory in MB (default: 2048)

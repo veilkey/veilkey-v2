@@ -34,7 +34,7 @@ veilkey ssh add coworker.pub --external --label "coworker" # → VK:SSH:def67890
 veilkey ssh generate --type ed25519 --label "deploy-key"   # → VK:SSH:ghi11111
 veilkey ssh list                                            # 전체 목록
 veilkey ssh pubkey VK:SSH:abc12345                          # public key 출력
-veilkey ssh connect root@192.168.2.60                       # 자동 키 선택 + 접속
+veilkey ssh connect root@<HOST_IP>                           # 자동 키 선택 + 접속
 veilkey ssh agent-add VK:SSH:abc12345                       # ssh-agent 로드
 veilkey ssh map VK:SSH:abc12345 --host github.com --user git
 veilkey ssh remove VK:SSH:abc12345

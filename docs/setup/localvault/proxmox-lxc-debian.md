@@ -22,7 +22,7 @@ Use the install script — handles build, TLS, init, start, unlock:
 cd veilkey-selfhosted
 VEILKEY_CENTER_URL=https://<VC_HOST>:<VC_PORT> \
 VEILKEY_PASSWORD='<MASTER_PASSWORD>' \
-VEILKEY_NAME=<VAULT_NAME> \
+VEILKEY_LABEL=<VAULT_NAME> \
 VEILKEY_BULK_APPLY_ALLOWED_PATHS=<PATHS> \
   bash install/proxmox-lxc-debian/install-localvault.sh
 ```

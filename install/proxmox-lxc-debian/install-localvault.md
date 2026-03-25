@@ -24,7 +24,7 @@ The script handles: source update, build, TLS cert generation, init, start, and 
 |---------------------|---------|-------------|
 | `VEILKEY_CENTER_URL` | - | VaultCenter URL (required) |
 | `VEILKEY_PORT` | `10180` | LocalVault listen port |
-| `VEILKEY_NAME` | `$(hostname)` | Vault display name |
+| `VEILKEY_LABEL` | `$(hostname)` | Vault display name |
 | `VEILKEY_PASSWORD` | - | Master password (prompted if not set) |
 | `VEILKEY_BULK_APPLY_ALLOWED_PATHS` | - | Comma-separated absolute paths for bulk-apply targets |
 

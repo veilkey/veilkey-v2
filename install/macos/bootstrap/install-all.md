@@ -49,7 +49,7 @@ See [Post-Install Setup](../../../docs/setup/README.md) for full initialization 
 ## Update
 
 ```bash
-npm update -g veilkey-cli          # CLI update
+npm update -g veilkey              # CLI update
 cd veilkey-selfhosted && git pull  # Server update
 docker compose up --build -d       # Docker rebuild
 ```

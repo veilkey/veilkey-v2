@@ -235,7 +235,7 @@ Host ports: 11181 (VC), 11180 (LV), 26656 (P2P), 26657 (RPC)
 
 ## Database
 
-Both services use SQLCipher (encrypted SQLite, WAL mode). `VEILKEY_DB_KEY` is **required** — server refuses to start without it. Plain `sqlite3` cannot read the database.
+Both services use SQLCipher (encrypted SQLite, WAL mode). `VEILKEY_DB_KEY` is auto-derived from the master password (KEK) during unlock. No manual setting needed. Plain `sqlite3` cannot read the database.
 
 - **VaultCenter:** agents, token_refs, audit_events, configs, secrets, admin_sessions
 - **LocalVault:** secrets, configs, node_info, functions

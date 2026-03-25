@@ -28,7 +28,7 @@
 | Stale keys | VaultCenter tracks key_version, enforces rotation |
 | Unauthorized agent | Registration token required for first heartbeat |
 | Cross-vault secret access | Agent auth (Bearer token) — each vault can only query its own secrets |
-| DB direct manipulation | SQLCipher encryption — `VEILKEY_DB_KEY` required, plain sqlite3 blocked |
+| DB direct manipulation | SQLCipher encryption — `VEILKEY_DB_KEY` auto-derived from KEK during unlock, plain sqlite3 blocked |
 | Password file on disk | Removed — KEK exists only in memory, entered via `POST /api/unlock` |
 | Admin password hijack | Change requires owner password (KEK verification), not admin session |
 

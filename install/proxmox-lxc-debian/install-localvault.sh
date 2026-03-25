@@ -13,7 +13,7 @@ set -euo pipefail
 # Options (env vars):
 #   VEILKEY_CENTER_URL=                         VaultCenter URL (required)
 #   VEILKEY_PORT=10180                          LocalVault listen port
-#   VEILKEY_NAME=$(hostname)                    Vault display name
+#   VEILKEY_LABEL=$(hostname)                    Vault display name
 #   VEILKEY_PASSWORD=                           Master password (prompted if not set)
 #   VEILKEY_BULK_APPLY_ALLOWED_PATHS=           Comma-separated absolute paths for bulk-apply
 #
@@ -27,7 +27,7 @@ fi
 
 CENTER_URL="${VEILKEY_CENTER_URL:-}"
 PORT="${VEILKEY_PORT:-10180}"
-VAULT_NAME="${VEILKEY_NAME:-$(hostname)}"
+VAULT_NAME="${VEILKEY_LABEL:-$(hostname)}"
 BULK_PATHS="${VEILKEY_BULK_APPLY_ALLOWED_PATHS:-}"
 
 if [[ -z "$CENTER_URL" ]]; then

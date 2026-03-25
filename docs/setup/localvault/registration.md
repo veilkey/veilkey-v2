@@ -18,7 +18,7 @@ docker compose exec -T localvault sh -c \
 docker compose restart localvault
 ```
 
-> **Note:** `VEILKEY_DB_KEY`가 `.env`에 설정되어 있어야 합니다. 없으면 서버가 시작을 거부합니다.
+> **Note:** `VEILKEY_DB_KEY`는 unlock 시 마스터 비밀번호(KEK)에서 자동 파생됩니다. 수동 설정이 필요 없습니다.
 
 3. LocalVault appears in the vault list after heartbeat
 
