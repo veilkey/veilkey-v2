@@ -31,6 +31,7 @@ var translations = map[Lang]map[string]string{
 		"nav.settings":  "Settings",
 		"nav.audit":     "Audit",
 		"nav.plugins":   "Plugins",
+		"nav.ssh":       "SSH",
 		"nav.functions": "Functions",
 
 		// Login
@@ -97,6 +98,13 @@ var translations = map[Lang]map[string]string{
 		"plugins.title": "Plugins",
 		"plugins.empty": "No plugins installed.",
 
+		// SSH Keys
+		"ssh.title":          "SSH Keys",
+		"ssh.empty":          "No SSH keys registered.",
+		"ssh.add_hint":       "Add keys via: veilkey ssh add <keyfile>",
+		"ssh.confirm_delete": "Delete %s? (y/n)",
+		"ssh.help":           "[j/k] navigate  [d] delete  [r] refresh",
+
 		// Common
 		"common.loading": "Loading...",
 		"common.offline": "Cannot reach VaultCenter",
@@ -139,6 +147,7 @@ var translations = map[Lang]map[string]string{
 		"nav.settings":  "설정",
 		"nav.audit":     "감사 로그",
 		"nav.plugins":   "플러그인",
+		"nav.ssh":       "SSH",
 		"nav.functions": "함수",
 
 		"login.title":         "VeilKey VaultCenter",
@@ -197,6 +206,12 @@ var translations = map[Lang]map[string]string{
 
 		"plugins.title": "플러그인",
 		"plugins.empty": "설치된 플러그인이 없습니다.",
+
+		"ssh.title":          "SSH 키",
+		"ssh.empty":          "등록된 SSH 키가 없습니다.",
+		"ssh.add_hint":       "추가: veilkey ssh add <키파일>",
+		"ssh.confirm_delete": "%s 삭제하시겠습니까? (y/n)",
+		"ssh.help":           "[j/k] 이동  [d] 삭제  [r] 새로고침",
 
 		"common.loading":  "로딩 중...",
 		"common.offline":  "VaultCenter에 연결할 수 없습니다",

@@ -116,6 +116,10 @@ func (h *Handler) Register(
 	mux.HandleFunc("GET /api/tracked-refs/audit", ready(h.handleTrackedRefAudit))
 	mux.HandleFunc("POST /api/tracked-refs/cleanup", trusted(ready(h.handleTrackedRefCleanup)))
 	mux.HandleFunc("POST /api/tracked-refs/sync", trusted(ready(h.handleTrackedRefSync)))
+	// SSH keys (stored directly on VaultCenter)
+	mux.HandleFunc("GET /api/ssh/keys", ready(h.handleSSHKeys))
+	mux.HandleFunc("DELETE /api/ssh/keys/{ref}", trusted(ready(h.handleSSHKeyDelete)))
+
 	mux.HandleFunc("GET /api/vault-inventory", ready(h.handleVaultInventory))
 	mux.HandleFunc("GET /api/catalog/secrets", ready(h.handleSecretCatalogList))
 	mux.HandleFunc("GET /api/catalog/secrets/{ref}", ready(h.handleSecretCatalogGet))

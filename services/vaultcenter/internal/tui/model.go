@@ -15,14 +15,15 @@ const (
 	pageLogin page = iota
 	pageKeycenter
 	pageVaults
+	pageSSH
 	pageFunctions
 	pageAudit
 	pagePlugins
 	pageSettings
 )
 
-var pageNameKeys = []string{"nav.keycenter", "nav.vaults", "nav.functions", "nav.audit", "nav.plugins", "nav.settings"}
-var pages = []page{pageKeycenter, pageVaults, pageFunctions, pageAudit, pagePlugins, pageSettings}
+var pageNameKeys = []string{"nav.keycenter", "nav.vaults", "nav.ssh", "nav.functions", "nav.audit", "nav.plugins", "nav.settings"}
+var pages = []page{pageKeycenter, pageVaults, pageSSH, pageFunctions, pageAudit, pagePlugins, pageSettings}
 
 func pageNames() []string {
 	names := make([]string, len(pageNameKeys))
@@ -34,18 +35,19 @@ func pageNames() []string {
 
 // Model is the top-level bubbletea model.
 type Model struct {
-	client    *Client
-	width     int
-	height    int
+	client     *Client
+	width      int
+	height     int
 	activePage page
-	status    string
-	err       error
-	lang      Lang
+	status     string
+	err        error
+	lang       Lang
 
 	// Sub-models
 	login     loginModel
 	keycenter keycenterModel
 	vaults    vaultsModel
+	ssh       sshModel
 	functions functionsModel
 	audit     auditModel
 	plugins   pluginsModel
@@ -70,6 +72,7 @@ func NewModel(serverURL string) Model {
 		login:      newLoginModel(),
 		keycenter:  newKeycenterModel(),
 		vaults:     newVaultsModel(),
+		ssh:        newSSHModel(),
 		functions:  newFunctionsModel(),
 		audit:      newAuditModel(),
 		plugins:    newPluginsModel(),
@@ -91,7 +94,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activePage == pageLogin || !m.isEditing() {
 				return m, tea.Quit
 			}
-		case "1", "2", "3", "4", "5", "6":
+		case "1", "2", "3", "4", "5", "6", "7":
 			if m.activePage != pageLogin && !m.isEditing() {
 				idx := int(msg.String()[0] - '1')
 				if idx < len(pages) {
@@ -107,7 +110,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
-			// Tab bar click (first line, row 0)
 			if msg.Y == 0 && m.activePage != pageLogin {
 				clickedTab := detectTabClick(msg.X, pageNames())
 				if clickedTab >= 0 && clickedTab < len(pages) {
@@ -118,7 +120,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case statusMsg:
 		m.status = msg.status
-		// Fall through to let login handle it too
 
 	case errMsg:
 		m.err = msg.err
@@ -129,7 +130,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.switchPage(pageKeycenter)
 
 	case loginFailMsg:
-		// Let login handle it
 
 	case langToggleMsg:
 		if m.lang == LangEN {
@@ -141,7 +141,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Delegate to active page
 	var cmd tea.Cmd
 	switch m.activePage {
 	case pageLogin:
@@ -150,6 +149,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.keycenter, cmd = m.keycenter.update(msg, m.client)
 	case pageVaults:
 		m.vaults, cmd = m.vaults.update(msg, m.client)
+	case pageSSH:
+		m.ssh, cmd = m.ssh.update(msg, m.client)
 	case pageFunctions:
 		m.functions, cmd = m.functions.update(msg, m.client)
 	case pageAudit:
@@ -175,6 +176,8 @@ func (m Model) View() string {
 			pageContent = m.keycenter.view(m.width)
 		case pageVaults:
 			pageContent = m.vaults.view(m.width)
+		case pageSSH:
+			pageContent = m.ssh.view(m.width)
 		case pageFunctions:
 			pageContent = m.functions.view(m.width)
 		case pageAudit:
@@ -187,7 +190,6 @@ func (m Model) View() string {
 		content = lipgloss.JoinVertical(lipgloss.Left, tabs, pageContent)
 	}
 
-	// Status bar
 	statusText := fmt.Sprintf(" VaultCenter: %s", m.status)
 	if m.err != nil {
 		statusText += "  " + styleError.Render(m.err.Error())
@@ -221,6 +223,9 @@ func (m Model) switchPage(p page) (Model, tea.Cmd) {
 	case pageVaults:
 		m.vaults = newVaultsModel()
 		return m, loadVaultsCmd(m.client)
+	case pageSSH:
+		m.ssh = newSSHModel()
+		return m, loadSSHKeysCmd(m.client)
 	case pageFunctions:
 		m.functions = newFunctionsModel()
 		return m, loadFunctionsCmd(m.client)
@@ -237,17 +242,14 @@ func (m Model) switchPage(p page) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// detectTabClick returns the tab index clicked based on X position.
-// Tab format: "  | 1 Name | 2 Name | ..."
 func detectTabClick(x int, names []string) int {
-	pos := 2 // initial margin
+	pos := 2
 	for i, name := range names {
-		// Each tab: " N Name " with padding
-		tabWidth := len(name) + 4 // " N Name "
+		tabWidth := len(name) + 4
 		if x >= pos && x < pos+tabWidth {
 			return i
 		}
-		pos += tabWidth + 1 // +1 for space between tabs
+		pos += tabWidth + 1
 	}
 	return -1
 }
@@ -258,6 +260,9 @@ func (m Model) isEditing() bool {
 	}
 	if m.activePage == pageVaults {
 		return m.vaults.creatingSecret || m.vaults.searching || m.vaults.catalogSearching || m.vaults.confirmDelete
+	}
+	if m.activePage == pageSSH {
+		return m.ssh.confirm
 	}
 	if m.activePage == pageSettings {
 		return m.settings.creatingToken
