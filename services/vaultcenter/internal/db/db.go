@@ -49,7 +49,6 @@ func (d *DB) migrate() error {
 		&BulkApplyRun{},
 		&RegistrationToken{},
 		&AdminPasskey{},
-		&SSHKey{},
 	); err != nil {
 		return err
 	}
