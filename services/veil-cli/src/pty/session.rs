@@ -84,6 +84,42 @@ pub(crate) fn check_stdin_for_secrets(
     }
     StdinGuardResult::Forward
 }
+/// Extract vktemp_{value} patterns from input text.
+/// Returns a list of (full_match, captured_value) pairs.
+/// Pure function, no side effects, suitable for unit testing.
+pub(crate) fn extract_vktemp_matches(line: &str) -> Vec<(String, String)> {
+    let re = regex::Regex::new(r"vktemp_([^\s'\x22]+)").unwrap();
+    re.captures_iter(line)
+        .map(|caps| {
+            let full = caps.get(0).unwrap().as_str().to_string();
+            let value = caps[1].to_string();
+            (full, value)
+        })
+        .collect()
+}
+
+/// Expand vktemp_{value} patterns in input text.
+/// For each match, call client.issue(value) to create a temp ref,
+/// and replace the pattern with the returned VK ref.
+pub(crate) fn expand_vktemp(line: &str, client: &crate::api::VeilKeyClient) -> String {
+    let matches = extract_vktemp_matches(line);
+    if matches.is_empty() {
+        return line.to_string();
+    }
+    let mut result = line.to_string();
+    for (full_match, value) in matches {
+        match client.issue(&value) {
+            Ok(vk_ref) => {
+                result = result.replacen(&full_match, &vk_ref, 1);
+            }
+            Err(e) => {
+                eprintln!("[veilkey] vktemp issue failed: {}", e);
+            }
+        }
+    }
+    result
+}
+
 use crate::api::VeilKeyClient;
 use crate::config::{load_config, CompiledPattern};
 use crate::state::state_dir;
@@ -321,6 +357,7 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
             let master_wr = master_fd;
             let input_tracker = recent_input.clone();
             let stdin_mask_map = mask_map.clone();
+            let stdin_client = client.clone();
             std::thread::spawn(move || {
                 let mut buf = [0u8; 4096];
                 // Accumulated line buffer for enter-key secret detection
@@ -379,9 +416,21 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
                         check_stdin_for_secrets(data, &mut line_buf, &map);
                     }
 
-                    // Always forward raw data to PTY (blocking not yet enforced — see TODO above)
+                    // Expand vktemp_{value} inline temp ref creation
+                    let data = if let Ok(s) = std::str::from_utf8(data) {
+                        if s.contains("vktemp_") {
+                            let expanded = expand_vktemp(s, &stdin_client);
+                            expanded.into_bytes()
+                        } else {
+                            data.to_vec()
+                        }
+                    } else {
+                        data.to_vec()
+                    };
+
+                    // Always forward data to PTY (blocking not yet enforced — see TODO above)
                     unsafe {
-                        write_all_fd(master_wr, data);
+                        write_all_fd(master_wr, &data);
                     }
                 }
             });
@@ -1026,5 +1075,80 @@ mod tests {
             StdinGuardResult::Blocked,
             "secret at tail after truncation must be caught"
         );
+    }
+
+    // ---- vktemp inline expansion (extract_vktemp_matches) ----
+
+    #[test]
+    fn vktemp_no_pattern_unchanged() {
+        let matches = extract_vktemp_matches("echo hello world");
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn vktemp_single_pattern() {
+        let matches = extract_vktemp_matches("echo vktemp_mypassword123");
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].0, "vktemp_mypassword123");
+        assert_eq!(matches[0].1, "mypassword123");
+    }
+
+    #[test]
+    fn vktemp_multiple_patterns() {
+        let matches = extract_vktemp_matches("echo vktemp_aaa and vktemp_bbb");
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].1, "aaa");
+        assert_eq!(matches[1].1, "bbb");
+    }
+
+    #[test]
+    fn vktemp_stops_at_single_quote() {
+        let matches = extract_vktemp_matches("echo 'vktemp_secret'");
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].1, "secret");
+    }
+
+    #[test]
+    fn vktemp_stops_at_double_quote() {
+        let matches = extract_vktemp_matches("echo \"vktemp_secret\"");
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].1, "secret");
+    }
+
+    #[test]
+    fn vktemp_stops_at_space() {
+        let matches = extract_vktemp_matches("vktemp_pass1 vktemp_pass2");
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].1, "pass1");
+        assert_eq!(matches[1].1, "pass2");
+    }
+
+    #[test]
+    fn vktemp_at_end_of_line() {
+        let matches = extract_vktemp_matches("echo vktemp_endval");
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].1, "endval");
+    }
+
+    #[test]
+    fn vktemp_empty_value_skipped() {
+        // vktemp_ followed immediately by space -- regex requires [^\s'"]+
+        // so this should not match
+        let matches = extract_vktemp_matches("echo vktemp_ something");
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn vktemp_with_special_chars_in_value() {
+        let matches = extract_vktemp_matches("echo vktemp_p@ss!w0rd#123");
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].1, "p@ss!w0rd#123");
+    }
+
+    #[test]
+    fn vktemp_at_start_of_line() {
+        let matches = extract_vktemp_matches("vktemp_firstword rest");
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].1, "firstword");
     }
 }
