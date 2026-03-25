@@ -1,136 +1,123 @@
 #!/bin/bash
 set -euo pipefail
 
-# VeilKey LocalVault one-liner installer
-# Usage: curl -sL .../install-localvault.sh | bash
+# VeilKey LocalVault installer
+# All configuration via env vars — no hardcoded values.
 #
-# 현재 디렉토리에 localvault를 설치합니다.
-# 이미 설치되어 있으면 업데이트 후 재시작합니다.
+# Required:
+#   VEILKEY_CENTER_URL       VaultCenter 주소
+#   VEILKEY_REG_TOKEN        Registration token
 #
-# Options (env vars):
-#   VEILKEY_CENTER_URL=http://10.87.40.2:10181   vaultcenter 주소
-#   VEILKEY_PORT=10180                            localvault 포트
-#   VEILKEY_NAME=my-vault                         볼트 이름 (기본: hostname)
-#
-# ⚠️  이 스크립트의 실행으로 발생하는 모든 결과에 대한
-#     귀책사유는 실행자 본인에게 있습니다.
+# Optional:
+#   VEILKEY_PORT             포트 (default: 10180)
+#   VEILKEY_LABEL            볼트 이름 (default: hostname)
+#   VEILKEY_DATA_DIR         데이터 경로 (default: /data/localvault)
+#   VEILKEY_BIN_DIR          바이너리 경로 (default: /usr/local/bin)
+#   VEILKEY_TLS_INSECURE     TLS 검증 스킵 (default: 1)
+#   VEILKEY_TRUSTED_IPS      허용 IP (default: private ranges)
+#   VEILKEY_SYSTEMD          systemd 서비스 생성 (default: 1)
+#   VEILKEY_BINARY_URL       바이너리 다운로드 URL
 
-INSTALL_DIR="$(pwd)/.localvault"
-DATA_DIR="$INSTALL_DIR/data"
-PID_FILE="$INSTALL_DIR/localvault.pid"
-LOG_FILE="$INSTALL_DIR/localvault.log"
-BIN="$INSTALL_DIR/veilkey-localvault"
-ENV_FILE="$INSTALL_DIR/.env"
+CENTER_URL="${VEILKEY_CENTER_URL:-}"
+REG_TOKEN="${VEILKEY_REG_TOKEN:-}"
+
+if [[ -z "$CENTER_URL" ]]; then
+    echo "ERROR: VEILKEY_CENTER_URL is required"
+    echo "  export VEILKEY_CENTER_URL=https://<host>:<port>"
+    exit 1
+fi
+if [[ -z "$REG_TOKEN" ]]; then
+    echo "ERROR: VEILKEY_REG_TOKEN is required"
+    exit 1
+fi
 
 PORT="${VEILKEY_PORT:-10180}"
-CENTER_URL="${VEILKEY_CENTER_URL:-}"
-VAULT_NAME="${VEILKEY_NAME:-$(hostname)}"
-
-REPO_URL="https://github.com/veilkey/veilkey-selfhosted.git"
-REPO_DIR="$INSTALL_DIR/src"
+LABEL="${VEILKEY_LABEL:-$(hostname)}"
+DATA_DIR="${VEILKEY_DATA_DIR:-/data/localvault}"
+BIN_DIR="${VEILKEY_BIN_DIR:-/usr/local/bin}"
+TLS_INSECURE="${VEILKEY_TLS_INSECURE:-1}"
+TRUSTED_IPS="${VEILKEY_TRUSTED_IPS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.1}"
+USE_SYSTEMD="${VEILKEY_SYSTEMD:-1}"
+BINARY_URL="${VEILKEY_BINARY_URL:-}"
+BIN="$BIN_DIR/veilkey-localvault"
+ENV_FILE="$DATA_DIR/.env"
 
 echo "=== VeilKey LocalVault Installer ==="
-echo "설치 경로: $INSTALL_DIR"
-echo "포트:      $PORT"
-echo "볼트 이름: $VAULT_NAME"
-[[ -n "$CENTER_URL" ]] && echo "센터 URL:  $CENTER_URL"
-echo ""
+echo "  센터: $CENTER_URL"
+echo "  라벨: $LABEL | 포트: $PORT | 데이터: $DATA_DIR"
 
-# 0. Check Go
-if ! command -v go &>/dev/null; then
-    echo "ERROR: Go가 설치되어 있지 않습니다."
-    echo "  brew install go  또는  https://go.dev/dl/"
+# [1] Binary
+if [[ -n "$BINARY_URL" ]]; then
+    echo "[1/5] 바이너리 다운로드..."
+    mkdir -p "$BIN_DIR"
+    curl -sL "$BINARY_URL" -o "$BIN" && chmod +x "$BIN"
+elif command -v go &>/dev/null; then
+    echo "[1/5] 소스 빌드..."
+    REPO_DIR="${VEILKEY_REPO_DIR:-$(mktemp -d)}"
+    [ -d "$REPO_DIR/.git" ] || git clone --quiet --depth 1 https://github.com/veilkey/veilkey-selfhosted.git "$REPO_DIR"
+    cd "$REPO_DIR/services/localvault"
+    CGO_ENABLED=1 go build -o "$BIN" ./cmd
+elif [ -f "$BIN" ]; then
+    echo "[1/5] 기존 바이너리 사용"
+else
+    echo "ERROR: Go 없음, 바이너리 없음. VEILKEY_BINARY_URL을 설정하세요."
     exit 1
 fi
-GO_VER=$(go version | grep -oE 'go[0-9]+\.[0-9]+' | sed 's/go//')
-echo "[0/5] Go $GO_VER OK"
 
-# 1. Clone or update source
-mkdir -p "$INSTALL_DIR"
-if [ -d "$REPO_DIR/.git" ]; then
-    echo "[1/5] 소스 업데이트..."
-    cd "$REPO_DIR"
-    git pull --quiet
+# [2] Data dir
+echo "[2/5] 데이터 디렉토리..."
+mkdir -p "$DATA_DIR/certs"
+
+# [3] Init
+if [ -f "$DATA_DIR/veilkey.db" ]; then
+    echo "[3/5] 이미 초기화됨 — 스킵"
 else
-    echo "[1/5] 소스 다운로드..."
-    git clone --quiet --depth 1 "$REPO_URL" "$REPO_DIR"
+    echo "[3/5] 초기화..."
+    VEILKEY_TLS_INSECURE="$TLS_INSECURE" \
+    VEILKEY_DB_PATH="$DATA_DIR/veilkey.db" \
+    VEILKEY_SALT_PATH="$DATA_DIR/salt" \
+    VEILKEY_CERT_DIR="$DATA_DIR/certs" \
+    VEILKEY_LABEL="$LABEL" \
+    "$BIN" init --root --center "$CENTER_URL" --token "$REG_TOKEN"
 fi
 
-# 2. Build
-echo "[2/5] 빌드 중..."
-cd "$REPO_DIR/services/localvault"
-CGO_ENABLED=1 go build -o "$BIN" ./cmd
-echo "  빌드 완료: $BIN"
-
-# 3. Setup data directory and env
-echo "[3/5] 데이터 디렉토리 설정..."
-mkdir -p "$DATA_DIR"
-
-if [ -f "$ENV_FILE" ]; then
-    echo "  기존 설정 유지: $ENV_FILE"
-else
+# [4] Env file
+echo "[4/5] 환경 설정..."
 cat > "$ENV_FILE" << ENVEOF
 VEILKEY_DB_PATH=$DATA_DIR/veilkey.db
+VEILKEY_SALT_PATH=$DATA_DIR/salt
+VEILKEY_CERT_DIR=$DATA_DIR/certs
+VEILKEY_LABEL=$LABEL
+VEILKEY_VAULTCENTER_URL=$CENTER_URL
 VEILKEY_ADDR=:$PORT
-VEILKEY_TRUSTED_IPS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.1
-VEILKEY_MODE=root
-VEILKEY_VAULT_NAME=$VAULT_NAME
+VEILKEY_TLS_INSECURE=$TLS_INSECURE
+VEILKEY_TRUSTED_IPS=$TRUSTED_IPS
 ENVEOF
 
-if [[ -n "$CENTER_URL" ]]; then
-    echo "VEILKEY_VAULTCENTER_URL=$CENTER_URL" >> "$ENV_FILE"
-fi
-echo "  환경 설정: $ENV_FILE"
-echo "  (LOCKED 모드로 시작 — POST /api/unlock 으로 수동 unlock)"
-fi
-
-# 4. Stop existing process if running
-echo "[4/5] 기존 프로세스 확인..."
-if [ -f "$PID_FILE" ]; then
-    OLD_PID=$(cat "$PID_FILE" 2>/dev/null || echo "")
-    if [[ -n "$OLD_PID" ]] && kill -0 "$OLD_PID" 2>/dev/null; then
-        echo "  기존 프로세스 종료 (PID: $OLD_PID)"
-        kill "$OLD_PID" 2>/dev/null || true
-        sleep 2
-    fi
-    rm -f "$PID_FILE"
-fi
-
-# 5. Start
-echo "[5/5] LocalVault 시작..."
-cd "$INSTALL_DIR"
-set -a; source "$ENV_FILE"; set +a
-nohup "$BIN" server > "$LOG_FILE" 2>&1 &
-echo $! > "$PID_FILE"
-NEW_PID=$(cat "$PID_FILE")
-
-# Wait for startup
-sleep 2
-if kill -0 "$NEW_PID" 2>/dev/null; then
-    # Health check
-    if curl -s "http://localhost:$PORT/health" | grep -q '"ok"'; then
-        echo ""
-        echo "=== 설치 완료 ==="
-        echo ""
-        echo "  상태:    http://localhost:$PORT/health"
-        echo "  PID:     $NEW_PID"
-        echo "  로그:    $LOG_FILE"
-        echo "  데이터:  $DATA_DIR"
-        [[ -n "$CENTER_URL" ]] && echo "  센터:    $CENTER_URL (heartbeat 자동 연동)"
-        echo ""
-        echo "관리 명령:"
-        echo "  tail -f $LOG_FILE          # 로그 보기"
-        echo "  kill \$(cat $PID_FILE)      # 중지"
-        echo "  curl -sL ... | bash         # 업데이트 (같은 명령 재실행)"
-    else
-        echo ""
-        echo "⚠️  프로세스는 실행 중이지만 health check 실패"
-        echo "  로그 확인: tail -20 $LOG_FILE"
-    fi
+# [5] Service
+if [[ "$USE_SYSTEMD" == "1" ]] && command -v systemctl &>/dev/null; then
+    echo "[5/5] systemd 서비스..."
+    cat > /etc/systemd/system/veilkey-localvault.service << SVCEOF
+[Unit]
+Description=VeilKey LocalVault
+After=network.target
+[Service]
+Type=simple
+EnvironmentFile=$ENV_FILE
+ExecStart=$BIN server
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+    systemctl daemon-reload
+    systemctl enable --now veilkey-localvault
+    sleep 2
+    systemctl is-active --quiet veilkey-localvault && echo "=== 완료 ===" || { journalctl -u veilkey-localvault -n 5; exit 1; }
 else
-    echo ""
-    echo "❌ 시작 실패"
-    echo "  로그 확인: tail -20 $LOG_FILE"
-    tail -20 "$LOG_FILE"
-    exit 1
+    echo "[5/5] 프로세스 시작..."
+    cd "$DATA_DIR" && set -a && source "$ENV_FILE" && set +a
+    nohup "$BIN" server > "$DATA_DIR/localvault.log" 2>&1 &
+    echo $! > "$DATA_DIR/localvault.pid"
+    sleep 2 && echo "=== 완료 (PID: $(cat "$DATA_DIR/localvault.pid")) ==="
 fi

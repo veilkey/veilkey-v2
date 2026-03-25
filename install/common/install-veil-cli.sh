@@ -1,80 +1,85 @@
 #!/bin/bash
 set -euo pipefail
 
-# veil-cli installer for Linux
-# Builds and installs veil CLI to /usr/local/bin, configures connection to VeilKey.
-# Works on: Proxmox host, LXC containers, any Linux with Rust toolchain.
+# veil-cli installer
+# All configuration via env vars — no hardcoded values.
 #
-# Usage:
-#   VEILKEY_URL=https://<HOST>:<VC_PORT> bash install/common/install-veil-cli.sh
+# Required:
+#   VEILKEY_URL              VaultCenter URL (for login + mask-map)
 #
-# Options (env vars):
-#   VEILKEY_URL=   VeilKey server URL (required)
-#
-# ⚠️  이 스크립트의 실행으로 발생하는 모든 결과에 대한
-#     귀책사유는 실행자 본인에게 있습니다.
+# Optional:
+#   VEILKEY_BIN_DIR          바이너리 경로 (default: /usr/local/bin)
+#   VEILKEY_CONFIG_DIR       설정 경로 (default: ~/.veilkey)
+#   VEILKEY_TLS_INSECURE     TLS 검증 스킵 (default: 1)
+#   VEILKEY_BINARY_URL       바이너리 다운로드 URL
 
-if [ ! -f "Cargo.toml" ] || [ ! -d "services/veil-cli" ]; then
-    echo "ERROR: veilkey-selfhosted repo root에서 실행하세요."
+VEILKEY_URL="${VEILKEY_URL:-}"
+if [[ -z "$VEILKEY_URL" ]]; then
+    echo "ERROR: VEILKEY_URL is required"
+    echo "  export VEILKEY_URL=https://<vaultcenter-host>:<port>"
     exit 1
 fi
 
-if [[ -z "${VEILKEY_URL:-}" ]]; then
-    echo "ERROR: VEILKEY_URL is required."
-    echo ""
-    echo "Usage:"
-    echo "  VEILKEY_URL=https://<HOST>:<VC_PORT> bash install/common/install-veil-cli.sh"
-    exit 1
-fi
+BIN_DIR="${VEILKEY_BIN_DIR:-/usr/local/bin}"
+CONFIG_DIR="${VEILKEY_CONFIG_DIR:-$HOME/.veilkey}"
+TLS_INSECURE="${VEILKEY_TLS_INSECURE:-1}"
+BINARY_URL="${VEILKEY_BINARY_URL:-}"
 
-REPO_ROOT="$(pwd)"
-BIN_DIR="/usr/local/bin"
-CONFIG_DIR="$HOME/.veilkey"
-
-echo "=== veil-cli installer (Linux) ==="
-echo ""
+echo "=== veil-cli installer ==="
 echo "  URL: $VEILKEY_URL"
-echo ""
 
-# [1/3] Check prerequisites
-if ! command -v cargo &>/dev/null; then
-    echo "ERROR: cargo not found."
-    echo "  Install: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+# [1] Binary
+if [[ -n "$BINARY_URL" ]]; then
+    echo "[1/3] 바이너리 다운로드..."
+    mkdir -p "$BIN_DIR"
+    for bin in veil veilkey veilkey-cli veilkey-session-config; do
+        curl -sL "$BINARY_URL/$bin" -o "$BIN_DIR/$bin" && chmod +x "$BIN_DIR/$bin" 2>/dev/null || true
+    done
+elif command -v cargo &>/dev/null; then
+    echo "[1/3] 소스 빌드..."
+    REPO_ROOT="${VEILKEY_REPO_DIR:-$(pwd)}"
+    if [ ! -f "$REPO_ROOT/Cargo.toml" ] || [ ! -d "$REPO_ROOT/services/veil-cli" ]; then
+        echo "ERROR: veilkey-selfhosted repo root에서 실행하세요."
+        exit 1
+    fi
+    cd "$REPO_ROOT"
+    cargo build --release --quiet 2>&1 | tail -3
+    for bin in veil veilkey veilkey-cli veilkey-session-config; do
+        [ -f "target/release/$bin" ] && cp "target/release/$bin" "$BIN_DIR/$bin"
+    done
+else
+    echo "ERROR: cargo 없음, 바이너리 없음. VEILKEY_BINARY_URL을 설정하세요."
     exit 1
 fi
-echo "[1/3] Prerequisites OK"
+echo "  설치 완료: $BIN_DIR"
 
-# [2/3] Build
-echo "[2/3] Building veil CLI..."
-cargo build --release --quiet 2>&1 | tail -3
-
-for bin in veil veilkey veilkey-cli veilkey-session-config; do
-    if [ -f "$REPO_ROOT/target/release/$bin" ]; then
-        cp "$REPO_ROOT/target/release/$bin" "$BIN_DIR/$bin"
-    fi
-done
-echo "  Installed to $BIN_DIR"
-
-# [3/3] Configure
-echo "[3/3] Creating config..."
+# [2] Config
+echo "[2/3] 설정..."
 mkdir -p "$CONFIG_DIR/config"
 
-cat > "$CONFIG_DIR/env" << EOF
+cat > "$CONFIG_DIR/env" << ENVEOF
 #!/bin/sh
 export VEILKEY_LOCALVAULT_URL="$VEILKEY_URL"
-export VEILKEY_TLS_INSECURE=1
+export VEILKEY_TLS_INSECURE=$TLS_INSECURE
 export VEILKEY_CONFIG="$CONFIG_DIR/config/veilkey.yml"
 export VEILKEY_CLI_BIN=$BIN_DIR/veilkey-cli
-EOF
+ENVEOF
 
 [ -f "$CONFIG_DIR/config/veilkey.yml" ] || echo "threshold: 0.7" > "$CONFIG_DIR/config/veilkey.yml"
 
+# [3] Shell integration
+echo "[3/3] 셸 연동..."
+SHELL_RC=""
+if [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"
+elif [ -f "$HOME/.zshrc" ]; then SHELL_RC="$HOME/.zshrc"
+elif [ -f "$HOME/.profile" ]; then SHELL_RC="$HOME/.profile"
+fi
+
+if [[ -n "$SHELL_RC" ]] && ! grep -q "veilkey/env" "$SHELL_RC" 2>/dev/null; then
+    echo "source $CONFIG_DIR/env" >> "$SHELL_RC"
+    echo "  추가됨: $SHELL_RC"
+fi
+
 echo ""
-echo "=== Installation complete ==="
-echo ""
-echo "Usage:"
+echo "=== 설치 완료 ==="
 echo "  source $CONFIG_DIR/env && veil"
-echo ""
-echo "Or add to your shell profile:"
-echo "  echo 'source $CONFIG_DIR/env' >> ~/.bashrc"
-echo ""
