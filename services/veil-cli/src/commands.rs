@@ -505,20 +505,12 @@ fn traefik_init(args: &[String], api_url: &str) {
     let dns = dns.unwrap_or_else(|| "cloudflare".to_string());
 
     let client = VeilKeyClient::new(api_url);
-    let url = format!(
-        "{}/api/plugins/traefik-sync/api/routes",
-        client.base_url()
-    );
+    let url = format!("{}/api/plugins/traefik-sync/api/routes", client.base_url());
     let body = serde_json::json!({ "domain": domain, "dns": dns });
-    match client
-        .raw_post(&url, &body)
-    {
+    match client.raw_post(&url, &body) {
         Ok(resp) => {
             let result: serde_json::Value = resp.into_json().unwrap_or_default();
-            println!(
-                "Traefik config initialized: domain={}, dns={}",
-                domain, dns
-            );
+            println!("Traefik config initialized: domain={}, dns={}", domain, dns);
             if let Some(msg) = result["message"].as_str() {
                 println!("  {}", msg);
             }
@@ -532,10 +524,7 @@ fn traefik_init(args: &[String], api_url: &str) {
 
 fn traefik_status(api_url: &str) {
     let client = VeilKeyClient::new(api_url);
-    let url = format!(
-        "{}/api/plugins/traefik-sync/api/routes",
-        client.base_url()
-    );
+    let url = format!("{}/api/plugins/traefik-sync/api/routes", client.base_url());
     match client.raw_get(&url) {
         Ok(resp) => {
             let result: serde_json::Value = resp.into_json().unwrap_or_default();
@@ -578,10 +567,7 @@ fn traefik_destroy(args: &[String], api_url: &str) {
     let purge = args.iter().any(|a| a == "--purge");
 
     let client = VeilKeyClient::new(api_url);
-    let mut url = format!(
-        "{}/api/plugins/traefik-sync/api/routes",
-        client.base_url()
-    );
+    let mut url = format!("{}/api/plugins/traefik-sync/api/routes", client.base_url());
     if purge {
         url.push_str("?purge=true");
     }

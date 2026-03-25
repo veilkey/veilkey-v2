@@ -153,7 +153,11 @@ impl VeilKeyClient {
     }
 
     #[allow(clippy::result_large_err)]
-    pub fn raw_post(&self, url: &str, body: &serde_json::Value) -> Result<ureq::Response, ureq::Error> {
+    pub fn raw_post(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> Result<ureq::Response, ureq::Error> {
         let mut req = self.agent.post(url).set("Content-Type", "application/json");
         if let Some(cookie) = self.cookie_header() {
             req = req.set("Cookie", &cookie);
@@ -200,6 +204,34 @@ impl VeilKeyClient {
             .ok_or("missing token in response")?
             .to_string();
 
+        self.cache
+            .lock()
+            .unwrap()
+            .insert(value.to_string(), token.clone());
+        Ok(token)
+    }
+
+    /// Issue a secret with a specific scope (e.g. "SSH").
+    pub fn issue_with_scope(&self, value: &str, scope: &str) -> Result<String, String> {
+        let value = value.trim_end_matches(['\r', '\n']);
+        let body = serde_json::json!({ "plaintext": value, "scope": scope });
+        let mut req = self
+            .agent
+            .post(&format!("{}/api/encrypt", self.base_url))
+            .set("Content-Type", "application/json");
+        if let Some(cookie) = self.cookie_header() {
+            req = req.set("Cookie", &cookie);
+        }
+        let resp = req
+            .send_json(&body)
+            .map_err(|e| format!("API request failed: {}", e))?;
+        let result: serde_json::Value = resp
+            .into_json()
+            .map_err(|e| format!("API response decode failed: {}", e))?;
+        let token = result["token"]
+            .as_str()
+            .ok_or("missing token in response")?
+            .to_string();
         self.cache
             .lock()
             .unwrap()

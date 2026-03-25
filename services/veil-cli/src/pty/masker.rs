@@ -14,6 +14,8 @@ const RESET: &str = "\x1b[0m";
 pub fn colorize_ref(vk_ref: &str) -> String {
     if vk_ref.contains(":TEMP:") {
         format!("{}{}{}{}", BOLD, RED, vk_ref, RESET)
+    } else if vk_ref.contains(":SSH:") {
+        format!("{}{}{}{}", BOLD, GREEN, vk_ref, RESET)
     } else if vk_ref.contains(":LOCAL:")
         || vk_ref.starts_with("VK:")
         || vk_ref.chars().all(|c| c.is_ascii_hexdigit() || c == ' ')

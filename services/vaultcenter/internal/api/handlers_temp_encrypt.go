@@ -20,6 +20,7 @@ var tempKeyTTL = cmdutil.ParseDurationEnv("VEILKEY_TEMP_KEY_TTL", 1*time.Hour)
 func (s *Server) handleTempEncrypt(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Plaintext string `json:"plaintext"`
+		Scope     string `json:"scope"`
 		Name      string `json:"name"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
@@ -68,9 +69,18 @@ func (s *Server) handleTempEncrypt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	parts := db.RefParts{Family: db.RefFamilyVK, Scope: db.RefScopeTemp, ID: refID}
+	scope := db.RefScopeTemp
+	if req.Scope == "SSH" {
+		scope = db.RefScopeSSH
+	}
+	parts := db.RefParts{Family: db.RefFamilyVK, Scope: scope, ID: refID}
 	encoded := crypto.EncodeCiphertext(ciphertext, nonce)
-	expiresAt := time.Now().UTC().Add(tempKeyTTL)
+	var expiresAt time.Time
+	if scope == db.RefScopeSSH {
+		// SSH keys do not expire
+	} else {
+		expiresAt = time.Now().UTC().Add(tempKeyTTL)
+	}
 
 	nodeInfo, err := s.db.GetNodeInfo()
 	if err != nil {
@@ -88,7 +98,7 @@ func (s *Server) handleTempEncrypt(w http.ResponseWriter, r *http.Request) {
 		Ciphertext:    encoded,
 		Version:       nodeInfo.Version,
 		Status:        refs.RefStatus(db.RefStatusTemp),
-		ExpiresAt:     &expiresAt,
+		ExpiresAt:     func() *time.Time { if expiresAt.IsZero() { return nil }; return &expiresAt }(),
 	}); err != nil {
 		s.respondError(w, http.StatusInternalServerError, "failed to save temp ref")
 		return

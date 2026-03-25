@@ -56,3 +56,4 @@ packages/veil-cli/native/
 .localvault/
 tests/smoke/results/*.tap
 services/vaultcenter/vaultcenter
+services/localvault/internal/api/?_*

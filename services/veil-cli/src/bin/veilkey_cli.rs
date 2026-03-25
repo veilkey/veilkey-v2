@@ -308,8 +308,78 @@ fn main() {
                 }
             }
         }
+        "ssh" => {
+            let subcmd = cmd_args.first().map(String::as_str).unwrap_or_else(|| {
+                eprintln!("Usage: veilkey ssh <add|list|pubkey|remove> [args]");
+                process::exit(1);
+            });
+            let password = std::env::var("VEILKEY_PASSWORD").unwrap_or_else(|_| {
+                rpassword::prompt_password("VeilKey password: ").unwrap_or_default()
+            });
+            let client = veil_cli_rs::api::VeilKeyClient::new(&api_url);
+            if let Err(e) = client.admin_login(&password) {
+                eprintln!("[veilkey] login failed: {}", e);
+                process::exit(1);
+            }
+            match subcmd {
+                "add" => {
+                    let keyfile = cmd_args.get(1).map(String::as_str).unwrap_or_else(|| {
+                        eprintln!("Usage: veilkey ssh add <keyfile> [--label name]");
+                        process::exit(1);
+                    });
+                    let private_key = std::fs::read_to_string(keyfile).unwrap_or_else(|e| {
+                        eprintln!("[veilkey] failed to read {}: {}", keyfile, e);
+                        process::exit(1);
+                    });
+                    // Store private key as a secret via issue()
+                    match client.issue_with_scope(private_key.trim(), "SSH") {
+                        Ok(vk_ref) => {
+                            println!("{}", vk_ref);
+
+                            // Try to find and show public key
+                            let pub_path = format!("{}.pub", keyfile);
+                            if let Ok(pubkey) = std::fs::read_to_string(&pub_path) {
+                                eprintln!("[veilkey] public key: {}", pubkey.trim());
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[veilkey] ssh add failed: {}", e);
+                            process::exit(1);
+                        }
+                    }
+                }
+                "list" => {
+                    // SSH keys are secrets with VK:SSH scope — list via mask_map
+                    match client.fetch_all_secrets_mask_map() {
+                        Some(map) => {
+                            let ssh_keys: Vec<_> =
+                                map.iter().filter(|(_, r)| r.contains(":SSH:")).collect();
+                            if ssh_keys.is_empty() {
+                                println!("No SSH keys registered");
+                            } else {
+                                for (_, vk_ref) in &ssh_keys {
+                                    println!("{}", vk_ref);
+                                }
+                                println!("\nTotal: {} key(s)", ssh_keys.len());
+                            }
+                        }
+                        None => {
+                            eprintln!("[veilkey] failed to fetch keys");
+                            process::exit(1);
+                        }
+                    }
+                }
+                _ => {
+                    eprintln!("Unknown ssh subcommand: {}", subcmd);
+                    eprintln!("Usage: veilkey ssh <add|list> [args]");
+                    process::exit(1);
+                }
+            }
+        }
         "version" => println!("veilkey {}", VERSION),
-        "traefik" => commands::cmd_traefik(&cmd_args, &api_url, &log_path, patterns_file.as_deref()),
+        "traefik" => {
+            commands::cmd_traefik(&cmd_args, &api_url, &log_path, patterns_file.as_deref())
+        }
         "help" | "-h" | "--help" => print_usage(),
         unknown => {
             eprintln!("Unknown command: {}", unknown);

@@ -17,6 +17,7 @@ const (
 	RefScopeLocal    = refs.RefScopeLocal
 	RefScopeTemp     = refs.RefScopeTemp
 	RefScopeExternal = refs.RefScopeExternal
+	RefScopeSSH      = RefScope("SSH")
 )
 
 const (
