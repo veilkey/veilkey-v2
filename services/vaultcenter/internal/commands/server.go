@@ -1,11 +1,15 @@
 package commands
 
 import (
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"veilkey-vaultcenter/internal/api"
 )
@@ -25,6 +29,9 @@ func RunServer() {
 		RunSetupServer(dbPath, dataDir)
 		return
 	}
+
+	// Auto-backup DB on startup (before unlock)
+	autoBackupDB(dbPath)
 
 	salt, err := os.ReadFile(saltFile)
 	if err != nil {
@@ -81,4 +88,57 @@ func RunServer() {
 			log.Fatalf("Server failed: %v", err)
 		}
 	}
+}
+
+// autoBackupDB creates a timestamped backup of the DB file on startup.
+// It keeps at most 5 backups in a "backups" subdirectory, removing the oldest
+// when the limit is exceeded.
+func autoBackupDB(dbPath string) {
+	if _, err := os.Stat(dbPath); err != nil {
+		return // no DB to backup
+	}
+	backupDir := filepath.Join(filepath.Dir(dbPath), "backups")
+	if err := os.MkdirAll(backupDir, 0700); err != nil {
+		log.Printf("Auto-backup: failed to create backup dir: %v", err)
+		return
+	}
+
+	// Keep last 5 backups
+	entries, _ := os.ReadDir(backupDir)
+	var backups []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "veilkey.db.") {
+			backups = append(backups, filepath.Join(backupDir, e.Name()))
+		}
+	}
+	sort.Strings(backups)
+	for len(backups) >= 5 {
+		_ = os.Remove(backups[0])
+		backups = backups[1:]
+	}
+
+	// Copy current DB
+	timestamp := time.Now().Format("20060102-150405")
+	dst := filepath.Join(backupDir, fmt.Sprintf("veilkey.db.%s", timestamp))
+
+	srcFile, err := os.Open(dbPath)
+	if err != nil {
+		log.Printf("Auto-backup: failed to open source DB: %v", err)
+		return
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		log.Printf("Auto-backup: failed to create backup file: %v", err)
+		return
+	}
+	defer dstFile.Close()
+
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		log.Printf("Auto-backup: failed to copy DB: %v", err)
+		return
+	}
+
+	log.Printf("Auto-backup: %s", dst)
 }

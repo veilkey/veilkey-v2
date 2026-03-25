@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -72,4 +74,89 @@ func searchString(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestAutoBackupDBCreatesBackup(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "veilkey.db")
+
+	// Create a fake DB
+	if err := os.WriteFile(dbPath, []byte("test-db-content"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	autoBackupDB(dbPath)
+
+	// Check backup dir was created
+	backupDir := filepath.Join(tmpDir, "backups")
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		t.Fatalf("backup dir not created: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 backup, got %d", len(entries))
+	}
+
+	// Check backup content matches
+	backupPath := filepath.Join(backupDir, entries[0].Name())
+	data, err := os.ReadFile(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "test-db-content" {
+		t.Errorf("backup content mismatch: got %q", string(data))
+	}
+}
+
+func TestAutoBackupDBKeepsMax5(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "veilkey.db")
+
+	// Create a fake DB
+	if err := os.WriteFile(dbPath, []byte("db"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-create 6 old backups
+	backupDir := filepath.Join(tmpDir, "backups")
+	if err := os.MkdirAll(backupDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 6; i++ {
+		name := fmt.Sprintf("veilkey.db.2026010%d-120000", i)
+		if err := os.WriteFile(filepath.Join(backupDir, name), []byte("old"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	autoBackupDB(dbPath)
+
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Count only veilkey.db.* entries
+	count := 0
+	for _, e := range entries {
+		if len(e.Name()) > 10 && e.Name()[:10] == "veilkey.db" {
+			count++
+		}
+	}
+	if count > 5 {
+		t.Errorf("expected at most 5 backups, got %d", count)
+	}
+}
+
+func TestAutoBackupDBNoDBNoOp(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "veilkey.db")
+
+	// No DB file — should not panic or create backup dir
+	autoBackupDB(dbPath)
+
+	backupDir := filepath.Join(tmpDir, "backups")
+	if _, err := os.Stat(backupDir); !os.IsNotExist(err) {
+		t.Error("backup dir should not be created when DB does not exist")
+	}
 }
