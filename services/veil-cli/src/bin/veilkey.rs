@@ -17,6 +17,8 @@ fn print_usage() {
     println!("  veilkey status                       Show VeilKey status");
     println!("  veilkey paste-mode [on|off|status]   Control standalone pasted temp issuance");
     println!("  veilkey create [value]                Create a temp ref (VK:TEMP:xxx)");
+    println!("  veilkey resolve <VK:ref>              Decrypt and print a VeilKey reference");
+    println!("  veilkey function <list|add|remove>     Manage global functions");
     println!("  veilkey encrypt                      Encrypt plaintext into a VeilKey ref");
     println!("  veilkey scan [args...]               Run secret scan");
     println!("  veilkey filter [args...]             Run secret filter");
