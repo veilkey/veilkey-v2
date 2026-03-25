@@ -114,34 +114,22 @@ func (m sshModel) view(width int) string {
 	header := fmt.Sprintf("  %-24s %-10s %-20s", "REF", "STATUS", "CREATED")
 	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(header) + "\n")
 	sepLen := width - 4
-	if sepLen > 56 {
-		sepLen = 56
-	}
-	if sepLen < 0 {
-		sepLen = 0
-	}
+	if sepLen > 56 { sepLen = 56 }
+	if sepLen < 0 { sepLen = 0 }
 	b.WriteString("  " + strings.Repeat("\u2500", sepLen) + "\n")
 	for i, key := range m.keys {
 		prefix := "  "
-		if i == m.cursor {
-			prefix = "> "
-		}
+		if i == m.cursor { prefix = "> " }
 		ss := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-		if key.Status != "active" {
-			ss = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-		}
+		if key.Status != "active" { ss = lipgloss.NewStyle().Foreground(lipgloss.Color("8")) }
 		line := fmt.Sprintf("%s%-24s %s  %-20s", prefix, key.Ref, ss.Render(fmt.Sprintf("%-8s", key.Status)), key.CreatedAt)
-		if i == m.cursor {
-			line = lipgloss.NewStyle().Bold(true).Render(line)
-		}
+		if i == m.cursor { line = lipgloss.NewStyle().Bold(true).Render(line) }
 		b.WriteString(line + "\n")
 	}
 	b.WriteString("\n")
 	if m.confirm {
 		ref := ""
-		if m.cursor < len(m.keys) {
-			ref = m.keys[m.cursor].Ref
-		}
+		if m.cursor < len(m.keys) { ref = m.keys[m.cursor].Ref }
 		b.WriteString("  " + styleError.Render(fmt.Sprintf(T("ssh.confirm_delete"), ref)) + "\n")
 	} else {
 		b.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(T("ssh.help")) + "\n")

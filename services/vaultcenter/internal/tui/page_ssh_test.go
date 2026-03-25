@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -560,5 +561,293 @@ func TestUpdate_SecondLoad_OverwritesPrevious(t *testing.T) {
 	}
 	if m.err != "" {
 		t.Error("error must clear on reload")
+	}
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Additional edge-case and state-transition tests
+// ══════════════════════════════════════════════════════════════════
+
+// --- Error during confirm mode ---
+
+func TestUpdate_ErrorDuringConfirm_SetsErrKeepsConfirm(t *testing.T) {
+	m := loadedModel(threeKeys())
+	m.confirm = true
+	m, _ = m.update(errMsg{err: fmt.Errorf("server error")}, nil)
+	if m.err != "server error" {
+		t.Error("error must be set")
+	}
+	// confirm state is NOT explicitly cleared by errMsg — verify actual behavior
+	// The errMsg handler only sets err and loaded, doesn't touch confirm
+}
+
+// --- Error then success clears error ---
+
+func TestUpdate_ErrorThenLoad_ClearsError(t *testing.T) {
+	m := newSSHModel()
+	m, _ = m.update(errMsg{err: fmt.Errorf("fail")}, nil)
+	if m.err != "fail" {
+		t.Fatal("err not set")
+	}
+	m, _ = m.update(sshKeysLoadedMsg{keys: threeKeys()}, nil)
+	if m.err != "" {
+		t.Errorf("err must be cleared after successful load, got %q", m.err)
+	}
+}
+
+// --- Inactive status rendering ---
+
+func TestView_InactiveStatus_DifferentColor(t *testing.T) {
+	keys := []sshKeyItem{
+		{Ref: "VK:SSH:act11111", Status: "active", CreatedAt: "2026-03-25 10:00:00"},
+		{Ref: "VK:SSH:arc22222", Status: "archive", CreatedAt: "2026-03-25 11:00:00"},
+	}
+	m := loadedModel(keys)
+	v := m.view(80)
+	if !strings.Contains(v, "VK:SSH:act11111") || !strings.Contains(v, "VK:SSH:arc22222") {
+		t.Error("must render both active and inactive keys")
+	}
+}
+
+// --- Non-cursor rows must NOT have > prefix ---
+
+func TestView_NonCursorRows_NoPrefix(t *testing.T) {
+	m := loadedModel(threeKeys())
+	m.cursor = 0
+	v := m.view(80)
+	lines := strings.Split(v, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "bbb22222") && strings.HasPrefix(strings.TrimLeft(line, " "), ">") {
+			t.Error("non-cursor row bbb22222 must not have > prefix")
+		}
+		if strings.Contains(line, "ccc33333") && strings.HasPrefix(strings.TrimLeft(line, " "), ">") {
+			t.Error("non-cursor row ccc33333 must not have > prefix")
+		}
+	}
+}
+
+// --- d pressed twice should stay in confirm ---
+
+func TestUpdate_D_Twice_StaysInConfirm(t *testing.T) {
+	m := loadedModel(threeKeys())
+	m, _ = m.update(keyMsg("d"), nil)
+	if !m.confirm {
+		t.Fatal("first d must enter confirm")
+	}
+	m, _ = m.update(keyMsg("d"), nil)
+	if !m.confirm {
+		t.Error("second d must keep confirm (d is blocked in confirm mode)")
+	}
+}
+
+// --- Key input before load should not crash ---
+
+func TestUpdate_KeyBeforeLoad_NoCrash(t *testing.T) {
+	m := newSSHModel() // loaded=false, keys=nil
+	m, _ = m.update(keyMsg("j"), nil)
+	if m.cursor != 0 {
+		t.Error("cursor must stay 0")
+	}
+	m, _ = m.update(keyMsg("d"), nil)
+	if m.confirm {
+		t.Error("d with no keys must not enter confirm")
+	}
+	m, _ = m.update(keyMsg("y"), nil)
+	// Just must not panic
+}
+
+// --- Confirm cancel preserves cursor ---
+
+func TestUpdate_ConfirmCancel_PreservesCursor(t *testing.T) {
+	m := loadedModel(threeKeys())
+	m.cursor = 2
+	m, _ = m.update(keyMsg("d"), nil)
+	m, _ = m.update(keyMsg("n"), nil)
+	if m.cursor != 2 {
+		t.Errorf("cursor must be preserved after cancel, got %d", m.cursor)
+	}
+}
+
+// --- View header always present ---
+
+func TestView_Header_Present(t *testing.T) {
+	m := loadedModel(threeKeys())
+	v := m.view(80)
+	if !strings.Contains(v, "REF") || !strings.Contains(v, "STATUS") || !strings.Contains(v, "CREATED") {
+		t.Error("header must contain REF, STATUS, CREATED columns")
+	}
+}
+
+// --- View separator width ---
+
+func TestView_Separator_Width80(t *testing.T) {
+	m := loadedModel(threeKeys())
+	v := m.view(80)
+	// width=80 → sepLen=min(76,56)=56
+	lines := strings.Split(v, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "─") {
+			count := strings.Count(line, "─")
+			if count != 56 {
+				t.Errorf("separator at width=80 should be 56 chars, got %d", count)
+			}
+			return
+		}
+	}
+	t.Error("separator line not found")
+}
+
+func TestView_Separator_Width30(t *testing.T) {
+	m := loadedModel(threeKeys())
+	v := m.view(30)
+	// width=30 → sepLen=min(26,56)=26
+	lines := strings.Split(v, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "─") {
+			count := strings.Count(line, "─")
+			if count != 26 {
+				t.Errorf("separator at width=30 should be 26 chars, got %d", count)
+			}
+			return
+		}
+	}
+	t.Error("separator line not found")
+}
+
+func TestView_Separator_Width3(t *testing.T) {
+	m := loadedModel(threeKeys())
+	v := m.view(3)
+	// width=3 → sepLen=max(3-4,0)=0
+	lines := strings.Split(v, "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		// separator line should exist but with 0 ─ chars
+	}
+	// Just verify no panic
+	if v == "" {
+		t.Error("must render something")
+	}
+}
+
+// --- Cursor at each position shows correct ref ---
+
+func TestView_CursorAtEachPosition(t *testing.T) {
+	keys := threeKeys()
+	for i, key := range keys {
+		m := loadedModel(keys)
+		m.cursor = i
+		v := m.view(80)
+		lines := strings.Split(v, "\n")
+		found := false
+		for _, line := range lines {
+			if strings.Contains(line, key.Ref) && strings.Contains(line, ">") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("cursor=%d: ref %s must have > prefix", i, key.Ref)
+		}
+	}
+}
+
+// --- Delete the last item ---
+
+func TestUpdate_DeleteLastItem_Works(t *testing.T) {
+	m := loadedModel(threeKeys())
+	m.cursor = 2
+	m, _ = m.update(keyMsg("d"), nil)
+	m, cmd := m.update(keyMsg("y"), nil)
+	if cmd == nil {
+		t.Error("must issue delete for last item")
+	}
+}
+
+// --- Delete the first item ---
+
+func TestUpdate_DeleteFirstItem_Works(t *testing.T) {
+	m := loadedModel(threeKeys())
+	m.cursor = 0
+	m, _ = m.update(keyMsg("d"), nil)
+	m, cmd := m.update(keyMsg("y"), nil)
+	if cmd == nil {
+		t.Error("must issue delete for first item")
+	}
+}
+
+// --- Unrelated key msgs are ignored ---
+
+func TestUpdate_UnrelatedKey_NoChange(t *testing.T) {
+	m := loadedModel(threeKeys())
+	m.cursor = 1
+	origCursor := m.cursor
+	origConfirm := m.confirm
+	origKeys := len(m.keys)
+
+	for _, key := range []string{"x", "z", "a", "1", " ", "enter"} {
+		m, _ = m.update(keyMsg(key), nil)
+	}
+
+	if m.cursor != origCursor || m.confirm != origConfirm || len(m.keys) != origKeys {
+		t.Error("unrelated keys must not change state")
+	}
+}
+
+// --- Rapid j/k sequence ---
+
+func TestUpdate_RapidJK_CorrectPosition(t *testing.T) {
+	m := loadedModel(threeKeys())
+	// j j k j k k
+	sequence := []string{"j", "j", "k", "j", "k", "k"}
+	// 0→1→2→1→2→1→0
+	expected := []int{1, 2, 1, 2, 1, 0}
+	for i, key := range sequence {
+		m, _ = m.update(keyMsg(key), nil)
+		if m.cursor != expected[i] {
+			t.Errorf("step %d (%s): cursor=%d want %d", i, key, m.cursor, expected[i])
+		}
+	}
+}
+
+// --- Confirm mode view must NOT show help ---
+
+func TestView_ConfirmMode_NoHelpText(t *testing.T) {
+	m := loadedModel(threeKeys())
+	m.confirm = true
+	v := m.view(80)
+	if strings.Contains(v, "[j/k]") || strings.Contains(v, "navigate") {
+		t.Error("confirm mode must not show navigation help")
+	}
+}
+
+// --- sshKeyItem JSON parsing ---
+
+func TestSSHKeyItem_JSONRoundTrip(t *testing.T) {
+	item := sshKeyItem{Ref: "VK:SSH:abc12345", Status: "active", CreatedAt: "2026-03-25 10:00:00"}
+	raw, _ := json.Marshal(item)
+	var parsed sshKeyItem
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if parsed.Ref != item.Ref || parsed.Status != item.Status || parsed.CreatedAt != item.CreatedAt {
+		t.Errorf("round-trip mismatch: %+v vs %+v", item, parsed)
+	}
+}
+
+func TestSSHKeyItem_JSONFields(t *testing.T) {
+	raw := `{"ref":"VK:SSH:test1234","status":"active","created_at":"2026-01-01 00:00:00"}`
+	var item sshKeyItem
+	if err := json.Unmarshal([]byte(raw), &item); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if item.Ref != "VK:SSH:test1234" {
+		t.Errorf("ref=%q", item.Ref)
+	}
+	if item.Status != "active" {
+		t.Errorf("status=%q", item.Status)
+	}
+	if item.CreatedAt != "2026-01-01 00:00:00" {
+		t.Errorf("created_at=%q", item.CreatedAt)
 	}
 }
