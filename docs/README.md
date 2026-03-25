@@ -18,6 +18,7 @@
 | [setup.md](./setup.md) | Legacy redirect → setup/ |
 | [installation.md](./installation.md) | Legacy quick start (see install/ for platform guides) |
 | [cli.md](./cli.md) | CLI reference (veil, veilkey, veilkey-cli) |
+| [data-safety.md](./data-safety.md) | Data safety, backup, disaster recovery, KEK management |
 | [security-model.md](./security-model.md) | Security model, PTY masking, threat boundaries |
 | [OPERATING-MODEL.md](./OPERATING-MODEL.md) | Operational model, heartbeat, key rotation |
 | [contributing.md](./contributing.md) | Contribution guidelines |
