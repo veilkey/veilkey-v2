@@ -952,4 +952,87 @@ mod tests {
             "non-repeated alpha (not sequential)"
         );
     }
+
+    // ── v2 path-based ref support ──────────────────────────────────
+
+    #[test]
+    fn v2_ref_not_trivial() {
+        assert!(
+            !is_trivial_value("VK:host-lv/cloudflare/api-key"),
+            "v2 VK ref must not be trivial"
+        );
+        assert!(
+            !is_trivial_value("VK:soulflow-lv/db/password"),
+            "v2 VK ref must not be trivial"
+        );
+    }
+
+    #[test]
+    fn v2_ref_excluded_by_veilkey_regex() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        // v2 path refs should match
+        assert!(re.is_match("VK:host-lv/cloudflare/api-key"));
+        assert!(re.is_match("VK:soulflow-lv/db/password"));
+        assert!(re.is_match("VK:my-vault/owner/secret-name"));
+        // v1 refs should still match
+        assert!(re.is_match("VK:LOCAL:3c3d53ea"));
+        assert!(re.is_match("VK:TEMP:abcdef01"));
+        assert!(re.is_match("VK:SSH:1234abcd"));
+        assert!(re.is_match("VK:3c3d53ea"));
+        // invalid v2 paths should NOT match
+        assert!(!re.is_match("VK:Host/Upper/case"));
+        assert!(!re.is_match("VK:-bad/start/here"));
+    }
+
+    #[test]
+    fn v2_ref_detected_in_env_line() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        let line = "CLOUDFLARE_API_KEY=VK:host-lv/cloudflare/api-key";
+        let m = re.find(line).expect("should find v2 ref in .env line");
+        assert_eq!(m.as_str(), "VK:host-lv/cloudflare/api-key");
+    }
+
+    #[test]
+    fn v2_ref_mixed_env_file() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        let content = "DB_PASS=VK:LOCAL:3c3d53ea\nAPI_KEY=VK:host-lv/cloudflare/api-key\n";
+        let matches: Vec<&str> = re.find_iter(content).map(|m| m.as_str()).collect();
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0], "VK:LOCAL:3c3d53ea");
+        assert_eq!(matches[1], "VK:host-lv/cloudflare/api-key");
+    }
+
+    #[test]
+    fn v2_ref_protected_in_process_line() {
+        let config = empty_config();
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let logger = SessionLogger::new("/dev/null");
+        let mut det = SecretDetector::new(&config, &client, &logger, true);
+
+        let line = "export VAR=VK:host-lv/cloudflare/api-key";
+        let result = det.process_line(line);
+        assert!(
+            result.contains("VK:host-lv/cloudflare/api-key"),
+            "v2 VK refs must be preserved in process_line, got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn v2_ref_not_detected_as_secret() {
+        let config = generic_secret_config();
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let logger = SessionLogger::new("/dev/null");
+        let det = SecretDetector::new(&config, &client, &logger, true);
+
+        let line = "secret=VK:host-lv/cloudflare/api-key";
+        let detections = det.detect_secrets(line);
+        assert!(
+            detections.is_empty(),
+            "v2 VK ref should be excluded from detection, got {} detections",
+            detections.len()
+        );
+    }
 }
