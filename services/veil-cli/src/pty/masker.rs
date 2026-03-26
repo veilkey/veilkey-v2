@@ -223,8 +223,16 @@ pub fn mask_output(
     for (leaked, replacement) in &cross_chunk_replacements {
         output = output.replacen(leaked, replacement, 1);
     }
+    // mask_map replacement: skip secrets that the user just typed (readline echo).
+    // Full ref is longer than original → breaks readline cursor → VK:LOC fragments.
+    // Completed output lines (bash errors, command output) are NOT in recent_input,
+    // so they are always masked with full VK:LOCAL:xxx ref.
     for (plaintext, vk_ref) in mask_map {
         if plaintext.is_empty() {
+            continue;
+        }
+        // Skip readline echo — user's own typing should not be replaced mid-line
+        if !recent_input.is_empty() && recent_input.contains(plaintext.as_str()) {
             continue;
         }
         let repl = padded_colorize_ref(vk_ref, UnicodeWidthStr::width(plaintext.as_str()));
@@ -1493,15 +1501,15 @@ mod tests {
 
     #[test]
     fn test_mask_output_recent_input_skips() {
-        // When the secret was recently typed as input, masking is skipped
-        // (to avoid masking what the user intentionally typed)
+        // When the secret was recently typed (readline echo), mask_map skips it
+        // to prevent full ref (longer than original) from breaking readline cursor.
+        // Completed output lines (bash errors) are NOT in recent_input → always masked.
         let map = vec![("typed-secret-12".to_string(), "VK:LOCAL:skip1".to_string())];
         let (output, _) = mask_with_input("typed-secret-12", &map, "typed-secret-12", "");
         let visible = strip_ansi(&output);
-        // The mask_map replacement still happens because recent_input only
-        // affects pattern-detected secrets, not mask_map entries
-        // mask_map is always applied regardless of recent_input
-        assert!(!visible.contains("typed-secret-12") || visible.contains("VK:LOCAL:skip1"));
+        // Readline echo: secret should NOT be replaced (prevents VK:LOC fragments)
+        assert!(visible.contains("typed-secret-12"),
+            "readline echo should pass through to prevent cursor desync");
     }
 
     #[test]
