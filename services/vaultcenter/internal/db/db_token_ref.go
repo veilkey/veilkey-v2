@@ -150,6 +150,17 @@ func DefaultRefStatus(scope RefScope) RefStatus {
 func (d *DB) GetRef(canonical string) (*TokenRef, error) {
 	return dbFirst[TokenRef](d, "ref "+canonical+" not found", "ref_canonical = ?", canonical)
 }
+
+// GetRefByPath looks up an active TokenRef by its v2 ref_path field.
+func (d *DB) GetRefByPath(path string) (*TokenRef, error) {
+	return dbFirst[TokenRef](d, "ref path "+path+" not found", "ref_path = ? AND status IN ('active','temp')", path)
+}
+
+// GetRefByVaultAndPath looks up an active TokenRef by vault name and path.
+func (d *DB) GetRefByVaultAndPath(vault, path string) (*TokenRef, error) {
+	return dbFirst[TokenRef](d, "ref not found for vault "+vault+" path "+path,
+		"ref_vault = ? AND ref_path = ? AND status IN ('active','temp')", vault, path)
+}
 func (d *DB) ListRefs() ([]TokenRef, error) {
 	var refs []TokenRef
 	err := d.conn.Order("ref_canonical ASC").Find(&refs).Error
