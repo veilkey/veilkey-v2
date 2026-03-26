@@ -252,11 +252,26 @@ impl VeilKeyClient {
     }
 
     fn resolve_once(&self, r#ref: &str) -> Result<String, String> {
-        let url = format!(
-            "{}/api/resolve/{}",
-            self.base_url,
-            urlencoding::encode(r#ref)
-        );
+        // v2 path-based refs contain "/" (e.g. "host-lv/owner/password")
+        // → route to /api/resolve-agent/ with path segments intact
+        let url = if r#ref.contains('/') {
+            let segments: Vec<&str> = r#ref.splitn(3, '/').collect();
+            let encoded_segments: Vec<String> = segments
+                .iter()
+                .map(|s| urlencoding::encode(s).into_owned())
+                .collect();
+            format!(
+                "{}/api/resolve-agent/{}",
+                self.base_url,
+                encoded_segments.join("/")
+            )
+        } else {
+            format!(
+                "{}/api/resolve/{}",
+                self.base_url,
+                urlencoding::encode(r#ref)
+            )
+        };
         let mut req = self.agent.get(&url);
         if let Some(cookie) = self.cookie_header() {
             req = req.set("Cookie", &cookie);
@@ -2355,5 +2370,56 @@ mod connection_domain_tests {
         assert!(src.contains("veilkey secret list"));
         assert!(src.contains("veilkey secret get"));
         assert!(src.contains("veilkey secret delete"));
+    }
+
+    // ── v2 path-based resolve_candidates ─────────────────────────────
+
+    #[test]
+    fn test_resolve_candidates_v2_path_ref() {
+        // VK:host-lv/owner/password has 1 colon → strips VK: prefix
+        let candidates = super::resolve_candidates("VK:host-lv/owner/password");
+        assert_eq!(candidates, vec!["host-lv/owner/password"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_preserves_slashes() {
+        let candidates = super::resolve_candidates("VK:soulflow-lv/db/password");
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].contains('/'), "path slashes must be preserved");
+        assert_eq!(candidates[0], "soulflow-lv/db/password");
+    }
+
+    #[test]
+    fn test_resolve_candidates_v1_still_works() {
+        let candidates = super::resolve_candidates("VK:LOCAL:abc12345");
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0], "VK:LOCAL:abc12345");
+        assert_eq!(candidates[1], "abc12345");
+    }
+
+    // ── v2 resolve_once URL routing ──────────────────────────────────
+
+    #[test]
+    fn guard_resolve_once_routes_v2_to_resolve_agent() {
+        // Verify that resolve_once uses /api/resolve-agent/ for path refs
+        let src = include_str!("api.rs");
+        assert!(
+            src.contains("/api/resolve-agent/"),
+            "resolve_once must route v2 path refs to /api/resolve-agent/"
+        );
+        assert!(
+            src.contains("ref.contains('/')"),
+            "resolve_once must detect v2 refs by presence of '/'"
+        );
+    }
+
+    #[test]
+    fn guard_resolve_once_v1_uses_resolve_endpoint() {
+        // v1 refs (no slash) must still go to /api/resolve/
+        let src = include_str!("api.rs");
+        assert!(
+            src.contains("/api/resolve/{}"),
+            "v1 refs must use /api/resolve/ endpoint"
+        );
     }
 }

@@ -8,7 +8,7 @@ use crate::logger::SessionLogger;
 use crate::state::state_dir;
 
 pub const VEILKEY_RE_STR: &str =
-    r"VK:(?:(?:TEMP|LOCAL|EXTERNAL|SSH):[0-9A-Fa-f]{4,64}|[0-9a-f]{8})";
+    r"VK:(?:(?:TEMP|LOCAL|EXTERNAL|SSH):[0-9A-Fa-f]{4,64}|[0-9a-f]{8}|[a-z0-9][a-z0-9_-]*/[a-z0-9][a-z0-9_-]*/[a-z0-9][a-z0-9_-]*)";
 
 const MIN_SECRET_LEN: usize = 6;
 const PREVIEW_LEN: usize = 4;
@@ -951,5 +951,56 @@ mod tests {
             !is_trivial_value("abcdefghij"),
             "non-repeated alpha (not sequential)"
         );
+
+        // v2 path-based refs must NOT be trivial
+        assert!(
+            !is_trivial_value("VK:host-lv/cloudflare/api-key"),
+            "v2 path ref must not be trivial"
+        );
+        assert!(
+            !is_trivial_value("VK:soulflow-lv/db/password"),
+            "v2 path ref must not be trivial"
+        );
+    }
+
+    // ── v2 path-based regex tests ────────────────────────────────────
+
+    #[test]
+    fn test_veilkey_regex_v2_path_refs() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+
+        // v2 path-based refs must match
+        assert!(re.is_match("VK:host-lv/cloudflare/api-key"), "basic v2 path");
+        assert!(re.is_match("VK:soulflow-lv/db/password"), "hyphenated vault");
+        assert!(re.is_match("VK:my-vault/my-group/my-key"), "all hyphenated");
+        assert!(re.is_match("VK:vault1/group2/key3"), "with digits");
+
+        // v1 refs must still match
+        assert!(re.is_match("VK:LOCAL:abc12345"), "v1 LOCAL");
+        assert!(re.is_match("VK:TEMP:deadbeef"), "v1 TEMP");
+        assert!(re.is_match("VK:12345678"), "v1 short hash");
+
+        // must NOT match
+        assert!(!re.is_match("VE:host-lv/cloudflare/api-key"), "VE prefix");
+        assert!(!re.is_match("VK:/bad/start"), "leading slash in vault");
+        assert!(!re.is_match("VK:vault/key"), "only two segments (no group)");
+    }
+
+    #[test]
+    fn test_veilkey_regex_v2_extracts_full_ref() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        let input = "CLOUDFLARE_API_KEY=VK:host-lv/cloudflare/api-key rest";
+        let m = re.find(input).expect("should match");
+        assert_eq!(m.as_str(), "VK:host-lv/cloudflare/api-key");
+    }
+
+    #[test]
+    fn test_veilkey_regex_v2_mixed_env() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        let input = "DB=VK:LOCAL:3c3d53ea CF=VK:host-lv/cloudflare/api-key";
+        let matches: Vec<&str> = re.find_iter(input).map(|m| m.as_str()).collect();
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0], "VK:LOCAL:3c3d53ea");
+        assert_eq!(matches[1], "VK:host-lv/cloudflare/api-key");
     }
 }
