@@ -8,7 +8,7 @@ use crate::logger::SessionLogger;
 use crate::state::state_dir;
 
 pub const VEILKEY_RE_STR: &str =
-    r"VK:(?:(?:TEMP|LOCAL|EXTERNAL|SSH):[0-9A-Fa-f]{4,64}|[0-9a-f]{8})";
+    r"VK:(?:(?:TEMP|LOCAL|EXTERNAL|SSH):[0-9A-Fa-f]{4,64}|[0-9a-f]{8}|[a-z0-9_][a-z0-9-]*/[a-z0-9_][a-z0-9-]*/[a-z0-9_][a-z0-9-]*)";
 
 const MIN_SECRET_LEN: usize = 6;
 const PREVIEW_LEN: usize = 4;
@@ -21,6 +21,11 @@ fn is_trivial_value(value: &str) -> bool {
     let v = value.trim();
     if v.is_empty() {
         return true;
+    }
+
+    // VeilKey references (v1 and v2) are never trivial
+    if v.starts_with("VK:") {
+        return false;
     }
 
     // Pure digits (e.g. "1", "8080", "3600")
