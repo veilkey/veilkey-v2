@@ -99,7 +99,8 @@ func (h *Handler) Register(
 	mux.HandleFunc("GET /api/registry", ready(h.handleListRegistry))
 
 	// Resolve scoped VK ref → plaintext value — trusted IP only (veil CLI needs this without admin session)
-	mux.HandleFunc("GET /api/resolve/{ref}", trusted(ready(h.handleResolveSecret)))
+	// {ref...} wildcard supports v2 path-based refs: {vault}/{group}/{key}
+	mux.HandleFunc("GET /api/resolve/{ref...}", trusted(ready(h.handleResolveSecret)))
 
 	// Child heartbeat (report URL)
 	mux.HandleFunc("POST /api/heartbeat", trusted(ready(h.handleHeartbeat)))
