@@ -252,11 +252,16 @@ impl VeilKeyClient {
     }
 
     fn resolve_once(&self, r#ref: &str) -> Result<String, String> {
-        let url = format!(
-            "{}/api/resolve/{}",
-            self.base_url,
-            urlencoding::encode(r#ref)
-        );
+        // v2 path-based refs contain "/" — use the agent resolve endpoint (wildcard route)
+        let url = if r#ref.contains('/') {
+            format!("{}/api/resolve-agent/{}", self.base_url, r#ref)
+        } else {
+            format!(
+                "{}/api/resolve/{}",
+                self.base_url,
+                urlencoding::encode(r#ref)
+            )
+        };
         let mut req = self.agent.get(&url);
         if let Some(cookie) = self.cookie_header() {
             req = req.set("Cookie", &cookie);
