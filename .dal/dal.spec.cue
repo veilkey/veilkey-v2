@@ -8,4 +8,12 @@
 	role!:    #Role
 	skills?:  [...string]
 	hooks?:   [...string]
+	git? {
+		user:         string
+		email:        string
+		github_token: string
+	}
+	auto_task?:      string
+	auto_interval?:  string
+	player_version?: string
 }

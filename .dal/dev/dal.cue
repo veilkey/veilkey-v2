@@ -1,8 +1,9 @@
-uuid:    "vk-dev-20260326"
-name:    "dev"
-version: "1.0.0"
-player:  "claude"
-role:    "member"
+uuid:           "v2-dev-20260326"
+name:           "dev"
+version:        "2.0.0"
+player:         "claude"
+player_version: "go"
+role:            "member"
 skills:  ["skills/go-security", "skills/code-review", "skills/go-ci", "skills/rust-ci", "skills/security-audit"]
 hooks:   []
 git: {
