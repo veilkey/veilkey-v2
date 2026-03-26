@@ -112,7 +112,7 @@ func (h *Handler) handleAgentResolveV2(w http.ResponseWriter, token string) {
 		return
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"ref":   token,
 		"vault": parsed.Vault,
 		"group": parsed.Group,
