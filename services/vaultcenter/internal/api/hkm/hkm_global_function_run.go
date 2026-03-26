@@ -301,7 +301,7 @@ func (h *Handler) handleGlobalFunctionRun(w http.ResponseWriter, r *http.Request
 		"timeout_seconds": int(timeout / time.Second),
 		"env_keys":        appliedEnvKeys,
 	})
-	_ = h.deps.SubmitTxAsync(r.Context(), chain.TxRecordAuditEvent, chain.RecordAuditEventPayload{
+	if err := h.deps.SubmitTxAsync(r.Context(), chain.TxRecordAuditEvent, chain.RecordAuditEventPayload{
 		EventID:    crypto.GenerateUUID(),
 		EntityType: "function",
 		EntityID:   name,

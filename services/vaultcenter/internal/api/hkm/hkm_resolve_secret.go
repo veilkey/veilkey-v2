@@ -246,7 +246,7 @@ func (h *Handler) resolveTrackedRef(w http.ResponseWriter, ref string, tracked *
 			"vault_runtime_hash": agentHash,
 			"resolved_at":        now.Format(time.RFC3339),
 		})
-		_ = h.deps.SubmitTxAsync(context.Background(), chain.TxRecordAuditEvent, chain.RecordAuditEventPayload{
+		if err := h.deps.SubmitTxAsync(context.Background(), chain.TxRecordAuditEvent, chain.RecordAuditEventPayload{
 			EventID:    crypto.GenerateUUID(),
 			EntityType: "secret",
 			EntityID:   ref,
@@ -290,7 +290,7 @@ func (h *Handler) resolveTrackedRef(w http.ResponseWriter, ref string, tracked *
 			"vault_runtime_hash": "host",
 			"resolved_at":        now.Format(time.RFC3339),
 		})
-		_ = h.deps.SubmitTxAsync(context.Background(), chain.TxRecordAuditEvent, chain.RecordAuditEventPayload{
+		if err := h.deps.SubmitTxAsync(context.Background(), chain.TxRecordAuditEvent, chain.RecordAuditEventPayload{
 			EventID:    crypto.GenerateUUID(),
 			EntityType: "secret",
 			EntityID:   ref,
