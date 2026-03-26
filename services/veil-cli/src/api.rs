@@ -252,11 +252,16 @@ impl VeilKeyClient {
     }
 
     fn resolve_once(&self, r#ref: &str) -> Result<String, String> {
-        let url = format!(
-            "{}/api/resolve/{}",
-            self.base_url,
-            urlencoding::encode(r#ref)
-        );
+        // v2 path-based refs contain "/" — use the agent resolve endpoint (wildcard route)
+        let url = if r#ref.contains('/') {
+            format!("{}/api/resolve-agent/{}", self.base_url, r#ref)
+        } else {
+            format!(
+                "{}/api/resolve/{}",
+                self.base_url,
+                urlencoding::encode(r#ref)
+            )
+        };
         let mut req = self.agent.get(&url);
         if let Some(cookie) = self.cookie_header() {
             req = req.set("Cookie", &cookie);
@@ -668,7 +673,9 @@ fn resolve_candidates(token: &str) -> Vec<String> {
         let colon_count = token.chars().filter(|&c| c == ':').count();
         if colon_count == 1 {
             if let Some(idx) = token.find(':') {
-                return vec![token[idx + 1..].to_string()];
+                let after_prefix = &token[idx + 1..];
+                // v2 path-based ref: VK:vault/group/key -> send "vault/group/key"
+                return vec![after_prefix.to_string()];
             }
         }
         let parts: Vec<&str> = token.splitn(3, ':').collect();
@@ -2355,5 +2362,37 @@ mod connection_domain_tests {
         assert!(src.contains("veilkey secret list"));
         assert!(src.contains("veilkey secret get"));
         assert!(src.contains("veilkey secret delete"));
+    }
+
+    // ── v2 path-based resolve_candidates ──────────────────────────────
+
+    #[test]
+    fn test_resolve_candidates_v2_path_ref() {
+        let candidates = super::resolve_candidates("VK:host-lv/cloudflare/api-key");
+        assert_eq!(candidates, vec!["host-lv/cloudflare/api-key"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_short_segments() {
+        let candidates = super::resolve_candidates("VK:a/b/c");
+        assert_eq!(candidates, vec!["a/b/c"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v1_still_works() {
+        let candidates = super::resolve_candidates("VK:LOCAL:abc12345");
+        assert_eq!(candidates, vec!["VK:LOCAL:abc12345", "abc12345"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_no_path_traversal() {
+        let candidates = super::resolve_candidates("VK:../../../etc/passwd");
+        for c in &candidates {
+            assert!(
+                !c.starts_with("../"),
+                "v2 resolve candidate must not allow path traversal: {}",
+                c
+            );
+        }
     }
 }
