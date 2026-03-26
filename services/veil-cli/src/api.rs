@@ -694,7 +694,13 @@ fn resolve_candidates(token: &str) -> Vec<String> {
         }
         let parts: Vec<&str> = token.splitn(3, ':').collect();
         if parts.len() == 3 && parts[0] == "VK" {
-            return vec![token.to_string(), parts[2].to_string()];
+            let tail = parts[2];
+            // VK:LOCAL:vault/group/key → v2 path first, full token as fallback
+            if is_v2_path(tail) {
+                return vec![tail.to_string(), token.to_string()];
+            }
+            // VK:LOCAL:hash → full token first, bare hash as fallback
+            return vec![token.to_string(), tail.to_string()];
         }
         return vec![token.to_string()];
     }
@@ -779,6 +785,54 @@ mod tests {
     fn test_resolve_v1_ref_unchanged() {
         let result = resolve_candidates("VK:LOCAL:6da25530");
         assert_eq!(result, vec!["VK:LOCAL:6da25530", "6da25530"]);
+    }
+
+    // ── VK:LOCAL: with v2 path ──────────────────────────────────────
+
+    #[test]
+    fn test_resolve_vk_local_v2_path() {
+        // VK:LOCAL:vault/group/key → v2 path first, full token as fallback
+        let result = resolve_candidates("VK:LOCAL:host-lv/mailgun/api-key");
+        assert_eq!(
+            result,
+            vec!["host-lv/mailgun/api-key", "VK:LOCAL:host-lv/mailgun/api-key"]
+        );
+    }
+
+    #[test]
+    fn test_resolve_vk_local_v2_path_digits() {
+        let result = resolve_candidates("VK:LOCAL:prod0/db1/pass2");
+        assert_eq!(result, vec!["prod0/db1/pass2", "VK:LOCAL:prod0/db1/pass2"]);
+    }
+
+    #[test]
+    fn test_resolve_vk_local_not_v2_path() {
+        // VK:LOCAL:hash (not a v2 path) → full token first, bare hash fallback
+        let result = resolve_candidates("VK:LOCAL:abcd1234");
+        assert_eq!(result, vec!["VK:LOCAL:abcd1234", "abcd1234"]);
+    }
+
+    #[test]
+    fn test_resolve_vk_local_path_traversal_blocked() {
+        // "../etc/passwd" is NOT a valid v2 path → treated as v1 hash fallback
+        let result = resolve_candidates("VK:LOCAL:../etc/passwd");
+        assert_eq!(result, vec!["VK:LOCAL:../etc/passwd", "../etc/passwd"]);
+    }
+
+    #[test]
+    fn test_resolve_vk_local_hyphen_start_blocked() {
+        // "-bad/group/key" is NOT a valid v2 path (hyphen start)
+        let result = resolve_candidates("VK:LOCAL:-bad/group/key");
+        assert_eq!(result, vec!["VK:LOCAL:-bad/group/key", "-bad/group/key"]);
+    }
+
+    // ── bare v2 path (no prefix) ───────────────────────────────────
+
+    #[test]
+    fn test_resolve_bare_v2_path_passthrough() {
+        // No VK:/VE: prefix → returned as-is
+        let result = resolve_candidates("host-lv/mailgun/api-key");
+        assert_eq!(result, vec!["host-lv/mailgun/api-key"]);
     }
 
     // ── Retain filter ───────────────────────────────────────────────
@@ -2064,9 +2118,9 @@ mod connection_domain_tests {
 
     #[test]
     fn test_resolve_candidates_ve_single_colon() {
-        // "VE:something" (only 1 colon) — special path in resolve_candidates
+        // "VE:something" (only 1 colon, not a v2 path) — returns full token
         let candidates = super::resolve_candidates("VE:something");
-        assert_eq!(candidates, vec!["something"]);
+        assert_eq!(candidates, vec!["VE:something"]);
     }
 
     // ── env var resolution regex excludes VE ─────────────────────────
