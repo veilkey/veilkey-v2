@@ -23,6 +23,11 @@ fn is_trivial_value(value: &str) -> bool {
         return true;
     }
 
+    // VeilKey references (v1 and v2) are never trivial
+    if v.starts_with("VK:") {
+        return false;
+    }
+
     // Pure digits (e.g. "1", "8080", "3600")
     if v.chars().all(|c| c.is_ascii_digit()) {
         return true;
