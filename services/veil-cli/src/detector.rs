@@ -7,6 +7,7 @@ use crate::config::CompiledConfig;
 use crate::logger::SessionLogger;
 use crate::state::state_dir;
 
+// MODIFIED
 pub const VEILKEY_RE_STR: &str =
     r"VK:(?:(?:TEMP|LOCAL|EXTERNAL|SSH):[0-9A-Fa-f]{4,64}|[0-9a-f]{8})";
 
