@@ -8,7 +8,7 @@ use crate::logger::SessionLogger;
 use crate::state::state_dir;
 
 pub const VEILKEY_RE_STR: &str =
-    r"VK:(?:(?:TEMP|LOCAL|EXTERNAL|SSH):[0-9A-Fa-f]{4,64}|[0-9a-f]{8})";
+    r"VK:(?:(?:TEMP|LOCAL|EXTERNAL|SSH):[0-9A-Fa-f]{4,64}|[0-9a-f]{8}|[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*)";
 
 const MIN_SECRET_LEN: usize = 6;
 const PREVIEW_LEN: usize = 4;
@@ -952,4 +952,87 @@ mod tests {
             "non-repeated alpha (not sequential)"
         );
     }
+
+    // ── v2 path-based ref regex ─────────────────────────────────────
+
+    #[test]
+    fn v2_ref_regex_matches_path_based_refs() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        assert!(re.is_match("VK:host-lv/cloudflare/api-key"));
+        assert!(re.is_match("VK:prod/db/password"));
+        assert!(re.is_match("VK:soulflow-lv/db/password"));
+        assert!(re.is_match("VK:a/b/c"));
+    }
+
+    #[test]
+    fn v2_ref_regex_still_matches_v1_refs() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        assert!(re.is_match("VK:LOCAL:abc12345"));
+        assert!(re.is_match("VK:TEMP:deadbeef"));
+        assert!(re.is_match("VK:SSH:0123abcd"));
+        assert!(re.is_match("VK:EXTERNAL:ff00ff00"));
+        assert!(re.is_match("VK:abcdef01")); // short form
+    }
+
+    #[test]
+    fn v2_ref_regex_rejects_invalid_paths() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        assert!(!re.is_match("VK:two/segments"));
+        assert!(!re.is_match("VK:UPPER/case/path"));
+        assert!(!re.is_match("VK:-bad/start/here"));
+    }
+
+    #[test]
+    fn v2_ref_regex_extracts_full_match() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        let text = "export API_KEY=VK:host-lv/cloudflare/api-key rest";
+        let m = re.find(text).unwrap();
+        assert_eq!(m.as_str(), "VK:host-lv/cloudflare/api-key");
+    }
+
+    #[test]
+    fn v2_ref_mixed_env_file() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        let env_content = "DB_PASS=VK:LOCAL:3c3d53ea\nAPI_KEY=VK:host-lv/cloudflare/api-key\n";
+        let matches: Vec<&str> = re.find_iter(env_content).map(|m| m.as_str()).collect();
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0], "VK:LOCAL:3c3d53ea");
+        assert_eq!(matches[1], "VK:host-lv/cloudflare/api-key");
+    }
+
+    #[test]
+    fn v2_ref_not_trivial_value() {
+        assert!(!is_trivial_value("VK:host-lv/cloudflare/api-key"));
+        assert!(!is_trivial_value("VK:prod/db/password"));
+    }
+
+    #[test]
+    fn v2_ref_excluded_from_detection() {
+        let config = empty_config();
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let logger = SessionLogger::new("/dev/null");
+        let det = SecretDetector::new(&config, &client, &logger, true);
+
+        assert!(det.is_excluded("VK:host-lv/cloudflare/api-key"));
+        assert!(det.is_excluded("VK:prod/db/password"));
+    }
+
+    #[test]
+    fn v2_ref_preserved_in_process_line() {
+        let config = empty_config();
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let logger = SessionLogger::new("/dev/null");
+        let mut det = SecretDetector::new(&config, &client, &logger, true);
+
+        let line = "export API_KEY=VK:host-lv/cloudflare/api-key";
+        let result = det.process_line(line);
+        assert!(
+            result.contains("VK:host-lv/cloudflare/api-key"),
+            "v2 refs must be preserved, got: {}",
+            result
+        );
+    }
+
 }
