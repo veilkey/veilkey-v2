@@ -252,11 +252,17 @@ impl VeilKeyClient {
     }
 
     fn resolve_once(&self, r#ref: &str) -> Result<String, String> {
-        let url = format!(
-            "{}/api/resolve/{}",
-            self.base_url,
-            urlencoding::encode(r#ref)
-        );
+        let encoded = if is_v2_path_ref(r#ref) {
+            // v2 path refs: encode each segment but preserve slashes
+            r#ref
+                .split('/')
+                .map(|seg| urlencoding::encode(seg).into_owned())
+                .collect::<Vec<_>>()
+                .join("/")
+        } else {
+            urlencoding::encode(r#ref).into_owned()
+        };
+        let url = format!("{}/api/resolve/{}", self.base_url, encoded);
         let mut req = self.agent.get(&url);
         if let Some(cookie) = self.cookie_header() {
             req = req.set("Cookie", &cookie);
@@ -663,8 +669,19 @@ pub fn parse_mask_map_entries(
     (secrets, ve_entries)
 }
 
+fn is_v2_path_ref(s: &str) -> bool {
+    s.contains('/') && s.split('/').count() == 3 && s.split('/').all(|seg| !seg.is_empty())
+}
+
 fn resolve_candidates(token: &str) -> Vec<String> {
     if token.starts_with("VK:") || token.starts_with("VE:") {
+        let after_prefix = &token[3..]; // after "VK:" or "VE:"
+
+        // v2 path-based ref: VK:{vault}/{group}/{key}
+        if token.starts_with("VK:") && is_v2_path_ref(after_prefix) {
+            return vec![after_prefix.to_string()];
+        }
+
         let colon_count = token.chars().filter(|&c| c == ':').count();
         if colon_count == 1 {
             if let Some(idx) = token.find(':') {
@@ -2355,5 +2372,71 @@ mod connection_domain_tests {
         assert!(src.contains("veilkey secret list"));
         assert!(src.contains("veilkey secret get"));
         assert!(src.contains("veilkey secret delete"));
+    }
+
+    // ── v2 path-based resolve_candidates ────────────────────────────
+
+    #[test]
+    fn test_resolve_candidates_v2_path_ref() {
+        let candidates = super::resolve_candidates("VK:host-lv/owner/password");
+        assert_eq!(candidates, vec!["host-lv/owner/password"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_with_underscore() {
+        let candidates = super::resolve_candidates("VK:_temp/session/token");
+        assert_eq!(candidates, vec!["_temp/session/token"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_with_hyphen() {
+        let candidates = super::resolve_candidates("VK:soulflow-lv/cloudflare/api-key");
+        assert_eq!(candidates, vec!["soulflow-lv/cloudflare/api-key"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v1_still_works() {
+        let candidates = super::resolve_candidates("VK:LOCAL:abc12345");
+        assert_eq!(candidates, vec!["VK:LOCAL:abc12345", "abc12345"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_ve_not_treated_as_v2() {
+        // VE: refs with slashes: colon_count==1 so the prefix is stripped
+        // This is fine — VE refs are not resolvable anyway
+        let candidates = super::resolve_candidates("VE:host-lv/owner/password");
+        assert_eq!(candidates, vec!["host-lv/owner/password"]);
+    }
+
+    #[test]
+    fn test_is_v2_path_ref() {
+        assert!(super::is_v2_path_ref("host-lv/owner/password"));
+        assert!(super::is_v2_path_ref("_temp/session/token"));
+        assert!(!super::is_v2_path_ref("LOCAL:abc12345"));
+        assert!(!super::is_v2_path_ref("abc12345"));
+        assert!(!super::is_v2_path_ref("host-lv/owner")); // only 2 segments
+        assert!(!super::is_v2_path_ref("a/b/c/d")); // 4 segments
+        assert!(!super::is_v2_path_ref("/owner/password")); // empty first segment
+    }
+
+    #[test]
+    fn test_v2_regex_matches_in_env_var_context() {
+        let re = regex::Regex::new(crate::detector::VEILKEY_RE_STR).unwrap();
+        let env_line = "CLOUDFLARE_API_KEY=VK:host-lv/cloudflare/api-key";
+        let m = re.find(env_line).expect("should match v2 ref in env var");
+        assert_eq!(m.as_str(), "VK:host-lv/cloudflare/api-key");
+    }
+
+    #[test]
+    fn test_v2_mixed_env_file() {
+        let re = regex::Regex::new(crate::detector::VEILKEY_RE_STR).unwrap();
+        let env_content = "DB_PASSWORD=VK:soulflow-lv/db/password\nAPI_KEY=VK:LOCAL:3c3d53ea\n";
+        let matches: Vec<&str> = re
+            .find_iter(env_content)
+            .map(|m| m.as_str())
+            .collect();
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0], "VK:soulflow-lv/db/password");
+        assert_eq!(matches[1], "VK:LOCAL:3c3d53ea");
     }
 }

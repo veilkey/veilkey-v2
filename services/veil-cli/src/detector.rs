@@ -8,7 +8,7 @@ use crate::logger::SessionLogger;
 use crate::state::state_dir;
 
 pub const VEILKEY_RE_STR: &str =
-    r"VK:(?:(?:TEMP|LOCAL|EXTERNAL|SSH):[0-9A-Fa-f]{4,64}|[0-9a-f]{8})";
+    r"VK:(?:(?:TEMP|LOCAL|EXTERNAL|SSH):[0-9A-Fa-f]{4,64}|[0-9a-f]{8}|[a-z0-9_][a-z0-9_-]*/[a-z0-9_][a-z0-9_-]*/[a-z0-9_][a-z0-9_-]*)";
 
 const MIN_SECRET_LEN: usize = 6;
 const PREVIEW_LEN: usize = 4;
@@ -21,6 +21,11 @@ fn is_trivial_value(value: &str) -> bool {
     let v = value.trim();
     if v.is_empty() {
         return true;
+    }
+
+    // VeilKey references (v1 and v2) are never trivial
+    if v.starts_with("VK:") {
+        return false;
     }
 
     // Pure digits (e.g. "1", "8080", "3600")
@@ -950,6 +955,93 @@ mod tests {
         assert!(
             !is_trivial_value("abcdefghij"),
             "non-repeated alpha (not sequential)"
+        );
+    }
+
+    // ── v2 path-based ref detection ─────────────────────────────────
+
+    #[test]
+    fn v2_regex_matches_path_refs() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        let cases = vec![
+            ("VK:host-lv/owner/password", true),
+            ("VK:soulflow-lv/db/password", true),
+            ("VK:host-lv/cloudflare/api-key", true),
+            ("VK:my_vault/my_group/my_key", true),
+            ("VK:_temp/session/token", true),
+            ("VK:_ssh/github/deploy-key", true),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                re.is_match(input),
+                expected,
+                "v2 regex match failed for: {}",
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn v2_regex_still_matches_v1_refs() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        assert!(re.is_match("VK:LOCAL:3c3d53ea"), "v1 LOCAL ref");
+        assert!(re.is_match("VK:TEMP:ed694a5e"), "v1 TEMP ref");
+        assert!(re.is_match("VK:SSH:abcd1234"), "v1 SSH ref");
+        assert!(re.is_match("VK:EXTERNAL:ff00ff00"), "v1 EXTERNAL ref");
+        assert!(re.is_match("VK:3c3d53ea"), "v1 compact ref");
+    }
+
+    #[test]
+    fn v2_regex_mixed_v1_v2_in_line() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        let line = "DB=VK:host-lv/db/password API=VK:LOCAL:3c3d53ea";
+        let matches: Vec<&str> = re.find_iter(line).map(|m| m.as_str()).collect();
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0], "VK:host-lv/db/password");
+        assert_eq!(matches[1], "VK:LOCAL:3c3d53ea");
+    }
+
+    #[test]
+    fn v2_ref_not_trivial() {
+        assert!(
+            !is_trivial_value("VK:host-lv/owner/password"),
+            "v2 path ref must not be trivial"
+        );
+        assert!(
+            !is_trivial_value("VK:LOCAL:3c3d53ea"),
+            "v1 ref must not be trivial"
+        );
+    }
+
+    #[test]
+    fn v2_ref_excluded_from_detection() {
+        let config = generic_secret_config();
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let logger = SessionLogger::new("/dev/null");
+        let det = SecretDetector::new(&config, &client, &logger, true);
+
+        // v2 refs should be excluded (is_excluded returns true for VK: matches)
+        assert!(
+            det.is_excluded("VK:host-lv/db/password"),
+            "v2 ref must be excluded from secret detection"
+        );
+    }
+
+    #[test]
+    fn v2_ref_protected_in_process_line() {
+        let config = empty_config();
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let logger = SessionLogger::new("/dev/null");
+        let mut det = SecretDetector::new(&config, &client, &logger, true);
+
+        let line = "export DB_PASS=VK:host-lv/db/password";
+        let result = det.process_line(line);
+        assert!(
+            result.contains("VK:host-lv/db/password"),
+            "v2 ref must be preserved in output, got: {}",
+            result
         );
     }
 }
