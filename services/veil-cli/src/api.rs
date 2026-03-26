@@ -437,6 +437,20 @@ impl VeilKeyClient {
             .unwrap_or(false)
     }
 
+    /// Check if VaultCenter is reachable. Returns Ok(true) if unlocked, Ok(false) if locked, Err if unreachable.
+    pub fn check_reachable(&self) -> Result<bool, String> {
+        let url = format!("{}/api/status", self.base_url);
+        match self.agent.get(&url).timeout(std::time::Duration::from_secs(5)).call() {
+            Ok(resp) => {
+                let body: serde_json::Value = resp.into_json().unwrap_or_default();
+                let locked = body["locked"].as_bool().unwrap_or(true);
+                Ok(!locked)
+            }
+            Err(ureq::Error::Status(_, _)) => Ok(false), // server responded but with error
+            Err(_) => Err("cannot reach VaultCenter".to_string()),
+        }
+    }
+
     /// Check if VaultCenter is locked by probing /api/mask-map.
     pub fn is_locked(&self) -> bool {
         let url = format!("{}/api/mask-map", self.base_url);

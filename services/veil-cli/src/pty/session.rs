@@ -141,6 +141,19 @@ pub fn run(args: &[String], api_url: &str, _log_path: &str, patterns_file: Optio
 
     let client = VeilKeyClient::new(api_url);
 
+    // Check server reachability before asking for password
+    eprint!("[veilkey] connecting to {}... ", api_url);
+    match client.check_reachable() {
+        Ok(true) => eprintln!("ok"),
+        Ok(false) => eprintln!("locked"),
+        Err(e) => {
+            eprintln!("failed");
+            eprintln!("[veilkey] cannot reach VaultCenter: {}", e);
+            eprintln!("[veilkey] check if the server is running and the URL is correct");
+            std::process::exit(1);
+        }
+    }
+
     // If server is locked, prompt for master password and unlock first
     if client.is_locked() {
         let master = read_secret("VEILKEY_MASTER_PASSWORD_FILE", "Master password (unlock): ");
