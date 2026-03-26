@@ -668,7 +668,12 @@ fn resolve_candidates(token: &str) -> Vec<String> {
         let colon_count = token.chars().filter(|&c| c == ':').count();
         if colon_count == 1 {
             if let Some(idx) = token.find(':') {
-                return vec![token[idx + 1..].to_string()];
+                let after_prefix = &token[idx + 1..];
+                // v2 path-based ref: VK:vault/group/key — try full ref first, then path only
+                if after_prefix.contains('/') {
+                    return vec![token.to_string(), after_prefix.to_string()];
+                }
+                return vec![after_prefix.to_string()];
             }
         }
         let parts: Vec<&str> = token.splitn(3, ':').collect();
@@ -1970,6 +1975,45 @@ mod connection_domain_tests {
         // "VE:something" (only 1 colon) — special path in resolve_candidates
         let candidates = super::resolve_candidates("VE:something");
         assert_eq!(candidates, vec!["something"]);
+    }
+
+
+    // ── v2 path-based resolve_candidates ──────────────────────────────
+
+    #[test]
+    fn test_resolve_candidates_v2_path_ref() {
+        let candidates = super::resolve_candidates("VK:host-lv/owner/password");
+        assert_eq!(
+            candidates,
+            vec!["VK:host-lv/owner/password", "host-lv/owner/password"]
+        );
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_reserved_prefix() {
+        let candidates = super::resolve_candidates("VK:host-lv/_temp/session-token");
+        assert_eq!(
+            candidates,
+            vec![
+                "VK:host-lv/_temp/session-token",
+                "host-lv/_temp/session-token"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_resolve_candidates_v1_unchanged() {
+        let candidates = super::resolve_candidates("VK:LOCAL:3c3d53ea");
+        assert_eq!(candidates, vec!["VK:LOCAL:3c3d53ea", "3c3d53ea"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_multi_segment() {
+        let candidates = super::resolve_candidates("VK:soulflow-lv/db/password");
+        assert_eq!(
+            candidates,
+            vec!["VK:soulflow-lv/db/password", "soulflow-lv/db/password"]
+        );
     }
 
     // ── env var resolution regex excludes VE ─────────────────────────
