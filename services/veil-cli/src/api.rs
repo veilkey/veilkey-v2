@@ -2064,9 +2064,9 @@ mod connection_domain_tests {
 
     #[test]
     fn test_resolve_candidates_ve_single_colon() {
-        // "VE:something" (only 1 colon) — special path in resolve_candidates
+        // "VE:something" (only 1 colon, not a v2 path) — returned as-is
         let candidates = super::resolve_candidates("VE:something");
-        assert_eq!(candidates, vec!["something"]);
+        assert_eq!(candidates, vec!["VE:something"]);
     }
 
     // ── env var resolution regex excludes VE ─────────────────────────
