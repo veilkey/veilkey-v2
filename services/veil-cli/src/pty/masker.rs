@@ -2043,3 +2043,119 @@ mod security_masking_tests {
         assert!(!strip(&out).contains("line1\nline2"), "multiline secret leaked");
     }
 }
+
+#[cfg(test)]
+mod vkloc_fragment_tests {
+    use super::*;
+
+    fn init_crypto() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+    fn mk(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
+    }
+    fn strip(s: &str) -> String {
+        let re = regex::Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
+        re.replace_all(s, "").to_string()
+    }
+
+    /// SECURITY: cross-chunk erase MUST be skipped when output contains
+    /// escape sequences (arrow keys, history recall). Otherwise readline
+    /// cursor goes out of sync → VK:LOC fragments.
+    #[test]
+    fn cross_chunk_skips_escape_sequences() {
+        let map = mk(&[("Ghdrhkdgh1@", "VK:LOCAL:6da25530")]);
+        // Arrow key produces ESC [ A — cross-chunk must return None
+        assert!(find_cross_chunk_mask("Ghdrhkdg", "h1@\x1b[A", &map).is_none(),
+            "SECURITY: cross-chunk must skip when escape sequences present");
+    }
+
+    #[test]
+    fn cross_chunk_skips_cursor_movement() {
+        let map = mk(&[("password1234", "VK:LOCAL:abc12345")]);
+        // CSI cursor movement
+        assert!(find_cross_chunk_mask("password", "1234\x1b[C", &map).is_none());
+        assert!(find_cross_chunk_mask("password", "1234\x1b[D", &map).is_none());
+        assert!(find_cross_chunk_mask("password", "1234\x1b[B", &map).is_none());
+    }
+
+    /// SECURITY: padded_colorize_ref must produce EXACTLY the same visible
+    /// width as the original secret. If wider → readline cursor desync → VK:LOC.
+    #[test]
+    fn same_width_guarantee_short_secret() {
+        // "Ghdrhkdgh1@" = 11 chars, VK:LOCAL:6da25530 = 17 chars
+        // Must produce 11-char visible output (compact form)
+        let result = padded_colorize_ref("VK:LOCAL:6da25530", 11);
+        let visible = strip(&result);
+        assert_eq!(visible.chars().count(), 11,
+            "SECURITY: width must be 11 (same as secret), got {}: '{}'",
+            visible.chars().count(), visible);
+    }
+
+    #[test]
+    fn same_width_guarantee_range() {
+        let vk_ref = "VK:LOCAL:6da25530"; // 17 chars
+        for original_len in 1..=30 {
+            let result = padded_colorize_ref(vk_ref, original_len);
+            let visible = strip(&result);
+            assert_eq!(visible.chars().count(), original_len,
+                "width mismatch at original_len={}: got {} '{}'",
+                original_len, visible.chars().count(), visible);
+        }
+    }
+
+    /// SECURITY: repeated mask_output calls must not produce VK:LOC fragments.
+    /// Simulates: type password → get error → arrow up → arrow down
+    #[test]
+    fn no_vkloc_on_repeated_invocations() {
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let map = mk(&[("Ghdrhkdgh1@", "VK:LOCAL:6da25530")]);
+        let ve: Vec<(String, String)> = vec![];
+        let patterns: Vec<CompiledPattern> = vec![];
+
+        let mut combined_output = String::new();
+
+        // Simulate 5 rounds of output
+        let chunks = [
+            "bash: Ghdrhkdgh1@: command not found\n",
+            "$ Ghdrhkdgh1@\n",
+            "\x1b[A",  // arrow up
+            "\x1b[B",  // arrow down
+            "bash: Ghdrhkdgh1@: command not found\n",
+        ];
+        let mut tail = String::new();
+        for chunk in &chunks {
+            let (masked, new_tail) = mask_output(
+                chunk.as_bytes(), &map, &ve, &patterns, &client, "", &tail,
+            );
+            tail = new_tail;
+            combined_output += &String::from_utf8_lossy(&masked);
+        }
+
+        let clean = strip(&combined_output);
+        // Must NOT contain VK:LOC followed by anything other than AL (which is VK:LOCAL)
+        let has_fragment = clean.contains("VK:LOCVK:") 
+            || clean.contains("VK:LOC ")
+            || regex::Regex::new(r"VK:LOC[^A]").unwrap().is_match(&clean);
+        assert!(!has_fragment,
+            "SECURITY: VK:LOC fragment detected in output: {}",
+            clean.replace('\n', "\\n"));
+    }
+
+    /// Ensure mask_output with escape sequences doesn't corrupt output
+    #[test]
+    fn escape_sequence_output_not_corrupted() {
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let map = mk(&[("secret12345!", "VK:LOCAL:test1234")]);
+        let ve: Vec<(String, String)> = vec![];
+        let patterns: Vec<CompiledPattern> = vec![];
+
+        // Arrow key sequence — must pass through unmodified
+        let (masked, _) = mask_output(
+            b"\x1b[A", &map, &ve, &patterns, &client, "", "",
+        );
+        assert_eq!(masked, b"\x1b[A", "escape sequences must pass through");
+    }
+}
