@@ -2356,4 +2356,38 @@ mod connection_domain_tests {
         assert!(src.contains("veilkey secret get"));
         assert!(src.contains("veilkey secret delete"));
     }
+
+    // ── v2 path-based resolve_candidates ──────────────────────────────
+
+    #[test]
+    fn test_resolve_candidates_v2_path_ref() {
+        // VK:vault/group/key (colon_count == 1) -> extracts "vault/group/key"
+        let candidates = super::resolve_candidates("VK:host-lv/cloudflare/api-key");
+        assert_eq!(candidates, vec!["host-lv/cloudflare/api-key"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_short_segments() {
+        let candidates = super::resolve_candidates("VK:a/b/c");
+        assert_eq!(candidates, vec!["a/b/c"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v1_still_works() {
+        // VK:LOCAL:abc12345 (colon_count == 2) -> [full, hash]
+        let candidates = super::resolve_candidates("VK:LOCAL:abc12345");
+        assert_eq!(candidates, vec!["VK:LOCAL:abc12345", "abc12345"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_no_path_traversal() {
+        let candidates = super::resolve_candidates("VK:../../../etc/passwd");
+        for c in &candidates {
+            assert!(
+                !c.starts_with("../"),
+                "v2 resolve candidate must not allow path traversal: {}",
+                c
+            );
+        }
+    }
 }
