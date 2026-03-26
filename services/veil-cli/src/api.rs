@@ -2064,9 +2064,9 @@ mod connection_domain_tests {
 
     #[test]
     fn test_resolve_candidates_ve_single_colon() {
-        // "VE:something" (only 1 colon) — special path in resolve_candidates
+        // "VE:something" (only 1 colon, not a valid v2 path) — returns full token
         let candidates = super::resolve_candidates("VE:something");
-        assert_eq!(candidates, vec!["something"]);
+        assert_eq!(candidates, vec!["VE:something"]);
     }
 
     // ── env var resolution regex excludes VE ─────────────────────────
@@ -2083,6 +2083,10 @@ mod connection_domain_tests {
         assert!(!re.is_match("VE:HOST:APP_ENV"), "VE:HOST must not match");
         assert!(re.is_match("VK:LOCAL:abc12345"), "VK refs must match");
         assert!(re.is_match("VK:TEMP:abc12345"), "VK:TEMP must match");
+        assert!(
+            re.is_match("VK:host-lv/cloudflare/api-key"),
+            "VK v2 path refs must match"
+        );
     }
 
     // ── session exit message only counts VK ──────────────────────────
