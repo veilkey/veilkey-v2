@@ -8,7 +8,7 @@ use crate::logger::SessionLogger;
 use crate::state::state_dir;
 
 pub const VEILKEY_RE_STR: &str =
-    r"VK:(?:(?:TEMP|LOCAL|EXTERNAL|SSH):[0-9A-Fa-f]{4,64}|[0-9a-f]{8})";
+    r"VK:(?:(?:TEMP|LOCAL|EXTERNAL|SSH):[0-9A-Fa-f]{4,64}|[0-9a-f]{8}|[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*)";
 
 const MIN_SECRET_LEN: usize = 6;
 const PREVIEW_LEN: usize = 4;
