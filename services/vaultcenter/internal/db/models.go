@@ -21,6 +21,10 @@ type TokenRef struct {
 	RefFamily     string     `gorm:"column:ref_family;size:16;not null;index:idx_token_refs_family_scope" json:"ref_family"`
 	RefScope      RefScope   `gorm:"column:ref_scope;size:16;not null;index:idx_token_refs_family_scope" json:"ref_scope"`
 	RefID         string     `gorm:"column:ref_id;size:64;not null;index" json:"ref_id"`
+	RefVault      string     `gorm:"column:ref_vault;size:64;not null;default:'';index:idx_token_refs_vault_group" json:"ref_vault"`
+	RefGroup      string     `gorm:"column:ref_group;size:64;not null;default:'';index:idx_token_refs_vault_group" json:"ref_group"`
+	RefKey        string     `gorm:"column:ref_key;size:64;not null;default:''" json:"ref_key"`
+	RefPath       string     `gorm:"column:ref_path;size:255;not null;default:'';index" json:"ref_path"`
 	SecretName    string     `gorm:"column:secret_name;size:255;not null;default:'';index" json:"secret_name"`
 	AgentHash     string     `gorm:"column:agent_hash;size:16;index" json:"agent_hash"`
 	PlaintextHash string     `gorm:"column:plaintext_hash;size:64;index" json:"plaintext_hash,omitempty"`
