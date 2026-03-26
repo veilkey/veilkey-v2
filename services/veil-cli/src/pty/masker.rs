@@ -2159,3 +2159,117 @@ mod vkloc_fragment_tests {
         assert_eq!(masked, b"\x1b[A", "escape sequences must pass through");
     }
 }
+
+#[cfg(test)]
+mod readline_safety_tests {
+    use super::*;
+
+    fn init_crypto() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+    fn mk(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
+    }
+    fn strip(s: &str) -> String {
+        let re = regex::Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
+        re.replace_all(s, "").to_string()
+    }
+    fn call(data: &str, map: &[(String, String)], ri: &str, tail: &str) -> (String, String) {
+        init_crypto();
+        let c = VeilKeyClient::new("http://localhost:0");
+        let (b, t) = mask_output(data.as_bytes(), map, &[], &[], &c, ri, tail);
+        (String::from_utf8_lossy(&b).to_string(), t)
+    }
+
+    /// BUG: readline echo (no \n) must NOT be masked.
+    /// Masking partial readline output causes cursor desync → VK:LOC fragments.
+    /// Current code masks it → this test MUST FAIL until fixed.
+    #[test]
+    fn readline_echo_without_newline_not_masked() {
+        let map = mk(&[("Ghdrhkdgh1@", "VK:LOCAL:6da25530")]);
+        // Readline echo: user typed password, no newline yet (still editing)
+        let (output, _) = call("Ghdrhkdgh1@", &map, "Ghdrhkdgh1@", "");
+        let visible = strip(&output);
+        // readline echo should pass through — masking it breaks cursor tracking
+        assert_eq!(visible, "Ghdrhkdgh1@",
+            "SECURITY/UX: readline echo (no newline) must NOT be masked. \
+             Masking changes byte length → readline cursor desync → VK:LOC fragments. \
+             Got: '{}'", visible);
+    }
+
+    /// Completed output line WITH \n must be masked with full ref.
+    #[test]
+    fn completed_line_with_newline_masked() {
+        let map = mk(&[("Ghdrhkdgh1@", "VK:LOCAL:6da25530")]);
+        // bash error: complete line with \n — NOT in recent_input
+        let (output, _) = call(
+            "bash: Ghdrhkdgh1@: command not found\n", &map, "", ""
+        );
+        let visible = strip(&output);
+        assert!(!visible.contains("Ghdrhkdgh1@"),
+            "completed line must be masked, got: '{}'", visible);
+        assert!(visible.contains("VK:LOCAL:6da25530"),
+            "must use full ref VK:LOCAL:, got: '{}'", visible);
+    }
+
+    /// Arrow key output (escape sequences) must pass through unmasked.
+    #[test]
+    fn arrow_key_output_not_masked() {
+        let map = mk(&[("Ghdrhkdgh1@", "VK:LOCAL:6da25530")]);
+        // Arrow up: readline redraws with ESC sequences
+        let (output, _) = call("\x1b[A", &map, "", "");
+        assert_eq!(output.as_bytes(), b"\x1b[A",
+            "escape sequences must pass through unchanged");
+    }
+
+    /// History recall redraw must not produce fragments.
+    /// Simulates: type password → error → arrow up → enter
+    #[test]
+    fn history_recall_no_fragments() {
+        let map = mk(&[("Ghdrhkdgh1@", "VK:LOCAL:6da25530")]);
+        let mut combined = String::new();
+        let mut tail = String::new();
+
+        // 1. bash error (complete line)
+        let (out, t) = call("bash: Ghdrhkdgh1@: not found\n", &map, "", &tail);
+        combined += &String::from_utf8_lossy(&out.as_bytes());
+        tail = t;
+
+        // 2. prompt
+        let (out, t) = call("$ ", &map, "", &tail);
+        combined += &String::from_utf8_lossy(&out.as_bytes());
+        tail = t;
+
+        // 3. arrow up (readline redraw — contains ESC)
+        let (out, t) = call("\x1b[A\x1b[2KGhdrhkdgh1@", &map, "Ghdrhkdgh1@", &tail);
+        combined += &String::from_utf8_lossy(&out.as_bytes());
+        tail = t;
+
+        // 4. enter + bash error again
+        let (out, _) = call("\nbash: Ghdrhkdgh1@: not found\n", &map, "", &tail);
+        combined += &String::from_utf8_lossy(&out.as_bytes());
+
+        let clean = strip(&combined);
+        // Must NOT have VK:LOC fragment (truncated ref)
+        let has_fragment = clean.contains("VK:LOCVK:")
+            || clean.contains("VK:LOC ")
+            || regex::Regex::new(r"VK:LOC[^A\s]").unwrap().is_match(&clean);
+        assert!(!has_fragment,
+            "VK:LOC fragment in history recall: '{}'",
+            clean.replace('\n', "\\n"));
+    }
+
+    /// The byte length of masked output for readline echo must equal
+    /// the byte length of original — otherwise readline cursor breaks.
+    #[test]
+    fn readline_echo_byte_length_preserved() {
+        let map = mk(&[("Ghdrhkdgh1@", "VK:LOCAL:6da25530")]);
+        // If we DO mask readline echo, the visible width must match exactly
+        let (output, _) = call("Ghdrhkdgh1@", &map, "Ghdrhkdgh1@", "");
+        let visible = strip(&output);
+        assert_eq!(visible.chars().count(), "Ghdrhkdgh1@".chars().count(),
+            "masked readline echo visible width must equal original. \
+             got {} chars: '{}', want {} chars",
+            visible.chars().count(), visible, "Ghdrhkdgh1@".chars().count());
+    }
+}
