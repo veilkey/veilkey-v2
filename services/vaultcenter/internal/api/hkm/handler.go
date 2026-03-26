@@ -120,7 +120,7 @@ func (h *Handler) Register(
 	mux.HandleFunc("DELETE /api/agents/by-node/{node_id}", trusted(ready(h.handleAgentUnregisterByNode)))
 	mux.HandleFunc("POST /api/agents/by-node/{node_id}/archive", trusted(ready(h.handleAgentArchive)))
 	mux.HandleFunc("POST /api/agents/by-node/{node_id}/unarchive", trusted(ready(h.handleAgentUnarchive)))
-	mux.HandleFunc("GET /api/resolve-agent/{token}", ready(h.handleAgentResolve))
+	mux.HandleFunc("GET /api/resolve-agent/{token...}", ready(h.handleAgentResolve))
 	mux.HandleFunc("GET /api/agents", ready(h.handleAgentList))
 	mux.HandleFunc("GET /api/agents/{agent}/rebind-plan", trusted(ready(h.handleAgentRebindPlan)))
 	mux.HandleFunc("POST /api/agents/rotate-all", trusted(ready(h.handleAgentRotateAll)))

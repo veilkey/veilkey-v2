@@ -2,6 +2,7 @@ package hkm
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/veilkey/veilkey-go-package/crypto"
 )
@@ -13,6 +14,19 @@ func (h *Handler) handleAgentResolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// v2 path-based resolution: token contains "/" (e.g. "host-lv/owner/password")
+	if strings.Contains(token, "/") {
+		h.handleAgentResolveV2(w, token)
+		return
+	}
+
+	// v1 hash-based resolution: first 8 chars = agentHash, rest = secretRef
+	h.handleAgentResolveV1(w, token)
+}
+
+// handleAgentResolveV1 resolves a secret using the v1 hash-based token format.
+// Token format: {8-char agentHash}{secretRef}
+func (h *Handler) handleAgentResolveV1(w http.ResponseWriter, token string) {
 	if len(token) <= 8 {
 		respondError(w, http.StatusBadRequest, "invalid token format: too short")
 		return
@@ -57,5 +71,56 @@ func (h *Handler) handleAgentResolve(w http.ResponseWriter, r *http.Request) {
 		"value": string(plaintext),
 	}
 	setRuntimeHashAliases(resp, agentHash)
+	respondJSON(w, http.StatusOK, resp)
+}
+
+// handleAgentResolveV2 resolves a secret using the v2 path-based token format.
+// Token format: {vault}/{group}/{key} (e.g. "host-lv/owner/password")
+func (h *Handler) handleAgentResolveV2(w http.ResponseWriter, token string) {
+	parsed, err := parseV2Path(token)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	agent, err := h.deps.DB().GetAgentByVaultName(parsed.Vault)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "vault not found: "+parsed.Vault)
+		return
+	}
+	if err := validateAgentAvailability(agent); err != nil {
+		h.respondAgentLookupError(w, err)
+		return
+	}
+
+	agentDEK, err := h.decryptAgentDEK(agent.DEK, agent.DEKNonce)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to decrypt agent DEK")
+		return
+	}
+
+	ai := agentToInfo(agent)
+	cipherSecret, err := h.fetchAgentCiphertext(ai, parsed.groupKeyPath())
+	if err != nil {
+		respondError(w, http.StatusNotFound, "secret not found: "+parsed.groupKeyPath())
+		return
+	}
+
+	plaintext, err := crypto.Decrypt(agentDEK, cipherSecret.Ciphertext, cipherSecret.Nonce)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "decryption failed")
+		return
+	}
+
+	resp := map[string]interface{}{
+		"ref":   token,
+		"vault": parsed.Vault,
+		"group": parsed.Group,
+		"key":   parsed.Key,
+		"path":  parsed.groupKeyPath(),
+		"name":  cipherSecret.Name,
+		"value": string(plaintext),
+	}
+	setRuntimeHashAliases(resp, agent.AgentHash)
 	respondJSON(w, http.StatusOK, resp)
 }
