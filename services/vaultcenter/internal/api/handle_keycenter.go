@@ -219,11 +219,18 @@ func (s *Server) handleKeycenterPromoteToVault(w http.ResponseWriter, r *http.Re
 		s.respondError(w, http.StatusInternalServerError, "failed to encode request")
 		return
 	}
-	resp, err := s.httpClient.Post(
+	cipherReq, err := http.NewRequest(http.MethodPost,
 		strings.TrimRight(agentURL, "/")+"/api/cipher",
-		httputil.ContentTypeJSON,
-		bytes.NewReader(cipherBody),
-	)
+		bytes.NewReader(cipherBody))
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, "failed to build request")
+		return
+	}
+	cipherReq.Header.Set("Content-Type", httputil.ContentTypeJSON)
+	if agentSecret := s.decryptAgentSecret(agent.AgentSecretEnc, agent.AgentSecretNonce); agentSecret != "" {
+		cipherReq.Header.Set("Authorization", "Bearer "+agentSecret)
+	}
+	resp, err := s.httpClient.Do(cipherReq)
 	if err != nil {
 		s.respondError(w, http.StatusBadGateway, "failed to reach vault")
 		return

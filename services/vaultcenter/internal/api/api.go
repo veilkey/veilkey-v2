@@ -228,6 +228,19 @@ func (s *Server) DecryptAgentDEK(encDEK, encNonce []byte) ([]byte, error) {
 	return crypto.Decrypt(s.GetKEK(), encDEK, encNonce)
 }
 
+// decryptAgentSecret decrypts an agent's stored encrypted secret using the KEK.
+// Returns empty string if the agent has no encrypted secret stored.
+func (s *Server) decryptAgentSecret(encSecret, encNonce []byte) string {
+	if len(encSecret) == 0 {
+		return ""
+	}
+	plaintext, err := crypto.Decrypt(s.GetKEK(), encSecret, encNonce)
+	if err != nil {
+		return ""
+	}
+	return string(plaintext)
+}
+
 func (s *Server) FindAgentRecord(hashOrLabel string) (*db.Agent, error) {
 	agent, err := s.db.GetAgentRecord(hashOrLabel)
 	if err != nil {
