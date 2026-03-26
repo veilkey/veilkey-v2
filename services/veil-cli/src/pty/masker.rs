@@ -229,21 +229,33 @@ pub fn mask_output(
     // The combined pre-scan above already issued split secrets to the API.
     let mut output = new_text.clone();
 
-    // Cross-chunk mask_map: secrets typed char-by-char span tail + new_text.
-    // Same-width refs ensure cursor position stays correct after erase.
-    if let Some(m) = find_cross_chunk_mask(plain_tail, &new_text, mask_map) {
-        output = m.output;
-    }
+    // Note: cross-chunk mask_map (find_cross_chunk_mask) is intentionally NOT
+    // used. Cursor control (\x1b[nD\x1b[K) breaks readline tracking, causing
+    // VK:LOC fragments on arrow keys. The 50ms coalesce handles most echo cases.
 
     // Apply cross-chunk boundary replacements first (secret suffix leaked into new_text)
     for (leaked, replacement) in &cross_chunk_replacements {
         output = output.replacen(leaked, replacement, 1);
     }
+    // Determine if this chunk contains a completed line (\n or \r\n).
+    // Completed lines: use full ref (VK:LOCAL:xxx) — cursor position irrelevant after newline.
+    // Readline echo (no \n): skip if in recent_input, else same-width to protect cursor.
+    let has_newline = output.contains('\n');
     for (plaintext, vk_ref) in mask_map {
         if plaintext.is_empty() {
             continue;
         }
-        let repl = padded_colorize_ref(vk_ref, UnicodeWidthStr::width(plaintext.as_str()));
+        if !has_newline && !recent_input.is_empty() && recent_input.contains(plaintext.as_str()) {
+            // Readline echo: user just typed this — skip to prevent cursor desync
+            continue;
+        }
+        let repl = if has_newline {
+            // Completed line: always use full canonical ref (preserves scope)
+            colorize_ref(vk_ref)
+        } else {
+            // No newline (partial/echo): same-width to protect readline cursor
+            padded_colorize_ref(vk_ref, UnicodeWidthStr::width(plaintext.as_str()))
+        };
         let (new_out, replaced) = ansi_aware_replace(&output, plaintext, &repl);
         if replaced {
             output = new_out;
@@ -1577,15 +1589,14 @@ mod tests {
 
     #[test]
     fn test_mask_output_recent_input_skips() {
-        // When the secret was recently typed as input, masking is skipped
-        // (to avoid masking what the user intentionally typed)
+        // When the secret was recently typed as input AND no \n (readline echo),
+        // mask_map replacement is skipped to prevent readline cursor desync.
         let map = vec![("typed-secret-12".to_string(), "VK:LOCAL:skip1".to_string())];
         let (output, _) = mask_with_input("typed-secret-12", &map, "typed-secret-12", "");
         let visible = strip_ansi(&output);
-        // The mask_map replacement still happens because recent_input only
-        // affects pattern-detected secrets, not mask_map entries
-        // mask_map is always applied regardless of recent_input
-        assert!(!visible.contains("typed-secret-12") || visible.contains("VK:LOCAL:skip1"));
+        // Readline echo (no \n): must pass through to preserve cursor position
+        assert!(visible.contains("typed-secret-12"),
+            "readline echo must not be masked (cursor desync protection)");
     }
 
     #[test]
@@ -2020,11 +2031,18 @@ mod security_masking_tests {
     }
 
     #[test]
-    fn sec_mask_map_beats_recent_input() {
+    fn sec_readline_echo_skipped_for_cursor_safety() {
+        // Readline echo (no \n, in recent_input) must NOT be masked.
+        // Masking changes byte length → readline cursor desync → VK:LOC fragments.
+        // Completed output lines (\n present) ARE masked regardless of recent_input.
         let m = mk(&[("MyP@ssw0rd!x", "VK:LOCAL:hhh88888")]);
         let (out, _) = mask_ri("MyP@ssw0rd!x", &m, "MyP@ssw0rd!x", "");
-        assert!(!strip(&out).contains("MyP@ssw0rd!x"),
-            "SECURITY: mask-map must replace even with recent_input: {}", strip(&out));
+        assert!(strip(&out).contains("MyP@ssw0rd!x"),
+            "readline echo must pass through (cursor safety): {}", strip(&out));
+        // But with \n, it MUST be masked
+        let (out2, _) = mask_ri("MyP@ssw0rd!x\n", &m, "MyP@ssw0rd!x", "");
+        assert!(!strip(&out2).contains("MyP@ssw0rd!x"),
+            "completed line must be masked even with recent_input: {}", strip(&out2));
     }
 
     #[test]
