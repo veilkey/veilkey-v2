@@ -2083,6 +2083,10 @@ mod connection_domain_tests {
         assert!(!re.is_match("VE:HOST:APP_ENV"), "VE:HOST must not match");
         assert!(re.is_match("VK:LOCAL:abc12345"), "VK refs must match");
         assert!(re.is_match("VK:TEMP:abc12345"), "VK:TEMP must match");
+        assert!(
+            re.is_match("VK:host-lv/cloudflare/api-key"),
+            "VK v2 path refs must match"
+        );
     }
 
     // ── session exit message only counts VK ──────────────────────────
