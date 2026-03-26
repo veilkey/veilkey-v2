@@ -63,9 +63,12 @@ func TestSource_TokenRefModel_VaultIndex(t *testing.T) {
 	}
 	content := string(src)
 
-	// Must have idx_token_refs_vault index on ref_vault
-	if !strings.Contains(content, "idx_token_refs_vault") {
-		t.Error("TokenRef must have idx_token_refs_vault index on ref_vault")
+	// Must have idx_token_refs_vault as a standalone index (not just as part of
+	// idx_token_refs_vault_path). Both may appear on the same gorm tag line, so
+	// strip all occurrences of the longer name before checking for the shorter one.
+	stripped := strings.ReplaceAll(content, "idx_token_refs_vault_path", "")
+	if !strings.Contains(stripped, "idx_token_refs_vault") {
+		t.Error("TokenRef must have idx_token_refs_vault index on ref_vault (distinct from idx_token_refs_vault_path)")
 	}
 }
 
@@ -113,12 +116,21 @@ func TestSource_RollbackScript_DropsV2Indexes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read rollback script: %v", err)
 	}
-	content := string(src)
 
-	if !strings.Contains(content, "DROP INDEX IF EXISTS idx_token_refs_vault") {
+	// Line-level matching to distinguish idx_token_refs_vault from idx_token_refs_vault_path
+	foundVault := false
+	foundVaultPath := false
+	for _, line := range strings.Split(string(src), "\n") {
+		if strings.Contains(line, "DROP INDEX IF EXISTS idx_token_refs_vault_path") {
+			foundVaultPath = true
+		} else if strings.Contains(line, "DROP INDEX IF EXISTS idx_token_refs_vault") {
+			foundVault = true
+		}
+	}
+	if !foundVault {
 		t.Error("rollback script must drop idx_token_refs_vault index")
 	}
-	if !strings.Contains(content, "DROP INDEX IF EXISTS idx_token_refs_vault_path") {
+	if !foundVaultPath {
 		t.Error("rollback script must drop idx_token_refs_vault_path index")
 	}
 }
@@ -163,6 +175,112 @@ func TestSource_RollbackScript_RemovesV2Columns(t *testing.T) {
 	}
 	if !strings.Contains(content, "DROP TABLE token_refs") {
 		t.Error("rollback script must drop the original table before recreating")
+	}
+}
+
+func TestSource_RollbackScript_HasTransaction(t *testing.T) {
+	src, err := os.ReadFile("rollback_v2_columns.sql")
+	if err != nil {
+		t.Fatalf("failed to read rollback script: %v", err)
+	}
+	content := string(src)
+
+	if !strings.Contains(content, "BEGIN;") {
+		t.Error("rollback script must be wrapped in a transaction (missing BEGIN;)")
+	}
+	if !strings.Contains(content, "COMMIT;") {
+		t.Error("rollback script must be wrapped in a transaction (missing COMMIT;)")
+	}
+}
+
+// ── Runtime tests: real DB verification ─────────────────────────────────────
+
+func TestRuntime_V2IndexesExist(t *testing.T) {
+	d, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create test DB: %v", err)
+	}
+	defer d.Close()
+
+	var indexes []struct {
+		Name string `gorm:"column:name"`
+	}
+	if err := d.conn.Raw("PRAGMA index_list('token_refs')").Scan(&indexes).Error; err != nil {
+		t.Fatalf("PRAGMA index_list failed: %v", err)
+	}
+
+	idxSet := make(map[string]bool)
+	for _, idx := range indexes {
+		idxSet[idx.Name] = true
+	}
+
+	if !idxSet["idx_token_refs_vault"] {
+		t.Error("idx_token_refs_vault index not found in runtime DB")
+	}
+	if !idxSet["idx_token_refs_vault_path"] {
+		t.Error("idx_token_refs_vault_path index not found in runtime DB")
+	}
+}
+
+func TestRuntime_RollbackRemovesV2Columns(t *testing.T) {
+	d, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create test DB: %v", err)
+	}
+	defer d.Close()
+
+	// Insert a v1 record so we can verify data survives rollback
+	parts := RefParts{Family: "VK", Scope: RefScopeLocal, ID: "rolltest1"}
+	if err := d.SaveRef(parts, "cipher-rolltest1", 1, RefStatusActive, ""); err != nil {
+		t.Fatalf("SaveRef failed: %v", err)
+	}
+
+	// Execute rollback script
+	sql, err := os.ReadFile("rollback_v2_columns.sql")
+	if err != nil {
+		t.Fatalf("failed to read rollback script: %v", err)
+	}
+	if err := d.conn.Exec(string(sql)).Error; err != nil {
+		t.Fatalf("rollback script execution failed: %v", err)
+	}
+
+	// Verify v2 indexes are gone
+	var indexes []struct {
+		Name string `gorm:"column:name"`
+	}
+	if err := d.conn.Raw("PRAGMA index_list('token_refs')").Scan(&indexes).Error; err != nil {
+		t.Fatalf("PRAGMA index_list failed: %v", err)
+	}
+	for _, idx := range indexes {
+		if idx.Name == "idx_token_refs_vault" || idx.Name == "idx_token_refs_vault_path" {
+			t.Errorf("v2 index %s still exists after rollback", idx.Name)
+		}
+	}
+
+	// Verify v2 columns are gone
+	var cols []struct {
+		Name string `gorm:"column:name"`
+	}
+	if err := d.conn.Raw("PRAGMA table_info('token_refs')").Scan(&cols).Error; err != nil {
+		t.Fatalf("PRAGMA table_info failed: %v", err)
+	}
+	colSet := make(map[string]bool)
+	for _, c := range cols {
+		colSet[c.Name] = true
+	}
+	for _, v2col := range []string{"ref_vault", "ref_group", "ref_key", "ref_path"} {
+		if colSet[v2col] {
+			t.Errorf("v2 column %s still exists after rollback", v2col)
+		}
+	}
+
+	// Verify v1 data survived
+	var count int64
+	if err := d.conn.Raw("SELECT COUNT(*) FROM token_refs WHERE ref_canonical = ?", "VK:LOCAL:rolltest1").Scan(&count).Error; err != nil {
+		t.Fatalf("count query failed: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("v1 data lost after rollback: expected 1 row, got %d", count)
 	}
 }
 

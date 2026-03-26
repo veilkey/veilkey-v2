@@ -7,6 +7,8 @@
 -- WARNING: This will permanently remove v2 reference data.
 -- Ensure no v2 refs are in active use before running.
 
+BEGIN;
+
 -- Drop indexes first
 DROP INDEX IF EXISTS idx_token_refs_vault;
 DROP INDEX IF EXISTS idx_token_refs_vault_path;
@@ -58,3 +60,5 @@ CREATE INDEX IF NOT EXISTS idx_token_refs_secret_name ON token_refs(secret_name)
 CREATE INDEX IF NOT EXISTS idx_token_refs_agent_hash ON token_refs(agent_hash);
 CREATE INDEX IF NOT EXISTS idx_token_refs_plaintext_hash ON token_refs(plaintext_hash);
 CREATE INDEX IF NOT EXISTS idx_token_refs_expires_at ON token_refs(expires_at);
+
+COMMIT;
