@@ -310,7 +310,9 @@ func (h *Handler) handleGlobalFunctionRun(w http.ResponseWriter, r *http.Request
 		ActorID:    httputil.ActorIDForRequest(r),
 		Source:     "global_function_run",
 		AfterJSON:  string(afterJSON),
-	})
+	}); err != nil {
+		log.Printf("audit: failed to submit function_run event name=%s: %v", name, err)
+	}
 
 	status := http.StatusOK
 	if err != nil {
