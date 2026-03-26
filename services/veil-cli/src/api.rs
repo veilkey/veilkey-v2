@@ -668,19 +668,36 @@ pub fn parse_mask_map_entries(
     (secrets, ve_entries)
 }
 
+/// A valid v2 path segment: starts with `[a-z0-9]`, followed by `[a-z0-9-]` chars.
+fn is_v2_segment(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    let mut chars = s.chars();
+    let first = chars.next().unwrap();
+    if !first.is_ascii_lowercase() && !first.is_ascii_digit() {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// A valid v2 path: exactly three `/`-separated segments, each passing `is_v2_segment`.
+fn is_v2_path(s: &str) -> bool {
+    let parts: Vec<&str> = s.split('/').collect();
+    parts.len() == 3 && parts.iter().all(|p| is_v2_segment(p))
+}
+
 fn resolve_candidates(token: &str) -> Vec<String> {
     if token.starts_with("VK:") || token.starts_with("VE:") {
         let colon_count = token.chars().filter(|&c| c == ':').count();
         if colon_count == 1 {
-            if let Some(idx) = token.find(':') {
-                let after_prefix = &token[idx + 1..];
-                // v2 path-based ref: VK:vault/group/key -> send "vault/group/key"
-                // Block path traversal attempts
-                if after_prefix.contains("..") {
-                    return vec![];
-                }
+            let after_prefix = &token[token.find(':').unwrap() + 1..];
+            // v2 path-based ref: VK:vault/group/key -> send "vault/group/key"
+            if is_v2_path(after_prefix) {
                 return vec![after_prefix.to_string()];
             }
+            // Single-colon but not a valid v2 path — return as-is
+            return vec![token.to_string()];
         }
         let parts: Vec<&str> = token.splitn(3, ':').collect();
         if parts.len() == 3 && parts[0] == "VK" {
