@@ -2387,4 +2387,119 @@ mod connection_domain_tests {
         assert!(src.contains("veilkey secret get"));
         assert!(src.contains("veilkey secret delete"));
     }
+
+    // ── is_v2_segment ────────────────────────────────────────────────
+
+    #[test]
+    fn test_is_v2_segment() {
+        assert!(super::is_v2_segment("abc"));
+        assert!(super::is_v2_segment("a1"));
+        assert!(super::is_v2_segment("_private"));
+        assert!(super::is_v2_segment("my-key"));
+        assert!(super::is_v2_segment("1start"));
+        assert!(!super::is_v2_segment(""));
+        assert!(!super::is_v2_segment("-start"));
+        assert!(!super::is_v2_segment("UPPER"));
+        assert!(!super::is_v2_segment("has space"));
+        assert!(!super::is_v2_segment(".dot"));
+    }
+
+    // ── is_v2_path ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_is_v2_path() {
+        assert!(super::is_v2_path("vault/group/key"));
+        assert!(super::is_v2_path("prod_vault/api-keys/stripe"));
+        assert!(super::is_v2_path("_v/g/k"));
+        assert!(!super::is_v2_path("vault/key"));
+        assert!(!super::is_v2_path("a/b/c/d"));
+        assert!(!super::is_v2_path("Vault/group/key"));
+        assert!(!super::is_v2_path("vault//key"));
+        assert!(!super::is_v2_path(""));
+    }
+
+    // ── resolve_candidates: v2 path format ──────────────────────────
+
+    #[test]
+    fn test_resolve_candidates_bare_v2_path() {
+        let candidates = super::resolve_candidates("vault/group/key");
+        assert_eq!(candidates, vec!["vault/group/key"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_bare_v2_path_with_hyphens() {
+        let candidates = super::resolve_candidates("prod_vault/api-keys/stripe");
+        assert_eq!(candidates, vec!["prod_vault/api-keys/stripe"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_bare_v2_path_underscores() {
+        let candidates = super::resolve_candidates("my_vault/my_group/my_key");
+        assert_eq!(candidates, vec!["my_vault/my_group/my_key"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_vk_prefixed_v2_path() {
+        // VK:vault/group/key → strip VK: prefix, return bare path
+        let candidates = super::resolve_candidates("VK:vault/group/key");
+        assert_eq!(candidates, vec!["vault/group/key"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_vk_prefixed_v2_path_complex() {
+        let candidates = super::resolve_candidates("VK:prod_vault/api-keys/stripe");
+        assert_eq!(candidates, vec!["prod_vault/api-keys/stripe"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_two_segments_not_matched() {
+        let candidates = super::resolve_candidates("vault/key");
+        assert_eq!(candidates, vec!["vault/key"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_four_segments_not_matched() {
+        let candidates = super::resolve_candidates("a/b/c/d");
+        assert_eq!(candidates, vec!["a/b/c/d"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_uppercase_not_matched() {
+        let candidates = super::resolve_candidates("Vault/Group/Key");
+        assert_eq!(candidates, vec!["Vault/Group/Key"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_empty_segment_not_matched() {
+        let candidates = super::resolve_candidates("vault//key");
+        assert_eq!(candidates, vec!["vault//key"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_vk_local_with_v2_path() {
+        // VK:LOCAL:vault/group/key → v1 format, returns both full token and path
+        let candidates = super::resolve_candidates("VK:LOCAL:vault/group/key");
+        assert_eq!(
+            candidates,
+            vec!["VK:LOCAL:vault/group/key", "vault/group/key"]
+        );
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_numeric_segments() {
+        let candidates = super::resolve_candidates("1vault/2group/3key");
+        assert_eq!(candidates, vec!["1vault/2group/3key"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_traversal_rejected() {
+        let candidates = super::resolve_candidates("../etc/passwd");
+        assert_eq!(candidates, vec!["../etc/passwd"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_hyphen_start_rejected() {
+        let candidates = super::resolve_candidates("-vault/group/key");
+        assert_eq!(candidates, vec!["-vault/group/key"]);
+    }
 }
