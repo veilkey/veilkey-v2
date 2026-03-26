@@ -23,6 +23,9 @@ var v2PathSegmentPattern = regexp.MustCompile(`^[a-z0-9_][a-z0-9_-]*$`)
 // The token format is "{vault}/{group}/{key}".
 // Returns an error if the format is invalid.
 func parseV2Path(token string) (*v2PathRef, error) {
+	if strings.Count(token, "/") > 2 {
+		return nil, fmt.Errorf("invalid v2 path: too many segments in %%q", token)
+	}
 	parts := strings.SplitN(token, "/", 3)
 	if len(parts) != 3 {
 		return nil, fmt.Errorf("invalid v2 path: expected {vault}/{group}/{key}, got %q", token)
