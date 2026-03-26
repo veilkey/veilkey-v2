@@ -2066,7 +2066,8 @@ mod connection_domain_tests {
     fn test_resolve_candidates_ve_single_colon() {
         // "VE:something" (only 1 colon) — special path in resolve_candidates
         let candidates = super::resolve_candidates("VE:something");
-        assert_eq!(candidates, vec!["something"]);
+        // VE:something is not a v2 path, so full token is returned
+        assert_eq!(candidates, vec!["VE:something"]);
     }
 
     // ── env var resolution regex excludes VE ─────────────────────────
