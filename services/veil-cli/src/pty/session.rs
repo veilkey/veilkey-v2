@@ -1042,3 +1042,59 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod coalesce_tests {
+    use super::*;
+
+    /// SECURITY: Output coalesce must be >= 30ms to ensure readline echo
+    /// arrives in a single chunk for mask-map replacement. If coalesce is
+    /// too short (e.g. 5ms), secrets typed in the shell echo back as
+    /// individual characters across separate chunks and bypass masking.
+    ///
+    /// This test reads the source code to verify the Duration literal.
+    /// If you need to change the coalesce, update this test AND verify
+    /// that `echo $SECRET` in veil shell still masks correctly.
+    #[test]
+    fn coalesce_must_be_at_least_30ms() {
+        let src = std::fs::read_to_string("src/pty/session.rs")
+            .expect("cannot read session.rs");
+        // Find the coalesce sleep line
+        let coalesce_line = src.lines()
+            .find(|l| l.contains("from_millis") && l.contains("sleep"))
+            .expect("coalesce sleep line not found in session.rs");
+        // Extract millis value
+        let ms: u64 = coalesce_line
+            .split("from_millis(")
+            .nth(1)
+            .and_then(|s| s.split(')').next())
+            .and_then(|s| s.trim().parse().ok())
+            .expect("cannot parse coalesce millis");
+        assert!(
+            ms >= 30,
+            "SECURITY: coalesce {}ms is too short — secrets will leak through readline echo. \
+             Minimum 30ms required for cross-chunk detection. Was 50ms by design.",
+            ms
+        );
+    }
+
+    #[test]
+    fn coalesce_must_not_exceed_200ms() {
+        let src = std::fs::read_to_string("src/pty/session.rs")
+            .expect("cannot read session.rs");
+        let coalesce_line = src.lines()
+            .find(|l| l.contains("from_millis") && l.contains("sleep"))
+            .expect("coalesce sleep line not found");
+        let ms: u64 = coalesce_line
+            .split("from_millis(")
+            .nth(1)
+            .and_then(|s| s.split(')').next())
+            .and_then(|s| s.trim().parse().ok())
+            .expect("cannot parse coalesce millis");
+        assert!(
+            ms <= 200,
+            "coalesce {}ms is too long — PTY will feel laggy. Max 200ms.",
+            ms
+        );
+    }
+}
