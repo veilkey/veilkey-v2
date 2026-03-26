@@ -1972,6 +1972,110 @@ mod connection_domain_tests {
         assert_eq!(candidates, vec!["something"]);
     }
 
+    // ── resolve_candidates with v2 path refs ─────────────────────────
+
+    #[test]
+    fn test_resolve_candidates_bare_v2_path() {
+        // vault/group/key without any prefix
+        let candidates = super::resolve_candidates("my_vault/db/password");
+        assert_eq!(candidates, vec!["my_vault/db/password"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_vk_prefixed_v2_path() {
+        // VK:vault/group/key — strip prefix, return bare path
+        let candidates = super::resolve_candidates("VK:my_vault/db/password");
+        assert_eq!(candidates, vec!["my_vault/db/password"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_with_hyphens() {
+        let candidates = super::resolve_candidates("prod-vault/api-keys/stripe-key");
+        assert_eq!(candidates, vec!["prod-vault/api-keys/stripe-key"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_with_numbers() {
+        let candidates = super::resolve_candidates("vault1/group2/key3");
+        assert_eq!(candidates, vec!["vault1/group2/key3"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_underscore_start() {
+        let candidates = super::resolve_candidates("_private/internal/secret");
+        assert_eq!(candidates, vec!["_private/internal/secret"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_invalid_uppercase() {
+        // Uppercase segments are NOT valid v2 paths — fallback to opaque token
+        let candidates = super::resolve_candidates("MyVault/Group/Key");
+        assert_eq!(candidates, vec!["MyVault/Group/Key"]);
+        // Still returned as-is (fallback), but not recognized as v2 path
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_too_few_segments() {
+        // Only 2 segments — not a valid v2 path
+        let candidates = super::resolve_candidates("vault/key");
+        assert_eq!(candidates, vec!["vault/key"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_too_many_segments() {
+        // 4 segments — not a valid v2 path (splitn(4) yields 4 parts)
+        let candidates = super::resolve_candidates("a/b/c/d");
+        assert_eq!(candidates, vec!["a/b/c/d"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_empty_segment() {
+        // Empty segment → not a valid v2 path
+        let candidates = super::resolve_candidates("vault//key");
+        assert_eq!(candidates, vec!["vault//key"]);
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_traversal_rejected() {
+        // Path traversal attempt — ".." starts with "." which is invalid
+        let candidates = super::resolve_candidates("../etc/passwd");
+        assert_eq!(candidates, vec!["../etc/passwd"]);
+        // Not recognized as v2 path due to invalid segment chars
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_hyphen_start_rejected() {
+        // Segment starting with "-" is invalid
+        let candidates = super::resolve_candidates("-vault/group/key");
+        assert_eq!(candidates, vec!["-vault/group/key"]);
+    }
+
+    #[test]
+    fn test_is_v2_segment() {
+        assert!(super::is_v2_segment("abc"));
+        assert!(super::is_v2_segment("a1"));
+        assert!(super::is_v2_segment("_private"));
+        assert!(super::is_v2_segment("my-key"));
+        assert!(super::is_v2_segment("1start"));
+        assert!(!super::is_v2_segment(""));
+        assert!(!super::is_v2_segment("-start"));
+        assert!(!super::is_v2_segment("UPPER"));
+        assert!(!super::is_v2_segment("has space"));
+        assert!(!super::is_v2_segment(".dot"));
+    }
+
+    #[test]
+    fn test_is_v2_path() {
+        assert!(super::is_v2_path("vault/group/key"));
+        assert!(super::is_v2_path("prod_vault/api-keys/stripe"));
+        assert!(super::is_v2_path("_v/g/k"));
+        assert!(!super::is_v2_path("vault/key"));
+        assert!(!super::is_v2_path("a/b/c/d"));
+        assert!(!super::is_v2_path("Vault/group/key"));
+        assert!(!super::is_v2_path("vault//key"));
+        assert!(!super::is_v2_path(""));
+    }
+
     // ── env var resolution regex excludes VE ─────────────────────────
 
     #[test]
