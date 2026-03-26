@@ -102,7 +102,7 @@ func (h *Handler) handleApprovalTokenChallengeSubmit(w http.ResponseWriter, r *h
 		"status":      "submitted",
 		"used_at":     time.Now().UTC().Format(time.RFC3339),
 	}
-	_ = h.db.SaveAuditEvent(&db.AuditEvent{
+	if err := h.db.SaveAuditEvent(&db.AuditEvent{
 		EventID:             vcrypto.GenerateUUID(),
 		EntityType:          "approval_token",
 		EntityID:            challenge.Token,
