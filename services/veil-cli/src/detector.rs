@@ -952,4 +952,71 @@ mod tests {
             "non-repeated alpha (not sequential)"
         );
     }
+
+    // ── v2 path-based reference detection ─────────────────────────────
+
+    #[test]
+    fn regex_matches_v2_path_ref() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        assert!(re.is_match("VK:host-lv/owner/password"));
+        assert!(re.is_match("VK:soulflow-lv/db/password"));
+        assert!(re.is_match("VK:host-lv/cloudflare/api-key"));
+    }
+
+    #[test]
+    fn regex_matches_v2_reserved_prefix() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        assert!(re.is_match("VK:host-lv/_temp/session-token"));
+        assert!(re.is_match("VK:host-lv/_ssh/deploy-key"));
+    }
+
+    #[test]
+    fn regex_still_matches_v1_refs() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        assert!(re.is_match("VK:LOCAL:3c3d53ea"));
+        assert!(re.is_match("VK:TEMP:ed694a5e"));
+        assert!(re.is_match("VK:SSH:abc12345"));
+        assert!(re.is_match("VK:3c3d53ea"));
+    }
+
+    #[test]
+    fn regex_extracts_v2_ref_from_env_line() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        let line = "CLOUDFLARE_API_KEY=VK:host-lv/cloudflare/api-key";
+        let m = re.find(line).unwrap();
+        assert_eq!(m.as_str(), "VK:host-lv/cloudflare/api-key");
+    }
+
+    #[test]
+    fn regex_handles_mixed_v1_v2_env() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        let env = "OLD=VK:LOCAL:d7af11a6\nNEW=VK:host-lv/cloudflare/api-key";
+        let matches: Vec<&str> = re.find_iter(env).map(|m| m.as_str()).collect();
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0], "VK:LOCAL:d7af11a6");
+        assert_eq!(matches[1], "VK:host-lv/cloudflare/api-key");
+    }
+
+    #[test]
+    fn is_trivial_rejects_v2_ref() {
+        assert!(!is_trivial_value("VK:host-lv/owner/password"));
+        assert!(!is_trivial_value("VK:soulflow-lv/db/password"));
+        assert!(!is_trivial_value("VK:host-lv/_temp/session-token"));
+    }
+
+    #[test]
+    fn is_trivial_rejects_v1_ref() {
+        assert!(!is_trivial_value("VK:LOCAL:3c3d53ea"));
+        assert!(!is_trivial_value("VK:TEMP:ed694a5e"));
+    }
+
+    #[test]
+    fn regex_rejects_invalid_v2_paths() {
+        let re = Regex::new(&format!("^{}$", VEILKEY_RE_STR)).unwrap();
+        // Missing segments
+        assert!(!re.is_match("VK:host-lv/owner"));
+        assert!(!re.is_match("VK:host-lv"));
+        // Uppercase not allowed in v2 path
+        assert!(!re.is_match("VK:HOST-LV/Owner/Password"));
+    }
 }
