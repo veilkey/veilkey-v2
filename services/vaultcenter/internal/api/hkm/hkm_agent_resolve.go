@@ -64,7 +64,7 @@ func (h *Handler) handleAgentResolveV1(w http.ResponseWriter, token string) {
 		return
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"ref":   secretRef,
 		"vault": agent.Label,
 		"name":  cipherSecret.Name,
@@ -76,6 +76,9 @@ func (h *Handler) handleAgentResolveV1(w http.ResponseWriter, token string) {
 
 // handleAgentResolveV2 resolves a secret using the v2 path-based token format.
 // Token format: {vault}/{group}/{key} (e.g. "host-lv/owner/password")
+// TODO: This shares the vault lookup → DEK decrypt → cipher fetch → decrypt flow
+// with resolveTrackedRef in hkm_resolve_secret.go. Consider extracting a shared
+// helper if either path changes.
 func (h *Handler) handleAgentResolveV2(w http.ResponseWriter, token string) {
 	parsed, err := parseV2Path(token)
 	if err != nil {
@@ -112,7 +115,7 @@ func (h *Handler) handleAgentResolveV2(w http.ResponseWriter, token string) {
 		return
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"ref":   token,
 		"vault": parsed.Vault,
 		"group": parsed.Group,
