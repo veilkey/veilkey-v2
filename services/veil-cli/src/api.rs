@@ -665,6 +665,13 @@ pub fn parse_mask_map_entries(
 
 fn resolve_candidates(token: &str) -> Vec<String> {
     if token.starts_with("VK:") || token.starts_with("VE:") {
+        // v2 path-based ref: VK:{vault}/{group}/{key}
+        // colon_count == 1 and contains '/' → send full token
+        let after_prefix = &token[3..]; // after "VK:" or "VE:"
+        if after_prefix.contains('/') {
+            return vec![token.to_string()];
+        }
+
         let colon_count = token.chars().filter(|&c| c == ':').count();
         if colon_count == 1 {
             if let Some(idx) = token.find(':') {
@@ -1053,6 +1060,36 @@ mod tests {
                 c
             );
         }
+    }
+
+    #[test]
+    fn resolve_candidates_v2_path_ref() {
+        let candidates = super::resolve_candidates("VK:host-lv/owner/password");
+        assert_eq!(candidates, vec!["VK:host-lv/owner/password"]);
+    }
+
+    #[test]
+    fn resolve_candidates_v2_reserved_prefix() {
+        let candidates = super::resolve_candidates("VK:host-lv/_temp/session-token");
+        assert_eq!(candidates, vec!["VK:host-lv/_temp/session-token"]);
+    }
+
+    #[test]
+    fn resolve_candidates_v1_still_works() {
+        let candidates = super::resolve_candidates("VK:LOCAL:abc12345");
+        assert_eq!(
+            candidates,
+            vec!["VK:LOCAL:abc12345", "abc12345"]
+        );
+    }
+
+    #[test]
+    fn resolve_candidates_v1_and_v2_different() {
+        // v1 returns [full, id], v2 returns [full] only
+        let v1 = super::resolve_candidates("VK:LOCAL:deadbeef");
+        let v2 = super::resolve_candidates("VK:host-lv/db/password");
+        assert_eq!(v1.len(), 2, "v1 should have 2 candidates");
+        assert_eq!(v2.len(), 1, "v2 should have 1 candidate");
     }
 
     // ── Dense edge cases ──────────────────────────────────────────

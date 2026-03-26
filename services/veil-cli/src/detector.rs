@@ -8,7 +8,7 @@ use crate::logger::SessionLogger;
 use crate::state::state_dir;
 
 pub const VEILKEY_RE_STR: &str =
-    r"VK:(?:(?:TEMP|LOCAL|EXTERNAL|SSH):[0-9A-Fa-f]{4,64}|[0-9a-f]{8})";
+    r"VK:(?:(?:TEMP|LOCAL|EXTERNAL|SSH):[0-9A-Fa-f]{4,64}|[0-9a-f]{8}|[a-z][a-z0-9-]*/[a-z_][a-z0-9-]*/[a-z_][a-z0-9-]*)";
 
 const MIN_SECRET_LEN: usize = 6;
 const PREVIEW_LEN: usize = 4;
@@ -920,6 +920,134 @@ mod tests {
     }
 
     // ── is_trivial_value unit tests ─────────────────────────────────
+
+    // ── v2 path-based ref detection ──────────────────────────────
+
+    #[test]
+    fn v2_ref_regex_matches_path_format() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        let cases = vec![
+            ("VK:host-lv/owner/password", true),
+            ("VK:soulflow-lv/db/password", true),
+            ("VK:host-lv/cloudflare/api-key", true),
+            ("VK:host-lv/_temp/session-token", true),
+            ("VK:host-lv/_ssh/deploy-key", true),
+            ("VK:LOCAL:3c3d53ea", true),
+            ("VK:TEMP:ed694a5e", true),
+            ("VK:SSH:abc12345", true),
+            ("VK:EXTERNAL:deadbeef", true),
+            ("not-a-ref", false),
+            ("VK:", false),
+        ];
+        for (input, expected) in cases {
+            let found = re.is_match(input);
+            assert_eq!(
+                found, expected,
+                "VEILKEY_RE_STR match for {:?}: expected {}, got {}",
+                input, expected, found
+            );
+        }
+    }
+
+    #[test]
+    fn v2_ref_not_detected_as_secret() {
+        let config = generic_secret_config();
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let logger = SessionLogger::new("/dev/null");
+        let det = SecretDetector::new(&config, &client, &logger, true);
+
+        let lines = vec![
+            "key=VK:host-lv/owner/password",
+            "secret=VK:soulflow-lv/db/password",
+            "token=VK:host-lv/cloudflare/api-key",
+        ];
+        for line in lines {
+            let detections = det.detect_secrets(line);
+            assert!(
+                detections.is_empty(),
+                "v2 ref should be excluded from detection: {:?}",
+                line
+            );
+        }
+    }
+
+    #[test]
+    fn v2_ref_preserved_in_process_line() {
+        let config = empty_config();
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let logger = SessionLogger::new("/dev/null");
+        let mut det = SecretDetector::new(&config, &client, &logger, true);
+
+        let line = "export DB_PASS=VK:host-lv/db/password";
+        let result = det.process_line(line);
+        assert!(
+            result.contains("VK:host-lv/db/password"),
+            "v2 ref must be preserved in output, got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn v2_and_v1_refs_coexist_in_line() {
+        let config = empty_config();
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let logger = SessionLogger::new("/dev/null");
+        let mut det = SecretDetector::new(&config, &client, &logger, true);
+
+        let line = "A=VK:LOCAL:abc12345 B=VK:host-lv/owner/password";
+        let result = det.process_line(line);
+        assert!(
+            result.contains("VK:LOCAL:abc12345"),
+            "v1 ref must be preserved, got: {}",
+            result
+        );
+        assert!(
+            result.contains("VK:host-lv/owner/password"),
+            "v2 ref must be preserved, got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn v2_ref_with_reserved_prefix_preserved() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        assert!(re.is_match("VK:host-lv/_temp/session-token"));
+        assert!(re.is_match("VK:host-lv/_ssh/deploy-key"));
+    }
+
+    #[test]
+    fn v2_ref_not_trivial_value() {
+        // v2 path segments like "host-lv/owner/password" should NOT be trivial
+        // even though they don't start with / ./ ~/
+        assert!(!is_trivial_value("host-lv/owner/password"));
+        assert!(!is_trivial_value("soulflow-lv/db/password"));
+    }
+
+    #[test]
+    fn env_file_v2_refs_not_detected() {
+        let config = generic_secret_config();
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let logger = SessionLogger::new("/dev/null");
+        let det = SecretDetector::new(&config, &client, &logger, true);
+
+        let lines = vec![
+            "CLOUDFLARE_API_KEY=VK:host-lv/cloudflare/api-key",
+            "OWNER_PASSWORD=VK:host-lv/owner/password",
+            "DB_PASSWORD=VK:soulflow-lv/db/password",
+        ];
+        for line in lines {
+            let detections = det.detect_secrets(line);
+            assert!(
+                detections.is_empty(),
+                ".env v2 ref should not be detected as secret: {:?}",
+                line
+            );
+        }
+    }
 
     #[test]
     fn test_is_trivial_value_comprehensive() {
