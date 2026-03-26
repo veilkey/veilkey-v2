@@ -252,11 +252,17 @@ impl VeilKeyClient {
     }
 
     fn resolve_once(&self, r#ref: &str) -> Result<String, String> {
-        let url = format!(
-            "{}/api/resolve/{}",
-            self.base_url,
-            urlencoding::encode(r#ref)
-        );
+        // v2 path-based refs (containing "/") use the resolve-agent endpoint
+        // which supports {token...} wildcard path matching
+        let url = if r#ref.contains('/') {
+            format!("{}/api/resolve-agent/{}", self.base_url, r#ref)
+        } else {
+            format!(
+                "{}/api/resolve/{}",
+                self.base_url,
+                urlencoding::encode(r#ref)
+            )
+        };
         let mut req = self.agent.get(&url);
         if let Some(cookie) = self.cookie_header() {
             req = req.set("Cookie", &cookie);
@@ -665,6 +671,13 @@ pub fn parse_mask_map_entries(
 
 fn resolve_candidates(token: &str) -> Vec<String> {
     if token.starts_with("VK:") || token.starts_with("VE:") {
+        let after_prefix = &token[3..];
+
+        // v2 path-based: "VK:vault/group/key" — path contains "/"
+        if after_prefix.contains('/') {
+            return vec![token.to_string(), after_prefix.to_string()];
+        }
+
         let colon_count = token.chars().filter(|&c| c == ':').count();
         if colon_count == 1 {
             if let Some(idx) = token.find(':') {
@@ -1279,13 +1292,17 @@ mod connection_domain_tests {
         );
     }
 
-    /// DOMAIN: resolve must target VaultCenter (/api/resolve/).
+    /// DOMAIN: resolve must target VaultCenter (/api/resolve/ and /api/resolve-agent/).
     #[test]
     fn domain_resolve_url_is_vaultcenter() {
         let src = include_str!("api.rs");
         assert!(
             src.contains("/api/resolve/"),
-            "resolve must call /api/resolve/ (VaultCenter endpoint)"
+            "resolve must call /api/resolve/ (VaultCenter v1 endpoint)"
+        );
+        assert!(
+            src.contains("/api/resolve-agent/"),
+            "resolve must call /api/resolve-agent/ (VaultCenter v2 endpoint)"
         );
     }
 
@@ -1323,6 +1340,7 @@ mod connection_domain_tests {
             "/api/mask-map",
             "/api/encrypt",
             "/api/resolve/",
+            "/api/resolve-agent/",
             "/api/ssh/keys",
             "/api/functions/global",
         ];
@@ -1970,6 +1988,127 @@ mod connection_domain_tests {
         // "VE:something" (only 1 colon) — special path in resolve_candidates
         let candidates = super::resolve_candidates("VE:something");
         assert_eq!(candidates, vec!["something"]);
+    }
+
+    // ── resolve_candidates with v2 path-based refs ─────────────────
+
+    #[test]
+    fn test_resolve_candidates_v2_path_basic() {
+        let candidates = super::resolve_candidates("VK:host-lv/owner/password");
+        assert_eq!(
+            candidates,
+            vec!["VK:host-lv/owner/password", "host-lv/owner/password"]
+        );
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_with_underscores() {
+        let candidates = super::resolve_candidates("VK:soulflow-lv/db/db_password");
+        assert_eq!(
+            candidates,
+            vec!["VK:soulflow-lv/db/db_password", "soulflow-lv/db/db_password"]
+        );
+    }
+
+    #[test]
+    fn test_resolve_candidates_v2_path_no_traversal() {
+        // Path-based refs must not produce path traversal candidates
+        let candidates = super::resolve_candidates("VK:host-lv/owner/password");
+        for c in &candidates {
+            assert!(
+                !c.contains(".."),
+                "v2 candidate must not contain path traversal: {}",
+                c
+            );
+        }
+    }
+
+    #[test]
+    fn test_resolve_candidates_v1_unchanged() {
+        // Ensure v1 refs still work as before
+        let candidates = super::resolve_candidates("VK:LOCAL:abc12345");
+        assert_eq!(candidates, vec!["VK:LOCAL:abc12345", "abc12345"]);
+    }
+
+    // ── v2 regex matching ────────────────────────────────────────────
+
+    #[test]
+    fn guard_veilkey_regex_matches_v2_path_refs() {
+        let re = regex::Regex::new(crate::detector::VEILKEY_RE_STR).expect("regex must compile");
+        assert!(
+            re.is_match("VK:host-lv/owner/password"),
+            "v2 path ref must match"
+        );
+        assert!(
+            re.is_match("VK:soulflow-lv/db/db_password"),
+            "v2 path with underscores must match"
+        );
+        assert!(
+            re.is_match("VK:my_vault/cloudflare/api-key"),
+            "v2 path with hyphens must match"
+        );
+    }
+
+    #[test]
+    fn guard_veilkey_regex_v2_does_not_match_invalid_paths() {
+        let re = regex::Regex::new(crate::detector::VEILKEY_RE_STR).expect("regex must compile");
+        // Only two segments — not a valid v2 path
+        assert!(
+            !re.is_match("VK:host-lv/owner"),
+            "two-segment path must not match"
+        );
+        // Uppercase not allowed in v2 path segments
+        assert!(
+            !re.is_match("VK:Host-LV/Owner/Password"),
+            "uppercase path must not match"
+        );
+    }
+
+    #[test]
+    fn guard_veilkey_regex_v2_coexists_with_v1() {
+        let re = regex::Regex::new(crate::detector::VEILKEY_RE_STR).expect("regex must compile");
+        // v1 formats still work
+        assert!(re.is_match("VK:LOCAL:abc12345"), "v1 scoped must match");
+        assert!(re.is_match("VK:TEMP:ff00ff00"), "v1 TEMP must match");
+        assert!(re.is_match("VK:abcdef01"), "v1 short must match");
+        // v2 format works
+        assert!(
+            re.is_match("VK:host-lv/owner/password"),
+            "v2 path must match"
+        );
+    }
+
+    #[test]
+    fn guard_veilkey_regex_finds_v2_in_env_line() {
+        let re = regex::Regex::new(crate::detector::VEILKEY_RE_STR).expect("regex must compile");
+        let line = "CLOUDFLARE_API_KEY=VK:host-lv/cloudflare/api-key";
+        let m = re.find(line).expect("must find v2 ref in env line");
+        assert_eq!(m.as_str(), "VK:host-lv/cloudflare/api-key");
+    }
+
+    #[test]
+    fn guard_veilkey_regex_finds_mixed_v1_v2_in_env() {
+        let re = regex::Regex::new(crate::detector::VEILKEY_RE_STR).expect("regex must compile");
+        let content = "DB_PASS=VK:LOCAL:3c3d53ea\nAPI_KEY=VK:host-lv/cloudflare/api-key\n";
+        let matches: Vec<&str> = re.find_iter(content).map(|m| m.as_str()).collect();
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0], "VK:LOCAL:3c3d53ea");
+        assert_eq!(matches[1], "VK:host-lv/cloudflare/api-key");
+    }
+
+    // ── is_trivial_value must not flag v2 refs ──────────────────────
+
+    #[test]
+    fn guard_is_trivial_value_rejects_v2_ref() {
+        // v2 path refs must NOT be treated as trivial values
+        assert!(
+            !crate::detector::is_trivial_value("VK:host-lv/owner/password"),
+            "v2 ref must not be trivial"
+        );
+        assert!(
+            !crate::detector::is_trivial_value("VK:soulflow-lv/db/db_password"),
+            "v2 ref must not be trivial"
+        );
     }
 
     // ── env var resolution regex excludes VE ─────────────────────────
