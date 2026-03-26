@@ -250,6 +250,12 @@ func (d *DB) GetAgentBySecretHash(secretHash string) (*Agent, error) {
 	return dbFirst[Agent](d, "agent with secret hash not found", "agent_secret_hash = ?", secretHash)
 }
 
+// GetAgentByVaultName looks up an active (non-archived, non-deleted) agent by vault_name.
+func (d *DB) GetAgentByVaultName(vaultName string) (*Agent, error) {
+	return dbFirst[Agent](d, "agent with vault_name "+vaultName+" not found",
+		"vault_name = ? AND archived_at IS NULL AND deleted_at IS NULL", vaultName)
+}
+
 func (d *DB) UpdateAgentSecretHash(nodeID, secretHash string, encSecret, encNonce []byte) error {
 	result := d.conn.Model(&Agent{}).Where("node_id = ?", nodeID).
 		Select("AgentSecretHash", "AgentSecretEnc", "AgentSecretNonce").
