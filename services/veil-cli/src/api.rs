@@ -252,11 +252,16 @@ impl VeilKeyClient {
     }
 
     fn resolve_once(&self, r#ref: &str) -> Result<String, String> {
-        let url = format!(
-            "{}/api/resolve/{}",
-            self.base_url,
-            urlencoding::encode(r#ref)
-        );
+        // v2 path-based refs contain "/" — use the agent resolve endpoint (wildcard route)
+        let url = if r#ref.contains('/') {
+            format!("{}/api/resolve-agent/{}", self.base_url, r#ref)
+        } else {
+            format!(
+                "{}/api/resolve/{}",
+                self.base_url,
+                urlencoding::encode(r#ref)
+            )
+        };
         let mut req = self.agent.get(&url);
         if let Some(cookie) = self.cookie_header() {
             req = req.set("Cookie", &cookie);
@@ -668,7 +673,9 @@ fn resolve_candidates(token: &str) -> Vec<String> {
         let colon_count = token.chars().filter(|&c| c == ':').count();
         if colon_count == 1 {
             if let Some(idx) = token.find(':') {
-                return vec![token[idx + 1..].to_string()];
+                let after_prefix = &token[idx + 1..];
+                // v2 path-based ref: VK:vault/group/key -> send "vault/group/key"
+                return vec![after_prefix.to_string()];
             }
         }
         let parts: Vec<&str> = token.splitn(3, ':').collect();
