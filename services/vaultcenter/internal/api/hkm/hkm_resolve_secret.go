@@ -27,7 +27,12 @@ func (h *Handler) handleResolveSecret(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "ref is required")
 		return
 	}
-	if strings.Contains(ref, "/") || strings.Contains(ref, "..") || strings.ContainsAny(ref, "\x00\n\r") || len(ref) > 64 {
+	if strings.Contains(ref, "/") {
+		h.resolveV2PathRef(w, r, ref)
+		return
+	}
+
+	if strings.Contains(ref, "..") || strings.ContainsAny(ref, "\x00\n\r") || len(ref) > 64 {
 		respondError(w, http.StatusBadRequest, "invalid ref format")
 		return
 	}
