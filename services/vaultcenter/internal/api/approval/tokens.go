@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -102,7 +103,7 @@ func (h *Handler) handleApprovalTokenChallengeSubmit(w http.ResponseWriter, r *h
 		"status":      "submitted",
 		"used_at":     time.Now().UTC().Format(time.RFC3339),
 	}
-	_ = h.db.SaveAuditEvent(&db.AuditEvent{
+	if err := h.db.SaveAuditEvent(&db.AuditEvent{
 		EventID:             vcrypto.GenerateUUID(),
 		EntityType:          "approval_token",
 		EntityID:            challenge.Token,
@@ -115,7 +116,9 @@ func (h *Handler) handleApprovalTokenChallengeSubmit(w http.ResponseWriter, r *h
 		BeforeJSON:          "{}",
 		AfterJSON:           mustMarshalJSON(after),
 		CreatedAt:           time.Now().UTC(),
-	})
+	}); err != nil {
+		log.Printf("audit: failed to save approval_token event token=%s: %v", challenge.Token, err)
+	}
 	if strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), httputil.ContentTypeJSON) {
 		respond(w, http.StatusOK, map[string]any{
 			"status":      "submitted",
