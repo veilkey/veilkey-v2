@@ -668,7 +668,12 @@ fn resolve_candidates(token: &str) -> Vec<String> {
         let colon_count = token.chars().filter(|&c| c == ':').count();
         if colon_count == 1 {
             if let Some(idx) = token.find(':') {
-                return vec![token[idx + 1..].to_string()];
+                let after_prefix = &token[idx + 1..];
+                // v2 path-based ref: VK:vault/group/key — try full ref first, then path only
+                if after_prefix.contains('/') {
+                    return vec![token.to_string(), after_prefix.to_string()];
+                }
+                return vec![after_prefix.to_string()];
             }
         }
         let parts: Vec<&str> = token.splitn(3, ':').collect();
