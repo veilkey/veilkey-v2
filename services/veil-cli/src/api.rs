@@ -736,6 +736,9 @@ mod tests {
         assert!(!is_v2_segment("has space"));
         assert!(!is_v2_segment("has.dot"));
         assert!(!is_v2_segment(".."));
+        assert!(!is_v2_segment("café")); // non-ASCII
+        assert!(!is_v2_segment("a/b")); // slash in segment
+        assert!(!is_v2_segment("a:b")); // colon in segment
     }
 
     // ── is_v2_path ──────────────────────────────────────────────────
@@ -784,6 +787,37 @@ mod tests {
         // "../etc/passwd" fails is_v2_path (segment starts with dot)
         let result = resolve_candidates("VK:../etc/passwd");
         assert_eq!(result, vec!["VK:../etc/passwd"]);
+    }
+
+    #[test]
+    fn test_resolve_v2_uppercase_segment_rejected() {
+        let result = resolve_candidates("VK:PROD/db/password");
+        assert_eq!(result, vec!["VK:PROD/db/password"]);
+    }
+
+    #[test]
+    fn test_resolve_v2_four_segments_rejected() {
+        // Nested groups not yet supported — 4 segments must fail
+        let result = resolve_candidates("VK:vault/group/sub/key");
+        assert_eq!(result, vec!["VK:vault/group/sub/key"]);
+    }
+
+    #[test]
+    fn test_resolve_v2_two_segments_rejected() {
+        let result = resolve_candidates("VK:vault/key");
+        assert_eq!(result, vec!["VK:vault/key"]);
+    }
+
+    #[test]
+    fn test_resolve_v2_empty_segment_rejected() {
+        let result = resolve_candidates("VK:vault//key");
+        assert_eq!(result, vec!["VK:vault//key"]);
+    }
+
+    #[test]
+    fn test_resolve_v2_dash_start_segment_rejected() {
+        let result = resolve_candidates("VK:vault/-group/key");
+        assert_eq!(result, vec!["VK:vault/-group/key"]);
     }
 
     #[test]
