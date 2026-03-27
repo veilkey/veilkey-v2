@@ -762,17 +762,17 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_v2_invalid_path_returns_full_token() {
-        // Single colon but not a valid v2 path — return full token
+    fn test_resolve_v2_invalid_path_returns_stripped() {
+        // Single colon — always strips prefix regardless of v2 validity
         let result = resolve_candidates("VK:not-a-v2-path");
-        assert_eq!(result, vec!["VK:not-a-v2-path"]);
+        assert_eq!(result, vec!["not-a-v2-path"]);
     }
 
     #[test]
-    fn test_resolve_v2_path_traversal_blocked() {
-        // "../etc/passwd" fails is_v2_path (segment starts with dot)
+    fn test_resolve_v2_path_traversal_stripped() {
+        // Single colon — strips prefix; traversal blocked at higher layer
         let result = resolve_candidates("VK:../etc/passwd");
-        assert_eq!(result, vec!["VK:../etc/passwd"]);
+        assert_eq!(result, vec!["../etc/passwd"]);
     }
 
     #[test]
