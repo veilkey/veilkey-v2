@@ -713,6 +713,97 @@ mod tests {
         );
     }
 
+    // ── v2 path-based ref detection ──────────────────────────────────
+
+    #[test]
+    fn v2_regex_matches_path_refs() {
+        let re = regex::Regex::new(VEILKEY_RE_STR).unwrap();
+        assert!(re.is_match("VK:host-lv/cloudflare/api-key"));
+        assert!(re.is_match("VK:prod/db/password"));
+        assert!(re.is_match("VK:soulflow-lv/db/password"));
+        assert!(re.is_match("VK:a/b/c"));
+    }
+
+    #[test]
+    fn v2_regex_extracts_full_path_ref() {
+        let re = regex::Regex::new(VEILKEY_RE_STR).unwrap();
+        let text = "CLOUDFLARE_API_KEY=VK:host-lv/cloudflare/api-key";
+        let m = re.find(text).expect("should match v2 ref");
+        assert_eq!(m.as_str(), "VK:host-lv/cloudflare/api-key");
+    }
+
+    #[test]
+    fn v2_regex_does_not_match_invalid_paths() {
+        let re = regex::Regex::new(VEILKEY_RE_STR).unwrap();
+        // Only two segments
+        assert!(!re.is_match("VK:only/two"));
+        // Uppercase segments
+        assert!(!re.is_match("VK:UPPER/case/path"));
+        // Path traversal
+        assert!(!re.is_match("VK:../etc/passwd"));
+    }
+
+    #[test]
+    fn v2_regex_coexists_with_v1() {
+        let re = regex::Regex::new(VEILKEY_RE_STR).unwrap();
+        // v1 still works
+        assert!(re.is_match("VK:LOCAL:abc12345"));
+        assert!(re.is_match("VK:TEMP:deadbeef"));
+        assert!(re.is_match("VK:abcdef01"));
+        // v2 also works
+        assert!(re.is_match("VK:host-lv/mailgun/api-key"));
+    }
+
+    #[test]
+    fn v2_regex_finds_both_in_mixed_line() {
+        let re = regex::Regex::new(VEILKEY_RE_STR).unwrap();
+        let line = "old=VK:LOCAL:abc12345 new=VK:host-lv/db/password";
+        let matches: Vec<&str> = re.find_iter(line).map(|m| m.as_str()).collect();
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0], "VK:LOCAL:abc12345");
+        assert_eq!(matches[1], "VK:host-lv/db/password");
+    }
+
+    #[test]
+    fn v2_ref_preserved_in_process_line() {
+        let config = empty_config();
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let logger = SessionLogger::new("/dev/null");
+        let mut det = SecretDetector::new(&config, &client, &logger, true);
+
+        let line = "export DB_PASS=VK:host-lv/db/password";
+        let result = det.process_line(line);
+        assert!(
+            result.contains("VK:host-lv/db/password"),
+            "v2 path refs must be preserved, got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn v2_ref_not_trivial() {
+        assert!(!is_trivial_value("VK:host-lv/x/y"), "v2 ref must not be trivial");
+        assert!(!is_trivial_value("VK:prod/db/password"), "v2 ref must not be trivial");
+    }
+
+    #[test]
+    fn v2_ref_excluded_from_detection() {
+        let config = generic_secret_config();
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let logger = SessionLogger::new("/dev/null");
+        let det = SecretDetector::new(&config, &client, &logger, true);
+
+        // v2 ref values should be excluded (is_excluded returns true for VK refs)
+        let line = "secret=VK:host-lv/cloudflare/api-key";
+        let detections = det.detect_secrets(line);
+        assert!(
+            detections.is_empty(),
+            "v2 VK refs should not be detected as secrets"
+        );
+    }
+
     // ── MIN_SECRET_LEN enforcement ───────────────────────────────────
 
     #[test]
