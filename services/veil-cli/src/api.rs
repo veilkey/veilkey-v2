@@ -686,11 +686,10 @@ fn resolve_candidates(token: &str) -> Vec<String> {
     if token.starts_with("VK:") || token.starts_with("VE:") {
         let colon_count = token.chars().filter(|&c| c == ':').count();
         if colon_count == 1 {
-            let after_prefix = &token[token.find(':').unwrap() + 1..];
-            if is_v2_path(after_prefix) {
-                return vec![after_prefix.to_string()];
+            if let Some(idx) = token.find(':) {
+                return vec![token[idx + 1..].to_string()];
             }
-            return vec![token.to_string()];
+        }
         }
         let parts: Vec<&str> = token.splitn(3, ':').collect();
         if parts.len() == 3 && parts[0] == "VK" {
