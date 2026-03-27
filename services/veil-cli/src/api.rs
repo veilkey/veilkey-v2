@@ -762,10 +762,10 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_v2_invalid_path_returns_full_token() {
-        // Single colon but not a valid v2 path — return full token
+    fn test_resolve_single_colon_strips_prefix() {
+        // Single colon — always strips prefix
         let result = resolve_candidates("VK:not-a-v2-path");
-        assert_eq!(result, vec!["VK:not-a-v2-path"]);
+        assert_eq!(result, vec!["not-a-v2-path"]);
     }
 
     #[test]
