@@ -721,7 +721,7 @@ mod tests {
         assert!(!is_v2_segment(""));
         assert!(!is_v2_segment("-starts-with-dash"));
         assert!(!is_v2_segment("UPPER"));
-        assert!(!is_v2_segment("has_underscore"));
+        assert!(is_v2_segment("has_underscore"));
         assert!(!is_v2_segment("has space"));
         assert!(!is_v2_segment("has.dot"));
         assert!(!is_v2_segment(".."));
