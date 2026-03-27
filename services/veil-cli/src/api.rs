@@ -2063,10 +2063,11 @@ mod connection_domain_tests {
     }
 
     #[test]
-    fn test_resolve_candidates_ve_single_colon() {
-        // "VE:something" (only 1 colon) — special path in resolve_candidates
+    fn test_resolve_candidates_ve_single_colon_not_v2() {
+        // "VE:something" -- single colon but not a valid v2 path (only 1 segment),
+        // so it falls back to returning the full token.
         let candidates = super::resolve_candidates("VE:something");
-        assert_eq!(candidates, vec!["something"]);
+        assert_eq!(candidates, vec!["VE:something"]);
     }
 
     // ── env var resolution regex excludes VE ─────────────────────────
