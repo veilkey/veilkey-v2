@@ -725,6 +725,9 @@ mod tests {
         assert!(!is_v2_segment("has space"));
         assert!(!is_v2_segment("has.dot"));
         assert!(!is_v2_segment(".."));
+        assert!(!is_v2_segment("café")); // non-ASCII
+        assert!(!is_v2_segment("a/b")); // slash inside segment
+        assert!(!is_v2_segment("a:b")); // colon inside segment
     }
 
     // ── is_v2_path ──────────────────────────────────────────────────
