@@ -663,6 +663,26 @@ pub fn parse_mask_map_entries(
     (secrets, ve_entries)
 }
 
+/// Returns true if `s` is a valid v2 path segment:
+/// non-empty, lowercase alphanumeric / underscore / hyphen, must not start with `-` or `.`.
+fn is_v2_segment(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    let first = s.as_bytes()[0];
+    if first == b'-' || first == b'.' {
+        return false;
+    }
+    s.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+}
+
+/// Returns true if `path` is a valid v2 path: exactly 3 segments separated by `/`,
+/// each segment passing `is_v2_segment`.
+fn is_v2_path(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').collect();
+    parts.len() == 3 && parts.iter().all(|s| is_v2_segment(s))
+}
+
 fn resolve_candidates(token: &str) -> Vec<String> {
     if token.starts_with("VK:") || token.starts_with("VE:") {
         let colon_count = token.chars().filter(|&c| c == ':').count();
