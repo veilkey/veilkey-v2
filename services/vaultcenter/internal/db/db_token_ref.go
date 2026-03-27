@@ -206,15 +206,6 @@ func (d *DB) UpdateRefAgentHash(canonical, agentHash string) error {
 	return d.conn.Model(&TokenRef{}).Where("ref_canonical = ?", canonical).Update("agent_hash", agentHash).Error
 }
 
-func (d *DB) GetRefByCanonicalAndAgent(canonical, agentHash string) (*TokenRef, error) {
-	var ref TokenRef
-	err := d.conn.First(&ref, "ref_canonical = ? AND agent_hash = ?", canonical, agentHash).Error
-	if err != nil {
-		return nil, fmt.Errorf("ref %s not found for agent %s", canonical, agentHash)
-	}
-	return &ref, nil
-}
-
 func (d *DB) DeleteRef(canonical string) error {
 	return dbDeleteWhere[TokenRef](d, "ref "+canonical+" not found", "ref_canonical = ?", canonical)
 }
