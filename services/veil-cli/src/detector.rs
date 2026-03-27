@@ -8,7 +8,7 @@ use crate::logger::SessionLogger;
 use crate::state::state_dir;
 
 pub const VEILKEY_RE_STR: &str =
-    r"VK:(?:(?:TEMP|LOCAL|EXTERNAL|SSH):[0-9A-Fa-f]{4,64}|[0-9a-f]{8})";
+    r"VK:(?:(?:TEMP|LOCAL|EXTERNAL|SSH):[0-9A-Fa-f]{4,64}|[0-9a-f]{8}|[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*)";
 
 const MIN_SECRET_LEN: usize = 6;
 const PREVIEW_LEN: usize = 4;
@@ -950,6 +950,95 @@ mod tests {
         assert!(
             !is_trivial_value("abcdefghij"),
             "non-repeated alpha (not sequential)"
+        );
+    }
+
+    // ── v2 path-based ref regex ─────────────────────────────────────
+
+    #[test]
+    fn veilkey_re_matches_v2_path_ref() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        assert!(re.is_match("VK:host-lv/cloudflare/api-key"));
+        assert!(re.is_match("VK:prod/db/password"));
+        assert!(re.is_match("VK:a/b/c"));
+        assert!(re.is_match("VK:soulflow-lv/db/password"));
+    }
+
+    #[test]
+    fn veilkey_re_still_matches_v1_refs() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        assert!(re.is_match("VK:LOCAL:6da25530"));
+        assert!(re.is_match("VK:TEMP:abcd1234"));
+        assert!(re.is_match("VK:SSH:00112233"));
+        assert!(re.is_match("VK:EXTERNAL:aabbccdd"));
+        assert!(re.is_match("VK:6da25530"));
+    }
+
+    #[test]
+    fn veilkey_re_extracts_full_v2_ref() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        let text = "CLOUDFLARE_API_KEY=VK:host-lv/cloudflare/api-key";
+        let m = re.find(text).unwrap();
+        assert_eq!(m.as_str(), "VK:host-lv/cloudflare/api-key");
+    }
+
+    #[test]
+    fn veilkey_re_matches_mixed_v1_v2() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        let text = "a=VK:LOCAL:3c3d53ea b=VK:host-lv/owner/password";
+        let matches: Vec<&str> = re.find_iter(text).map(|m| m.as_str()).collect();
+        assert_eq!(matches, vec!["VK:LOCAL:3c3d53ea", "VK:host-lv/owner/password"]);
+    }
+
+    #[test]
+    fn veilkey_re_rejects_invalid_v2_paths() {
+        let re = Regex::new(VEILKEY_RE_STR).unwrap();
+        // Uppercase segments
+        assert!(!re.is_match("VK:HOST/DB/PASS"));
+        // Two segments only — partial match on first segment is possible,
+        // but a full anchored test confirms no 3-segment match
+        let re_full = Regex::new(&format!("^{}$", VEILKEY_RE_STR)).unwrap();
+        assert!(!re_full.is_match("VK:two/segments"));
+        assert!(!re_full.is_match("VK:four/too/many/segments"));
+        assert!(!re_full.is_match("VK:../etc/passwd"));
+    }
+
+    #[test]
+    fn trivial_value_rejects_v2_ref() {
+        assert!(!is_trivial_value("VK:host-lv/x/y"), "v2 ref must not be trivial");
+        assert!(!is_trivial_value("VK:prod/db/password"), "v2 ref must not be trivial");
+    }
+
+    #[test]
+    fn v2_ref_excluded_from_secret_detection() {
+        let config = generic_secret_config();
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let logger = SessionLogger::new("/dev/null");
+        let det = SecretDetector::new(&config, &client, &logger, true);
+
+        // A v2 ref should be excluded (is_excluded returns true)
+        assert!(det.is_excluded("VK:host-lv/cloudflare/api-key"));
+        assert!(det.is_excluded("VK:prod/db/password"));
+        // v1 refs should still be excluded
+        assert!(det.is_excluded("VK:LOCAL:6da25530"));
+    }
+
+    #[test]
+    fn process_line_protects_v2_refs() {
+        let config = generic_secret_config();
+        init_crypto();
+        let client = VeilKeyClient::new("http://localhost:0");
+        let logger = SessionLogger::new("/dev/null");
+        let mut det = SecretDetector::new(&config, &client, &logger, true);
+
+        // v2 ref in output should be preserved, not treated as a secret
+        let line = "DB_PASSWORD=VK:host-lv/db/password";
+        let result = det.process_line(line);
+        assert!(
+            result.contains("VK:host-lv/db/password"),
+            "v2 ref should be preserved in output, got: {}",
+            result
         );
     }
 }
