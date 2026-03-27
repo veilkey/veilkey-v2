@@ -109,7 +109,7 @@ func (th *testHarness) startAgentServer(t *testing.T, secretMap map[string]strin
 	t.Helper()
 	th.agentSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		const prefix = "/cipher/"
+		const prefix = "/api/cipher/"
 		if len(path) <= len(prefix) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
