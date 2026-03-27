@@ -677,6 +677,9 @@ fn is_v2_segment(s: &str) -> bool {
 }
 
 /// A valid v2 path: exactly three `/`-separated segments, each passing `is_v2_segment`.
+/// Format: `{vault}/{group}/{key}` -- segment count is fixed at 3.
+/// NOTE: nested groups (e.g. `vault/group/sub/key`) are intentionally excluded for now.
+/// If needed later, extend to `parts.len() >= 3 && parts.len() <= MAX` with sub-group join.
 fn is_v2_path(s: &str) -> bool {
     let parts: Vec<&str> = s.split('/').collect();
     parts.len() == 3 && parts.iter().all(|p| is_v2_segment(p))
@@ -689,6 +692,12 @@ fn resolve_candidates(token: &str) -> Vec<String> {
             let after_prefix = &token[token.find(':').unwrap() + 1..];
             if is_v2_path(after_prefix) {
                 return vec![after_prefix.to_string()];
+            }
+            if after_prefix.contains('/') {
+                eprintln!(
+                    "[veilkey] warn: invalid v2 path in token: {}",
+                    token
+                );
             }
             return vec![token.to_string()];
         }
@@ -725,6 +734,9 @@ mod tests {
         assert!(!is_v2_segment("has space"));
         assert!(!is_v2_segment("has.dot"));
         assert!(!is_v2_segment(".."));
+        assert!(!is_v2_segment("café")); // non-ASCII
+        assert!(!is_v2_segment("a/b")); // slash inside segment
+        assert!(!is_v2_segment("a:b")); // colon inside segment
     }
 
     // ── is_v2_path ──────────────────────────────────────────────────
@@ -773,6 +785,37 @@ mod tests {
         // "../etc/passwd" fails is_v2_path (segment starts with dot)
         let result = resolve_candidates("VK:../etc/passwd");
         assert_eq!(result, vec!["VK:../etc/passwd"]);
+    }
+
+    #[test]
+    fn test_resolve_v2_uppercase_segment_rejected() {
+        let result = resolve_candidates("VK:PROD/db/password");
+        assert_eq!(result, vec!["VK:PROD/db/password"]);
+    }
+
+    #[test]
+    fn test_resolve_v2_four_segments_rejected() {
+        // Nested groups not yet supported -- 4 segments must fail
+        let result = resolve_candidates("VK:vault/group/sub/key");
+        assert_eq!(result, vec!["VK:vault/group/sub/key"]);
+    }
+
+    #[test]
+    fn test_resolve_v2_two_segments_rejected() {
+        let result = resolve_candidates("VK:vault/key");
+        assert_eq!(result, vec!["VK:vault/key"]);
+    }
+
+    #[test]
+    fn test_resolve_v2_empty_segment_rejected() {
+        let result = resolve_candidates("VK:vault//key");
+        assert_eq!(result, vec!["VK:vault//key"]);
+    }
+
+    #[test]
+    fn test_resolve_v2_dash_start_segment_rejected() {
+        let result = resolve_candidates("VK:vault/-group/key");
+        assert_eq!(result, vec!["VK:vault/-group/key"]);
     }
 
     #[test]
@@ -2063,10 +2106,11 @@ mod connection_domain_tests {
     }
 
     #[test]
-    fn test_resolve_candidates_ve_single_colon() {
-        // "VE:something" (only 1 colon) — special path in resolve_candidates
+    fn test_resolve_candidates_ve_single_colon_not_v2() {
+        // "VE:something" -- single colon but not a valid v2 path (only 1 segment),
+        // so it falls back to returning the full token.
         let candidates = super::resolve_candidates("VE:something");
-        assert_eq!(candidates, vec!["something"]);
+        assert_eq!(candidates, vec!["VE:something"]);
     }
 
     // ── env var resolution regex excludes VE ─────────────────────────
