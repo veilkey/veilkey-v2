@@ -2106,11 +2106,12 @@ mod connection_domain_tests {
 
     #[test]
     fn guard_session_exit_message_does_not_read_ve_map() {
-        // The exit block must NOT read ve_map — configs are not "masked"
-        let src = include_str!("pty/session.rs");
-        // Find the exit block (after waitpid)
-        let waitpid_pos = src.find("waitpid").unwrap_or(0);
-        let exit_block = &src[waitpid_pos..];
+    fn test_resolve_candidates_ve_single_colon_not_v2() {
+        // "VE:something" -- single colon but not a valid v2 path (only 1 segment),
+        // so it falls back to returning the full token.
+        // so it falls back to returning the full token.
+        let candidates = super::resolve_candidates("VE:something");
+        assert_eq!(candidates, vec!["VE:something"]);
         assert!(
             !exit_block.contains("ve_map.read()") && !exit_block.contains("ve.read()"),
             "exit block must not read ve_map"
