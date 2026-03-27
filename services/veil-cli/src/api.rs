@@ -663,6 +663,26 @@ pub fn parse_mask_map_entries(
     (secrets, ve_entries)
 }
 
+/// Returns true if `s` is a valid v2 path segment:
+/// non-empty, lowercase alphanumeric / underscore / hyphen, must not start with `-` or `.`.
+fn is_v2_segment(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    let first = s.as_bytes()[0];
+    if first == b'-' || first == b'.' {
+        return false;
+    }
+    s.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+}
+
+/// Returns true if `path` is a valid v2 path: exactly 3 segments separated by `/`,
+/// each segment passing `is_v2_segment`.
+fn is_v2_path(s: &str) -> bool {
+    let parts: Vec<&str> = s.split('/').collect();
+    parts.len() == 3 && parts.iter().all(|p| is_v2_segment(p))
+}
+
 fn resolve_candidates(token: &str) -> Vec<String> {
     if token.starts_with("VK:") || token.starts_with("VE:") {
         let colon_count = token.chars().filter(|&c| c == ':').count();
@@ -682,7 +702,83 @@ fn resolve_candidates(token: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::enrich_mask_map;
+    use super::{enrich_mask_map, is_v2_path, is_v2_segment, resolve_candidates};
+
+    // ── is_v2_segment ───────────────────────────────────────────────
+
+    #[test]
+    fn test_v2_segment_valid() {
+        assert!(is_v2_segment("api-key"));
+        assert!(is_v2_segment("mailgun"));
+        assert!(is_v2_segment("a"));
+        assert!(is_v2_segment("0config"));
+        assert!(is_v2_segment("host-lv"));
+    }
+
+    #[test]
+    fn test_v2_segment_invalid() {
+        assert!(!is_v2_segment(""));
+        assert!(!is_v2_segment("-starts-with-dash"));
+        assert!(!is_v2_segment("UPPER"));
+        assert!(is_v2_segment("has_underscore"));
+        assert!(!is_v2_segment("has space"));
+        assert!(!is_v2_segment("has.dot"));
+        assert!(!is_v2_segment(".."));
+    }
+
+    // ── is_v2_path ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_v2_path_valid() {
+        assert!(is_v2_path("host-lv/mailgun/api-key"));
+        assert!(is_v2_path("prod/db/password"));
+        assert!(is_v2_path("a/b/c"));
+    }
+
+    #[test]
+    fn test_v2_path_invalid() {
+        assert!(!is_v2_path("only-one-segment"));
+        assert!(!is_v2_path("two/segments"));
+        assert!(!is_v2_path("four/too/many/segments"));
+        assert!(!is_v2_path(""));
+        assert!(!is_v2_path("../etc/passwd"));
+        assert!(!is_v2_path("UPPER/case/path"));
+        assert!(!is_v2_path("ok/ok/has space"));
+    }
+
+    // ── resolve_candidates v2 path cases ────────────────────────────
+
+    #[test]
+    fn test_resolve_v2_path_extracts_path() {
+        let result = resolve_candidates("VK:host-lv/mailgun/api-key");
+        assert_eq!(result, vec!["host-lv/mailgun/api-key"]);
+    }
+
+    #[test]
+    fn test_resolve_v2_path_ve_prefix() {
+        let result = resolve_candidates("VE:prod/db/password");
+        assert_eq!(result, vec!["prod/db/password"]);
+    }
+
+    #[test]
+    fn test_resolve_single_colon_strips_prefix() {
+        // Single colon — always strips prefix
+        let result = resolve_candidates("VK:not-a-v2-path");
+        assert_eq!(result, vec!["not-a-v2-path"]);
+    }
+
+    #[test]
+    fn test_resolve_single_colon_traversal() {
+        // Single colon — strips prefix; traversal blocked at higher layer
+        let result = resolve_candidates("VK:../etc/passwd");
+        assert_eq!(result, vec!["../etc/passwd"]);
+    }
+
+    #[test]
+    fn test_resolve_v1_ref_unchanged() {
+        let result = resolve_candidates("VK:LOCAL:6da25530");
+        assert_eq!(result, vec!["VK:LOCAL:6da25530", "6da25530"]);
+    }
 
     // ── Retain filter ───────────────────────────────────────────────
 
