@@ -788,6 +788,37 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_v2_uppercase_segment_rejected() {
+        let result = resolve_candidates("VK:PROD/db/password");
+        assert_eq!(result, vec!["VK:PROD/db/password"]);
+    }
+
+    #[test]
+    fn test_resolve_v2_four_segments_rejected() {
+        // Nested groups not yet supported -- 4 segments must fail
+        let result = resolve_candidates("VK:vault/group/sub/key");
+        assert_eq!(result, vec!["VK:vault/group/sub/key"]);
+    }
+
+    #[test]
+    fn test_resolve_v2_two_segments_rejected() {
+        let result = resolve_candidates("VK:vault/key");
+        assert_eq!(result, vec!["VK:vault/key"]);
+    }
+
+    #[test]
+    fn test_resolve_v2_empty_segment_rejected() {
+        let result = resolve_candidates("VK:vault//key");
+        assert_eq!(result, vec!["VK:vault//key"]);
+    }
+
+    #[test]
+    fn test_resolve_v2_dash_start_segment_rejected() {
+        let result = resolve_candidates("VK:vault/-group/key");
+        assert_eq!(result, vec!["VK:vault/-group/key"]);
+    }
+
+    #[test]
     fn test_resolve_v1_ref_unchanged() {
         let result = resolve_candidates("VK:LOCAL:6da25530");
         assert_eq!(result, vec!["VK:LOCAL:6da25530", "6da25530"]);
