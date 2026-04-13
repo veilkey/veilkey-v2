@@ -246,7 +246,7 @@ func (h *Handler) resolveTrackedRef(w http.ResponseWriter, ref string, tracked *
 			"vault_runtime_hash": agentHash,
 			"resolved_at":        now.Format(time.RFC3339),
 		})
-		_ = h.deps.SubmitTxAsync(context.Background(), chain.TxRecordAuditEvent, chain.RecordAuditEventPayload{
+		if err := h.deps.SubmitTxAsync(context.Background(), chain.TxRecordAuditEvent, chain.RecordAuditEventPayload{
 			EventID:    crypto.GenerateUUID(),
 			EntityType: "secret",
 			EntityID:   ref,
@@ -255,7 +255,9 @@ func (h *Handler) resolveTrackedRef(w http.ResponseWriter, ref string, tracked *
 			ActorID:    agentHash,
 			Source:     "resolve",
 			AfterJSON:  string(afterJSON),
-		})
+		}); err != nil {
+			log.Printf("audit: failed to submit resolve event ref=%s: %v", ref, err)
+		}
 		return true
 	}
 
@@ -298,7 +300,9 @@ func (h *Handler) resolveTrackedRef(w http.ResponseWriter, ref string, tracked *
 			ActorType:  "api",
 			Source:     "resolve",
 			AfterJSON:  string(afterJSON2),
-		})
+		}); err != nil {
+			log.Printf("audit: failed to submit resolve event ref=%s: %v", ref, err)
+		}
 		return true
 	}
 
