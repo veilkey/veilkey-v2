@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"io"
 	"net/http"
 	"strings"
@@ -132,7 +133,7 @@ func (h *Handler) handleSubmitSecretInput(w http.ResponseWriter, r *http.Request
 		respondErr(w, http.StatusInternalServerError, "failed to complete challenge")
 		return
 	}
-	_ = h.db.SaveAuditEvent(&db.AuditEvent{
+	if err := h.db.SaveAuditEvent(&db.AuditEvent{
 		EventID:    vcrypto.GenerateUUID(),
 		EntityType: "secret_input",
 		EntityID:   challenge.Token,
@@ -141,7 +142,9 @@ func (h *Handler) handleSubmitSecretInput(w http.ResponseWriter, r *http.Request
 		ActorID:    challenge.Email,
 		Reason:     "secret_input_submitted",
 		Source:     "vaultcenter_ui",
-	})
+	}); err != nil {
+		log.Printf("audit: failed to save secret_input event token=%s: %v", challenge.Token, err)
+	}
 	if strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), httputil.ContentTypeJSON) {
 		respond(w, http.StatusOK, map[string]any{
 			"status":      "submitted",
