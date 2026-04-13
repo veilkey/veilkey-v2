@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -26,7 +27,7 @@ func (s *Server) saveAuditEvent(entityType, entityID, action, actorType, actorID
 		}
 	}
 
-	_ = s.db.SaveAuditEvent(&db.AuditEvent{
+	if err := s.db.SaveAuditEvent(&db.AuditEvent{
 		EventID:    crypto.GenerateUUID(),
 		EntityType: entityType,
 		EntityID:   entityID,
