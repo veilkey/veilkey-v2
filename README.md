@@ -1,3 +1,6 @@
+> [!WARNING]
+> **This repository is a previous copy of VeilKey and receives no security fixes.** Use [veilkey/veilkey-selfhosted](https://github.com/veilkey/veilkey-selfhosted) instead.
+
 <div align="center">
   <img src=".github/banner.png" alt="VeilKey" width="720">
   <h1>VeilKey Self-Hosted</h1>
